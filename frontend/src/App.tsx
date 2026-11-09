@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ApiRequestError, createPractice } from './api';
+import {
+  ApiRequestError,
+  createPractice,
+  deleteSavedVocabulary,
+  listSavedVocabulary,
+  saveVocabulary,
+  toErrorMessage,
+} from './api';
 import { FeedbackView } from './components/FeedbackView';
-import type { PracticeResponse } from './types';
+import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
+import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
+import type { PracticeResponse, SavedVocabularyEntry } from './types';
 import { countWords, MAX_WORDS, MIN_WORDS } from './wordCount';
 
 type RequestStatus = 'idle' | 'submitting' | 'error';
@@ -50,11 +59,35 @@ export default function App() {
   const [result, setResult] = useState<PracticeResponse | null>(null);
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [savedVocabulary, setSavedVocabulary] = useState<SavedVocabularyEntry[]>([]);
+  const [savedStatus, setSavedStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [savedError, setSavedError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<SavedVocabularyDeleteError | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const wordCount = countWords(writingText);
   const currentCountState = countState(wordCount);
   const canSubmit = status !== 'submitting' && currentCountState === 'valid';
   const isMock = result?.mockMode ?? true;
+  const savedWords = new Set(savedVocabulary.map((entry) => entry.word.toLowerCase()));
+
+  const loadSavedVocabulary = useCallback(async () => {
+    setSavedStatus('loading');
+    setSavedError(null);
+    setDeleteError(null);
+    try {
+      const entries = await listSavedVocabulary();
+      setSavedVocabulary(entries);
+      setSavedStatus('ready');
+    } catch (error) {
+      setSavedStatus('error');
+      setSavedError(toErrorMessage(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedVocabulary();
+  }, [loadSavedVocabulary]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,11 +105,37 @@ export default function App() {
       setStatus('idle');
     } catch (error) {
       setStatus('error');
-      setErrorMessage(
-        error instanceof ApiRequestError
-          ? error.message
-          : '无法连接后端服务，请确认服务已启动。',
-      );
+      setErrorMessage(toErrorMessage(error));
+    }
+  }
+
+  async function handleSaveVocabulary(practiceAttemptId: string, word: string): Promise<void> {
+    try {
+      const saved = await saveVocabulary(practiceAttemptId, word);
+      setSavedVocabulary((current) => [
+        saved,
+        ...current.filter((entry) => entry.id !== saved.id),
+      ]);
+      setSavedStatus('ready');
+      setSavedError(null);
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'VOCABULARY_ALREADY_SAVED') {
+        void loadSavedVocabulary();
+      }
+      throw error;
+    }
+  }
+
+  async function handleDeleteSavedVocabulary(id: string): Promise<void> {
+    setDeletingId(id);
+    setDeleteError(null);
+    try {
+      await deleteSavedVocabulary(id);
+      setSavedVocabulary((current) => current.filter((entry) => entry.id !== id));
+    } catch (error) {
+      setDeleteError({ id, message: toErrorMessage(error) });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -184,9 +243,25 @@ export default function App() {
             </div>
           )}
 
-          {status !== 'submitting' && result && <FeedbackView result={result} />}
+          {status !== 'submitting' && result && (
+            <FeedbackView
+              result={result}
+              savedWords={savedWords}
+              onSaveVocabulary={handleSaveVocabulary}
+            />
+          )}
         </section>
       </main>
+
+      <SavedVocabularyPanel
+        entries={savedVocabulary}
+        status={savedStatus}
+        error={savedError}
+        deleteError={deleteError}
+        deletingId={deletingId}
+        onRetry={loadSavedVocabulary}
+        onDelete={handleDeleteSavedVocabulary}
+      />
     </div>
   );
 }

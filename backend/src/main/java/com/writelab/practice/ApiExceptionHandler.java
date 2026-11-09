@@ -1,6 +1,10 @@
 package com.writelab.practice;
 
+import com.writelab.dictionary.DictionaryEntryNotFoundException;
 import com.writelab.feedback.InvalidFeedbackException;
+import com.writelab.vocabulary.SavedVocabularyNotFoundException;
+import com.writelab.vocabulary.VocabularyAlreadySavedException;
+import com.writelab.vocabulary.VocabularySuggestionNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -11,6 +15,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -28,6 +33,33 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> handlePracticeNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiError("PRACTICE_NOT_FOUND", "找不到对应的练习记录，请刷新后重试。"));
+    }
+
+    @ExceptionHandler(DictionaryEntryNotFoundException.class)
+    ResponseEntity<ApiError> handleDictionaryEntryNotFound(DictionaryEntryNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(
+                        "DICTIONARY_ENTRY_NOT_FOUND",
+                        "词典中暂时没有“" + exception.word() + "”的条目。"
+                ));
+    }
+
+    @ExceptionHandler(SavedVocabularyNotFoundException.class)
+    ResponseEntity<ApiError> handleSavedVocabularyNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("SAVED_VOCABULARY_NOT_FOUND", "找不到对应的已保存词汇，请刷新后重试。"));
+    }
+
+    @ExceptionHandler(VocabularySuggestionNotFoundException.class)
+    ResponseEntity<ApiError> handleVocabularySuggestionNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("VOCABULARY_SUGGESTION_NOT_FOUND", "找不到对应的词汇建议，请刷新后重试。"));
+    }
+
+    @ExceptionHandler(VocabularyAlreadySavedException.class)
+    ResponseEntity<ApiError> handleVocabularyAlreadySaved() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("VOCABULARY_ALREADY_SAVED", "该词已在 Saved Vocabulary 中。"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -51,6 +83,12 @@ public class ApiExceptionHandler {
         log.error("结构化反馈未通过校验: {}", exception.errors());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiError("INVALID_MODEL_RESPONSE", "模型返回的反馈格式不符合要求，请稍后重试。"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiError> handleMethodArgumentTypeMismatch() {
+        return ResponseEntity.badRequest()
+                .body(new ApiError("INVALID_PATH_PARAMETER", "请求路径参数格式不正确。"));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

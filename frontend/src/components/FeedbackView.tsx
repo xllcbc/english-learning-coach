@@ -1,5 +1,6 @@
 import { categoryLabels, levelDescriptions, scoreLabels, severityLabels } from '../labels';
 import type { PracticeResponse, ToolInvocation, ToolInvocationStatus } from '../types';
+import { VocabularySection } from './VocabularySection';
 
 const toolStatusLabels: Record<ToolInvocationStatus, string> = {
   SUCCESS: '成功',
@@ -69,9 +70,19 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function FeedbackView({ result }: { result: PracticeResponse }) {
+interface FeedbackViewProps {
+  result: PracticeResponse;
+  savedWords: ReadonlySet<string>;
+  onSaveVocabulary: (practiceAttemptId: string, word: string) => Promise<void>;
+}
+
+export function FeedbackView({
+  result,
+  savedWords,
+  onSaveVocabulary,
+}: FeedbackViewProps) {
   const { feedback } = result;
-  const { scores, learningIssues, vocabularySuggestions } = feedback;
+  const { scores, learningIssues } = feedback;
 
   return (
     <div className="feedback-content">
@@ -160,25 +171,11 @@ export function FeedbackView({ result }: { result: PracticeResponse }) {
         )}
       </section>
 
-      <section className="feedback-section" aria-labelledby="vocabulary-title">
-        <div className="section-title-row">
-          <h3 id="vocabulary-title">Vocabulary Suggestion</h3>
-          <span className="count-badge">{vocabularySuggestions.length} 条</span>
-        </div>
-        {vocabularySuggestions.length === 0 ? (
-          <p className="muted">本次没有词汇建议。</p>
-        ) : (
-          <div className="vocabulary-list">
-            {vocabularySuggestions.map((suggestion) => (
-              <article className="vocabulary-card" key={suggestion.word}>
-                <h4>{suggestion.word}</h4>
-                <p>{suggestion.explanation}</p>
-                <p className="vocabulary-example">{suggestion.example}</p>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      <VocabularySection
+        result={result}
+        savedWords={savedWords}
+        onSaveVocabulary={onSaveVocabulary}
+      />
 
       <ToolTrace invocations={result.toolInvocations} />
     </div>

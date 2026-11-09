@@ -625,11 +625,40 @@ textarea {
   background: #fbfaf5;
 }
 
-.vocabulary-card h4 {
-  margin: 0 0 6px;
+.vocabulary-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.vocabulary-word-button {
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent-strong);
   font-family: Georgia, "Times New Roman", serif;
   font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vocabulary-word-button:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.vocabulary-word-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.vocabulary-lookup-hint {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .vocabulary-card p {
@@ -645,6 +674,98 @@ textarea {
   border-top: 1px dashed var(--line);
   color: var(--muted) !important;
   font-style: italic;
+}
+
+.lookup-result {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffefa;
+}
+
+.lookup-grid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.lookup-grid div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.lookup-grid dt {
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lookup-grid dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.lookup-example dd {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.lookup-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.save-button {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.save-button:disabled {
+  background: #b9c4be;
+  cursor: default;
+}
+
+.inline-error {
+  margin-top: 10px;
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.text-button {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.vocabulary-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .muted {
@@ -753,6 +874,196 @@ textarea {
   line-height: 1.6;
 }
 
+.saved-vocabulary-panel {
+  margin-top: 22px;
+}
+
+.saved-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+}
+
+.saved-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-list-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-alt);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.saved-list-item:hover {
+  border-color: var(--line-strong);
+}
+
+.saved-list-item.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.saved-word {
+  color: var(--accent-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.saved-pos {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.saved-detail {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fbfaf5;
+}
+
+.saved-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saved-detail-heading h3 {
+  margin: 0;
+  color: var(--accent-strong);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.saved-phonetic {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.saved-pos-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.saved-detail-grid {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.saved-detail-grid div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.saved-detail-grid dt {
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.saved-detail-grid dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.saved-detail-grid div:last-child dd {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.delete-button {
+  margin-top: 16px;
+  padding: 9px 16px;
+  border: 1px solid #efc4ba;
+  border-radius: 999px;
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.delete-button:hover:not(:disabled) {
+  border-color: var(--error);
+}
+
+.delete-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.saved-empty {
+  padding: 30px 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel-alt);
+  text-align: center;
+}
+
+.saved-empty h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.saved-empty p {
+  max-width: 520px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.panel-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #efc4ba;
+  border-radius: 12px;
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 14px;
+}
+
+.panel-error p {
+  margin: 0;
+}
+
+.panel-error .text-button {
+  margin-left: 0;
+  color: var(--error);
+}
+
 @media (max-width: 980px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
@@ -761,6 +1072,10 @@ textarea {
   .empty-state,
   .loading-state {
     min-height: 260px;
+  }
+
+  .saved-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -818,6 +1133,24 @@ textarea {
 
   .tool-duration {
     text-align: left;
+  }
+
+  .lookup-grid div,
+  .saved-detail-grid div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .saved-detail-heading {
+    flex-direction: column;
+  }
+
+  .lookup-actions {
+    justify-content: stretch;
+  }
+
+  .save-button {
+    width: 100%;
   }
 }
 
