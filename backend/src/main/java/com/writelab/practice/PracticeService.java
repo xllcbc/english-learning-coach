@@ -1,5 +1,6 @@
 package com.writelab.practice;
 
+import com.writelab.feedback.EstimatedLevel;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackValidator;
 import com.writelab.feedback.LearningIssue;
@@ -9,9 +10,11 @@ import com.writelab.feedback.VocabularySuggestion;
 import com.writelab.persistence.Jsonb;
 import com.writelab.persistence.LearningIssueEntity;
 import com.writelab.persistence.PracticeAttemptEntity;
+import com.writelab.persistence.PracticeAttemptRepository;
 import com.writelab.persistence.VocabularySuggestionEntity;
 import com.writelab.writing.WordCounter;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -26,17 +29,25 @@ public class PracticeService {
     static final int MIN_WORDS = 200;
     static final int MAX_WORDS = 500;
 
+    private static final int PREVIEW_LENGTH = 140;
+
     private final FeedbackModel feedbackModel;
     private final JdbcAggregateTemplate jdbcAggregateTemplate;
+    private final PracticeAttemptRepository repository;
+    private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
 
     public PracticeService(
             FeedbackModel feedbackModel,
             JdbcAggregateTemplate jdbcAggregateTemplate,
+            PracticeAttemptRepository repository,
+            JdbcClient jdbcClient,
             ObjectMapper objectMapper
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
+        this.repository = repository;
+        this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
     }
 
@@ -73,14 +84,60 @@ public class PracticeService {
         );
         jdbcAggregateTemplate.insert(entity);
 
+        return toResponse(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PracticeAttemptSummary> list() {
+        return jdbcClient.sql("""
+                        SELECT id,
+                               left(writing_text, :previewLength) AS preview,
+                               char_length(writing_text) > :previewLength AS preview_truncated,
+                               word_count,
+                               estimated_level,
+                               model_mode,
+                               created_at
+                        FROM practice_attempt
+                        ORDER BY created_at DESC, id DESC
+                        """)
+                .param("previewLength", PREVIEW_LENGTH)
+                .query((resultSet, rowNumber) -> {
+                    String preview = resultSet.getString("preview");
+                    String modelMode = resultSet.getString("model_mode");
+                    return new PracticeAttemptSummary(
+                            resultSet.getObject("id", UUID.class),
+                            resultSet.getTimestamp("created_at").toInstant(),
+                            resultSet.getInt("word_count"),
+                            EstimatedLevel.valueOf(resultSet.getString("estimated_level")),
+                            ModelMode.valueOf(modelMode),
+                            ModelMode.MOCK.name().equals(modelMode),
+                            resultSet.getBoolean("preview_truncated") ? preview + "…" : preview
+                    );
+                })
+                .list();
+    }
+
+    @Transactional(readOnly = true)
+    public PracticeResponse find(UUID id) {
+        PracticeAttemptEntity entity = repository.findById(id)
+                .orElseThrow(() -> new PracticeAttemptNotFoundException(id));
+        return toResponse(entity);
+    }
+
+    private PracticeResponse toResponse(PracticeAttemptEntity entity) {
+        ModelMode mode = ModelMode.valueOf(entity.modelMode());
+        StructuredFeedback feedback = objectMapper.readValue(
+                entity.structuredResponse().value(),
+                StructuredFeedback.class
+        );
         return new PracticeResponse(
-                id,
-                writingText,
-                wordCount,
+                entity.id(),
+                entity.writingText(),
+                entity.wordCount(),
                 mode,
                 mode == ModelMode.MOCK,
                 feedback,
-                createdAt
+                entity.createdAt()
         );
     }
 

@@ -1,4 +1,4 @@
-import type { ApiError, PracticeResponse } from './types';
+import type { ApiError, PracticeResponse, PracticeSummary } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '');
 
@@ -12,15 +12,8 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function createPractice(text: string): Promise<PracticeResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/practices`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ text }),
-  });
-
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
   const payload: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -31,5 +24,23 @@ export async function createPractice(text: string): Promise<PracticeResponse> {
     );
   }
 
-  return payload as PracticeResponse;
+  return payload as T;
+}
+
+export function createPractice(text: string): Promise<PracticeResponse> {
+  return request('/api/practices', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function listPractices(): Promise<PracticeSummary[]> {
+  return request('/api/practices');
+}
+
+export function getPractice(id: string): Promise<PracticeResponse> {
+  return request(`/api/practices/${encodeURIComponent(id)}`);
 }

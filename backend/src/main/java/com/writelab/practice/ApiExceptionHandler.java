@@ -11,6 +11,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -22,6 +23,18 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> handleWordCountOutOfRange(WordCountOutOfRangeException exception) {
         return ResponseEntity.badRequest()
                 .body(new ApiError("WORD_COUNT_OUT_OF_RANGE", exception.getMessage()));
+    }
+
+    @ExceptionHandler(PracticeAttemptNotFoundException.class)
+    ResponseEntity<ApiError> handlePracticeAttemptNotFound(PracticeAttemptNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("PRACTICE_ATTEMPT_NOT_FOUND", exception.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return ResponseEntity.badRequest()
+                .body(new ApiError("VALIDATION_ERROR", "请求参数不合法。"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

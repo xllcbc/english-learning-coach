@@ -2,6 +2,7 @@ package com.writelab.practice;
 
 import com.writelab.persistence.PracticeAttemptEntity;
 import com.writelab.persistence.PracticeAttemptRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -19,6 +20,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -49,6 +52,94 @@ class PracticeApiIntegrationTest {
     private PracticeAttemptRepository repository;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @BeforeEach
+    void clearPracticeData() {
+        jdbcClient.sql("DELETE FROM practice_attempt").update();
+    }
+
+    @Test
+    void returnsEmptyHistoryWhenNoAttemptsExist() throws Exception {
+        HttpResponse<String> response = get(API_PATH);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        SummaryBody[] summaries = objectMapper.readValue(response.body(), SummaryBody[].class);
+        assertThat(summaries).isEmpty();
+    }
+
+    @Test
+    void listsAttemptsNewestFirstWithSummaries() throws Exception {
+        String newestText = "newest attempt " + "practice ".repeat(40);
+        Instant base = Instant.parse("2026-01-01T00:00:00Z");
+        UUID oldest = insertAttempt("oldest attempt", 200, "A2", base);
+        UUID middle = insertAttempt("middle attempt", 350, "B2", base.plusSeconds(60));
+        UUID newest = insertAttempt(newestText, 500, "C1", base.plusSeconds(120));
+
+        HttpResponse<String> response = get(API_PATH);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        SummaryBody[] summaries = objectMapper.readValue(response.body(), SummaryBody[].class);
+        assertThat(summaries).extracting(SummaryBody::id).containsExactly(newest, middle, oldest);
+        SummaryBody first = summaries[0];
+        assertThat(first.wordCount()).isEqualTo(500);
+        assertThat(first.estimatedLevel()).isEqualTo("C1");
+        assertThat(first.modelMode()).isEqualTo("MOCK");
+        assertThat(first.mockMode()).isTrue();
+        assertThat(first.createdAt()).isNotBlank();
+        assertThat(first.preview()).isEqualTo(newestText.substring(0, 140) + "…");
+    }
+
+    @Test
+    void replaysTheCompleteStoredFeedback() throws Exception {
+        String text = "I have a problem with this sentence. The second sentence is also long. " + words(460);
+        PracticeBody created = objectMapper.readValue(postPractice(text).body(), PracticeBody.class);
+
+        HttpResponse<String> response = get(API_PATH + "/" + created.id());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        PracticeBody replayed = objectMapper.readValue(response.body(), PracticeBody.class);
+        assertThat(replayed.id()).isEqualTo(created.id());
+        assertThat(replayed.writingText()).isEqualTo(text);
+        assertThat(replayed.wordCount()).isEqualTo(created.wordCount());
+        assertThat(replayed.modelMode()).isEqualTo(created.modelMode());
+        assertThat(replayed.mockMode()).isEqualTo(created.mockMode());
+        assertThat(replayed.feedback()).isEqualTo(created.feedback());
+        assertThat(replayed.createdAt()).isNotBlank();
+        assertFeedbackContract(replayed.feedback());
+
+        jdbcClient.sql("""
+                        UPDATE practice_attempt
+                        SET structured_response = jsonb_set(
+                                structured_response,
+                                '{correction}',
+                                to_jsonb(CAST(:correction AS text))
+                            )
+                        WHERE id = :id
+                        """)
+                .param("correction", "仅来自已保存快照的纠错稿。")
+                .param("id", created.id())
+                .update();
+
+        PracticeBody fromSnapshot = objectMapper.readValue(
+                get(API_PATH + "/" + created.id()).body(),
+                PracticeBody.class);
+        assertThat(fromSnapshot.feedback().correction()).isEqualTo("仅来自已保存快照的纠错稿。");
+    }
+
+    @Test
+    void returnsStableNotFoundForMissingAttempt() throws Exception {
+        HttpResponse<String> response = get(API_PATH + "/" + UUID.randomUUID());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
+        assertThat(error.code()).isEqualTo("PRACTICE_ATTEMPT_NOT_FOUND");
+        assertThat(error.message()).containsPattern("[\\u4e00-\\u9fff]");
+
+        HttpResponse<String> malformed = get(API_PATH + "/not-a-uuid");
+        assertThat(malformed.statusCode()).isEqualTo(400);
+        assertThat(objectMapper.readValue(malformed.body(), ErrorBody.class).code())
+                .isEqualTo("VALIDATION_ERROR");
+    }
 
     @ParameterizedTest
     @ValueSource(ints = {199, 501})
@@ -173,7 +264,7 @@ class PracticeApiIntegrationTest {
 
     @Test
     void returnsStableErrorForUnsupportedMethods() throws Exception {
-        HttpResponse<String> response = get(API_PATH);
+        HttpResponse<String> response = put(API_PATH);
 
         assertThat(response.statusCode()).isEqualTo(405);
         ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
@@ -222,6 +313,37 @@ class PracticeApiIntegrationTest {
                 .GET()
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> put(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private UUID insertAttempt(String text, int wordCount, String level, Instant createdAt) {
+        UUID id = UUID.randomUUID();
+        jdbcClient.sql("""
+                        INSERT INTO practice_attempt (
+                            id, writing_text, word_count, correction, natural_revision,
+                            estimated_level, grammar_score, vocabulary_score, coherence_score,
+                            strengths, structured_response, model_mode, created_at
+                        ) VALUES (
+                            :id, :text, :wordCount, :correction, :naturalRevision,
+                            :level, 3, 3, 3, '[]'::jsonb, '{}'::jsonb, 'MOCK', :createdAt
+                        )
+                        """)
+                .param("id", id)
+                .param("text", text)
+                .param("wordCount", wordCount)
+                .param("correction", text)
+                .param("naturalRevision", text)
+                .param("level", level)
+                .param("createdAt", Timestamp.from(createdAt))
+                .update();
+        return id;
     }
 
     private HttpResponse<String> preflight(String origin) throws Exception {
@@ -273,6 +395,17 @@ class PracticeApiIntegrationTest {
     }
 
     private record CreateBody(String text) {
+    }
+
+    private record SummaryBody(
+            UUID id,
+            String createdAt,
+            int wordCount,
+            String estimatedLevel,
+            String modelMode,
+            boolean mockMode,
+            String preview
+    ) {
     }
 
     private record PracticeBody(
