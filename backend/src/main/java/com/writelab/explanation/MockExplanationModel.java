@@ -3,13 +3,11 @@ package com.writelab.explanation;
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueSeverity;
 import com.writelab.feedback.LearningIssue;
-import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
 
-@Component
 public class MockExplanationModel implements ExplanationModel {
 
     @Override

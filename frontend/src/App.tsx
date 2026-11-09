@@ -4,6 +4,7 @@ import {
   ApiRequestError,
   createPractice,
   deleteSavedVocabulary,
+  getModelMode,
   getPractice,
   listPractices,
   listSavedVocabulary,
@@ -56,6 +57,7 @@ function countMessage(wordCount: number): string {
 export default function App() {
   const [writingText, setWritingText] = useState('');
   const [result, setResult] = useState<PracticeResponse | null>(null);
+  const [serverMockMode, setServerMockMode] = useState<boolean | null>(null);
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [explanation, setExplanation] = useState('');
@@ -80,7 +82,7 @@ export default function App() {
   const wordCount = countWords(writingText);
   const currentCountState = countState(wordCount);
   const canSubmit = status !== 'submitting' && currentCountState === 'valid';
-  const isMock = result?.mockMode ?? true;
+  const isMock = result?.mockMode ?? serverMockMode ?? true;
   const savedWords = new Set(savedVocabulary.map((entry) => entry.word.toLowerCase()));
 
   const loadSavedVocabulary = useCallback(async () => {
@@ -100,6 +102,22 @@ export default function App() {
   useEffect(() => {
     void loadSavedVocabulary();
   }, [loadSavedVocabulary]);
+
+  useEffect(() => {
+    let active = true;
+    getModelMode()
+      .then((info) => {
+        if (active) {
+          setServerMockMode(info.mockMode);
+        }
+      })
+      .catch(() => {
+        // Fall back to the result-derived mode if the endpoint is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {

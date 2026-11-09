@@ -69,6 +69,17 @@ class PracticeApiIntegrationTest {
     }
 
     @Test
+    void reportsCurrentModelMode() throws Exception {
+        HttpResponse<String> response = get("/api/model-mode");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = objectMapper.readValue(response.body(), Map.class);
+        assertThat(body.get("modelMode")).isEqualTo("MOCK");
+        assertThat(body.get("mockMode")).isEqualTo(true);
+    }
+
+    @Test
     void listsAttemptsNewestFirstWithSummaries() throws Exception {
         String newestText = "newest attempt " + "practice ".repeat(40);
         Instant base = Instant.parse("2026-01-01T00:00:00Z");

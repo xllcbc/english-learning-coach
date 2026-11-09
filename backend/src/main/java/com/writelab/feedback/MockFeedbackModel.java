@@ -6,7 +6,6 @@ import com.writelab.tools.LookupResult;
 import com.writelab.tools.LookupWordRecorder;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.writing.WordCounter;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,7 +14,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@Component
 public class MockFeedbackModel implements FeedbackModel {
 
     private static final int SIMULATED_LOOKUP_ATTEMPTS = LookupWordTool.MAX_AUTOMATIC_LOOKUPS + 1;

@@ -92,6 +92,15 @@ export function getPractice(id: string): Promise<PracticeResponse> {
   return request<PracticeResponse>(`/api/practices/${encodeURIComponent(id)}`);
 }
 
+export interface ModelModeInfo {
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+}
+
+export function getModelMode(): Promise<ModelModeInfo> {
+  return request<ModelModeInfo>('/api/model-mode');
+}
+
 export interface ExplanationStreamHandlers {
   onStart?: (replay: boolean) => void;
   onDelta: (text: string) => void;

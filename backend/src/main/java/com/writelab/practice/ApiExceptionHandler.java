@@ -2,6 +2,8 @@ package com.writelab.practice;
 
 import com.writelab.dictionary.DictionaryEntryNotFoundException;
 import com.writelab.feedback.InvalidFeedbackException;
+import com.writelab.feedback.ModelCallException;
+import com.writelab.feedback.ModelGenerationException;
 import com.writelab.vocabulary.SavedVocabularyNotFoundException;
 import com.writelab.vocabulary.VocabularyAlreadySavedException;
 import com.writelab.vocabulary.VocabularySuggestionNotFoundException;
@@ -83,6 +85,20 @@ public class ApiExceptionHandler {
         log.error("结构化反馈未通过校验: {}", exception.errors());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ApiError("INVALID_MODEL_RESPONSE", "模型返回的反馈格式不符合要求，请稍后重试。"));
+    }
+
+    @ExceptionHandler(ModelGenerationException.class)
+    ResponseEntity<ApiError> handleModelGeneration(ModelGenerationException exception) {
+        log.warn("真实模型在重试后仍未通过校验: errors={}", exception.errors());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ApiError("MODEL_GENERATION_FAILED", "模型多次返回的内容不符合要求，请稍后重试。"));
+    }
+
+    @ExceptionHandler(ModelCallException.class)
+    ResponseEntity<ApiError> handleModelCall(ModelCallException exception) {
+        log.warn("真实模型调用失败", exception.getCause() != null ? exception.getCause() : exception);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ApiError("MODEL_CALL_FAILED", "模型服务暂时不可用，请稍后重试。"));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

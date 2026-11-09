@@ -14,3 +14,14 @@ server:
 writelab:
   cors:
     allowed-origins: ${WRITELAB_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  model:
+    base-url: ${WRITELAB_MODEL_BASE_URL:https://api.openai.com}
+    # A blank API key selects the deterministic Mock mode.
+    api-key: ${WRITELAB_MODEL_API_KEY:}
+    name: ${WRITELAB_MODEL_NAME:gpt-4o-mini}
+
+logging:
+  level:
+    # Keep full prompts and model secrets out of ordinary logs.
+    org.springframework.ai: WARN
+    com.openai: WARN
