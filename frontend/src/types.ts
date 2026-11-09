@@ -65,3 +65,16 @@ export interface ApiError {
   code: string;
   message: string;
 }
+
+export interface DictionaryEntry {
+  word: string;
+  phonetic: string;
+  partOfSpeech: string;
+  meaningZh: string;
+  exampleEn: string;
+}
+
+export interface SavedVocabularyEntry extends DictionaryEntry {
+  id: string;
+  createdAt: string;
+}

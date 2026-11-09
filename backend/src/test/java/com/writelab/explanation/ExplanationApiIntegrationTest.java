@@ -146,7 +146,7 @@ class ExplanationApiIntegrationTest {
 
         assertThat(response.statusCode()).isEqualTo(400);
         ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
-        assertThat(error.code()).isEqualTo("INVALID_REQUEST");
+        assertThat(error.code()).isEqualTo("INVALID_PATH_PARAMETER");
     }
 
     @TestConfiguration
