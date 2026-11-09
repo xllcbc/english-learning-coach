@@ -21,6 +21,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -162,6 +163,133 @@ class PracticeApiIntegrationTest {
     }
 
     @Test
+    void skipsAutomaticLookupWhenWritingHasNoCandidateWords() throws Exception {
+        PracticeBody body = objectMapper.readValue(postPractice(words(260)).body(), PracticeBody.class);
+
+        assertThat(body.toolInvocations()).isEmpty();
+    }
+
+    @Test
+    void performsOneAutomaticLookupAndUsesDictionaryEntryInSuggestion() throws Exception {
+        String text = withCandidates(220, "moreover");
+
+        PracticeBody body = objectMapper.readValue(postPractice(text).body(), PracticeBody.class);
+
+        assertThat(body.toolInvocations()).hasSize(1);
+        ToolInvocationBody invocation = body.toolInvocations().getFirst();
+        assertThat(invocation.toolName()).isEqualTo("lookup_word");
+        assertThat(invocation.arguments()).containsEntry("word", "moreover");
+        assertThat(invocation.status()).isEqualTo("SUCCESS");
+        assertThat(invocation.durationMillis()).isGreaterThanOrEqualTo(0);
+
+        Map<String, Object> entry = dictionaryEntry("moreover");
+        VocabBody suggestion = vocabularyFor(body, "moreover");
+        assertThat(suggestion.explanation()).contains((String) entry.get("phonetic"));
+        assertThat(suggestion.explanation()).contains((String) entry.get("meaning_zh"));
+        assertThat(suggestion.example()).isEqualTo(entry.get("example_en"));
+    }
+
+    @Test
+    void performsTwoAutomaticLookupsWhenTwoCandidateWordsAppear() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "moreover", "consequently")).body(),
+                PracticeBody.class
+        );
+
+        assertThat(body.toolInvocations())
+                .extracting(ToolInvocationBody::status)
+                .containsExactly("SUCCESS", "SUCCESS");
+        assertThat(body.toolInvocations())
+                .extracting(invocation -> invocation.arguments().get("word"))
+                .containsExactly("moreover", "consequently");
+
+        assertThat(vocabularyFor(body, "moreover").explanation())
+                .contains((String) dictionaryEntry("moreover").get("meaning_zh"));
+        assertThat(vocabularyFor(body, "consequently").explanation())
+                .contains((String) dictionaryEntry("consequently").get("meaning_zh"));
+    }
+
+    @Test
+    void blocksTheThirdAutomaticLookupButStillReturnsFeedback() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "moreover", "consequently", "effective")).body(),
+                PracticeBody.class
+        );
+
+        assertThat(body.toolInvocations())
+                .extracting(ToolInvocationBody::status)
+                .containsExactly("SUCCESS", "SUCCESS", "BLOCKED");
+        assertThat(body.toolInvocations().getLast().arguments()).containsEntry("word", "effective");
+        assertThat(body.toolInvocations().getLast().durationMillis()).isZero();
+
+        assertThat(body.feedback().correction()).isNotBlank();
+        assertThat(body.feedback().naturalRevision()).isNotBlank();
+        assertThat(body.feedback().vocabularySuggestions())
+                .extracting(VocabBody::word)
+                .containsExactly("moreover", "consequently");
+    }
+
+    @Test
+    void persistsToolInvocationsWithoutSensitiveContent() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "moreover", "consequently")).body(),
+                PracticeBody.class
+        );
+
+        List<Map<String, Object>> rows = jdbcClient.sql("""
+                        SELECT tool_name, arguments::text AS arguments, result_status, duration_millis
+                        FROM tool_invocation
+                        WHERE practice_attempt_id = :id
+                        ORDER BY position
+                        """)
+                .param("id", body.id())
+                .query()
+                .listOfRows();
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows)
+                .extracting(row -> row.get("tool_name"))
+                .containsExactly("lookup_word", "lookup_word");
+        assertThat(rows)
+                .extracting(row -> row.get("result_status"))
+                .containsExactly("SUCCESS", "SUCCESS");
+        for (Map<String, Object> row : rows) {
+            String arguments = (String) row.get("arguments");
+            Map<String, Object> parsed = objectMapper.readValue(arguments, Map.class);
+            assertThat(parsed).containsOnlyKeys("word");
+            assertThat(arguments.toLowerCase()).doesNotContain("prompt", "api_key", "apikey", "secret");
+            assertThat(((Number) row.get("duration_millis")).longValue()).isGreaterThanOrEqualTo(0);
+        }
+    }
+
+    @Test
+    void replaysSavedToolInvocationsWhenFetchingAnAttempt() throws Exception {
+        PracticeBody created = objectMapper.readValue(
+                postPractice(withCandidates(220, "moreover", "consequently")).body(),
+                PracticeBody.class
+        );
+
+        HttpResponse<String> response = get(API_PATH + "/" + created.id());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        PracticeBody replayed = objectMapper.readValue(response.body(), PracticeBody.class);
+        assertThat(replayed.id()).isEqualTo(created.id());
+        assertThat(replayed.writingText()).isEqualTo(created.writingText());
+        assertThat(replayed.feedback()).isEqualTo(created.feedback());
+        assertThat(replayed.toolInvocations()).isEqualTo(created.toolInvocations());
+    }
+
+    @Test
+    void returnsStableErrorForUnknownPracticeAttempt() throws Exception {
+        HttpResponse<String> response = get(API_PATH + "/" + UUID.randomUUID());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
+        assertThat(error.code()).isEqualTo("PRACTICE_NOT_FOUND");
+        assertThat(error.message()).containsPattern("[\\u4e00-\\u9fff]");
+    }
+
+    @Test
     void rejectsBlankWriting() throws Exception {
         HttpResponse<String> response = postPractice("   ");
 
@@ -272,6 +400,28 @@ class PracticeApiIntegrationTest {
         return String.join(" ", Collections.nCopies(count, "practice"));
     }
 
+    private static String withCandidates(int baseWords, String... candidates) {
+        return String.join(", ", candidates) + ". " + words(baseWords);
+    }
+
+    private Map<String, Object> dictionaryEntry(String word) {
+        return jdbcClient.sql("""
+                        SELECT word, phonetic, part_of_speech, meaning_zh, example_en
+                        FROM dictionary_entry
+                        WHERE word = :word
+                        """)
+                .param("word", word)
+                .query()
+                .singleRow();
+    }
+
+    private static VocabBody vocabularyFor(PracticeBody body, String word) {
+        return body.feedback().vocabularySuggestions().stream()
+                .filter(suggestion -> suggestion.word().equals(word))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("缺少词汇建议: " + word));
+    }
+
     private record CreateBody(String text) {
     }
 
@@ -282,7 +432,16 @@ class PracticeApiIntegrationTest {
             String modelMode,
             boolean mockMode,
             FeedbackBody feedback,
+            List<ToolInvocationBody> toolInvocations,
             String createdAt
+    ) {
+    }
+
+    private record ToolInvocationBody(
+            String toolName,
+            Map<String, String> arguments,
+            String status,
+            long durationMillis
     ) {
     }
 

@@ -24,6 +24,12 @@ public class ApiExceptionHandler {
                 .body(new ApiError("WORD_COUNT_OUT_OF_RANGE", exception.getMessage()));
     }
 
+    @ExceptionHandler(PracticeNotFoundException.class)
+    ResponseEntity<ApiError> handlePracticeNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("PRACTICE_NOT_FOUND", "找不到对应的练习记录，请刷新后重试。"));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException exception) {
         String message = exception.getBindingResult().getFieldErrors().stream()

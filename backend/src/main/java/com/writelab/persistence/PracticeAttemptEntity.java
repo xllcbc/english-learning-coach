@@ -26,6 +26,8 @@ public record PracticeAttemptEntity(
         @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
         List<LearningIssueEntity> learningIssues,
         @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
-        List<VocabularySuggestionEntity> vocabularySuggestions
+        List<VocabularySuggestionEntity> vocabularySuggestions,
+        @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
+        List<ToolInvocationEntity> toolInvocations
 ) {
 }

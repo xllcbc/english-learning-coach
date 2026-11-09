@@ -4,5 +4,5 @@ public interface FeedbackModel {
 
     ModelMode mode();
 
-    StructuredFeedback generate(String writingText);
+    FeedbackResult generate(String writingText);
 }

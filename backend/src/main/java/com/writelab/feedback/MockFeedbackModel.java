@@ -1,14 +1,32 @@
 package com.writelab.feedback;
 
+import com.writelab.dictionary.DictionaryEntry;
+import com.writelab.dictionary.DictionaryService;
+import com.writelab.tools.LookupResult;
+import com.writelab.tools.LookupWordRecorder;
+import com.writelab.tools.LookupWordTool;
 import com.writelab.writing.WordCounter;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class MockFeedbackModel implements FeedbackModel {
+
+    private static final int SIMULATED_LOOKUP_ATTEMPTS = LookupWordTool.MAX_AUTOMATIC_LOOKUPS + 1;
+
+    private final LookupWordTool lookupWordTool;
+    private final DictionaryService dictionaryService;
+
+    public MockFeedbackModel(LookupWordTool lookupWordTool, DictionaryService dictionaryService) {
+        this.lookupWordTool = lookupWordTool;
+        this.dictionaryService = dictionaryService;
+    }
 
     @Override
     public ModelMode mode() {
@@ -16,7 +34,9 @@ public class MockFeedbackModel implements FeedbackModel {
     }
 
     @Override
-    public StructuredFeedback generate(String writingText) {
+    public FeedbackResult generate(String writingText) {
+        LookupWordRecorder lookupRecorder = lookupWordTool.newRecorder();
+        List<VocabularySuggestion> vocabularySuggestions = lookupVocabulary(writingText, lookupRecorder);
         int wordCount = WordCounter.count(writingText);
         String correction = tidy(writingText);
         String naturalRevision = naturalize(correction);
@@ -57,7 +77,7 @@ public class MockFeedbackModel implements FeedbackModel {
             ));
         }
 
-        return new StructuredFeedback(
+        StructuredFeedback feedback = new StructuredFeedback(
                 correction,
                 naturalRevision,
                 levelFor(wordCount),
@@ -68,17 +88,61 @@ public class MockFeedbackModel implements FeedbackModel {
                 ),
                 List.copyOf(strengths),
                 List.copyOf(issues),
-                List.of(
-                        new VocabularySuggestion(
-                                "moreover",
-                                "用于补充递进关系，让论证更连贯。",
-                                "Moreover, daily practice makes writing more fluent."
-                        ),
-                        new VocabularySuggestion(
-                                "consequently",
-                                "用于表达因果关系，避免反复使用 so。",
-                                "Consequently, the reader can follow your argument more easily."
-                        )
+                vocabularySuggestions
+        );
+        return new FeedbackResult(feedback, lookupRecorder.invocations());
+    }
+
+    private List<VocabularySuggestion> lookupVocabulary(String writingText, LookupWordRecorder recorder) {
+        List<String> candidates = mentionedWords(writingText, dictionaryService.findAll());
+        List<VocabularySuggestion> suggestions = new ArrayList<>();
+        int attempts = Math.min(candidates.size(), SIMULATED_LOOKUP_ATTEMPTS);
+        for (int index = 0; index < attempts; index++) {
+            LookupResult result = recorder.lookup(candidates.get(index));
+            if (result.found()) {
+                suggestions.add(suggestionFromEntry(result.entry()));
+            }
+        }
+        return suggestions.isEmpty() ? defaultSuggestions() : List.copyOf(suggestions);
+    }
+
+    private static List<String> mentionedWords(String writingText, List<DictionaryEntry> entries) {
+        record Candidate(String word, int index) {
+        }
+        return entries.stream()
+                .map(entry -> new Candidate(entry.word(), firstMention(writingText, entry.word())))
+                .filter(candidate -> candidate.index() >= 0)
+                .sorted(Comparator.comparingInt(Candidate::index))
+                .map(Candidate::word)
+                .toList();
+    }
+
+    private static int firstMention(String writingText, String word) {
+        Matcher matcher = Pattern
+                .compile("\\b" + Pattern.quote(word) + "\\b", Pattern.CASE_INSENSITIVE)
+                .matcher(writingText);
+        return matcher.find() ? matcher.start() : -1;
+    }
+
+    private static VocabularySuggestion suggestionFromEntry(DictionaryEntry entry) {
+        return new VocabularySuggestion(
+                entry.word(),
+                entry.partOfSpeech() + " " + entry.phonetic() + " · " + entry.meaningZh(),
+                entry.exampleEn()
+        );
+    }
+
+    private static List<VocabularySuggestion> defaultSuggestions() {
+        return List.of(
+                new VocabularySuggestion(
+                        "moreover",
+                        "用于补充递进关系，让论证更连贯。",
+                        "Moreover, daily practice makes writing more fluent."
+                ),
+                new VocabularySuggestion(
+                        "consequently",
+                        "用于表达因果关系，避免反复使用 so。",
+                        "Consequently, the reader can follow your argument more easily."
                 )
         );
     }

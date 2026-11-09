@@ -2,8 +2,10 @@ package com.writelab.practice;
 
 import com.writelab.feedback.ModelMode;
 import com.writelab.feedback.StructuredFeedback;
+import com.writelab.tools.ToolInvocation;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record PracticeResponse(
@@ -13,6 +15,7 @@ public record PracticeResponse(
         ModelMode modelMode,
         boolean mockMode,
         StructuredFeedback feedback,
+        List<ToolInvocation> toolInvocations,
         Instant createdAt
 ) {
 }

@@ -39,6 +39,15 @@ export interface StructuredFeedback {
   vocabularySuggestions: VocabularySuggestion[];
 }
 
+export type ToolInvocationStatus = 'SUCCESS' | 'NOT_FOUND' | 'BLOCKED' | 'FAILED';
+
+export interface ToolInvocation {
+  toolName: string;
+  arguments: Record<string, string>;
+  status: ToolInvocationStatus;
+  durationMillis: number;
+}
+
 export interface PracticeResponse {
   id: string;
   writingText: string;
@@ -46,6 +55,7 @@ export interface PracticeResponse {
   modelMode: 'MOCK' | 'REAL';
   mockMode: boolean;
   feedback: StructuredFeedback;
+  toolInvocations: ToolInvocation[];
   createdAt: string;
 }
 

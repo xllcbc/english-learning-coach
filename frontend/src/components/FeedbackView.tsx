@@ -1,5 +1,44 @@
 import { categoryLabels, levelDescriptions, scoreLabels, severityLabels } from '../labels';
-import type { PracticeResponse } from '../types';
+import type { PracticeResponse, ToolInvocation, ToolInvocationStatus } from '../types';
+
+const toolStatusLabels: Record<ToolInvocationStatus, string> = {
+  SUCCESS: '成功',
+  NOT_FOUND: '未找到',
+  BLOCKED: '超出上限',
+  FAILED: '失败',
+};
+
+function ToolTrace({ invocations }: { invocations: ToolInvocation[] }) {
+  return (
+    <section className="feedback-section" aria-labelledby="tool-trace-title">
+      <details className="tool-trace">
+        <summary id="tool-trace-title">
+          <span className="tool-trace-heading">Tool Invocation 轨迹</span>
+          <span className="count-badge">{invocations.length} 次</span>
+        </summary>
+
+        {invocations.length === 0 ? (
+          <p className="muted tool-trace-empty">本次反馈没有自动查词。</p>
+        ) : (
+          <ol className="tool-invocation-list">
+            {invocations.map((invocation, index) => (
+              <li className="tool-invocation" key={`${invocation.toolName}-${index}`}>
+                <span className="tool-name">{invocation.toolName}</span>
+                <span className="tool-word">{invocation.arguments.word ?? '—'}</span>
+                <span className={`tool-status tool-status-${invocation.status.toLowerCase()}`}>
+                  {toolStatusLabels[invocation.status]}
+                </span>
+                <span className="tool-duration">{invocation.durationMillis} ms</span>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        <p className="tool-note">自动查词有次数上限，结果仅用于整理词汇建议，不会自动保存。</p>
+      </details>
+    </section>
+  );
+}
 
 function ScoreMeter({ label, value }: { label: string; value: number }) {
   return (
@@ -140,6 +179,8 @@ export function FeedbackView({ result }: { result: PracticeResponse }) {
           </div>
         )}
       </section>
+
+      <ToolTrace invocations={result.toolInvocations} />
     </div>
   );
 }
