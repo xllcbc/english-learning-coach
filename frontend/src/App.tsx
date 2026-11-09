@@ -4,6 +4,8 @@ import {
   ApiRequestError,
   createPractice,
   deleteSavedVocabulary,
+  getPractice,
+  listPractices,
   listSavedVocabulary,
   saveVocabulary,
   streamExplanation,
@@ -11,12 +13,21 @@ import {
 } from './api';
 import { ExplanationView } from './components/ExplanationView';
 import { FeedbackView } from './components/FeedbackView';
+import { HistoryPanel } from './components/HistoryPanel';
+import type { HistoryStatus } from './components/HistoryPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
-import type { ExplanationStatus, PracticeResponse, SavedVocabularyEntry } from './types';
+import { formatTimestamp } from './format';
+import type {
+  ExplanationStatus,
+  PracticeResponse,
+  PracticeSummary,
+  SavedVocabularyEntry,
+} from './types';
 import { countWords, MAX_WORDS, MIN_WORDS } from './wordCount';
 
 type RequestStatus = 'idle' | 'submitting' | 'error';
+type DetailStatus = 'idle' | 'loading' | 'error';
 type CountState = 'empty' | 'valid' | 'invalid';
 
 function countState(wordCount: number): CountState {
@@ -42,20 +53,6 @@ function countMessage(wordCount: number): string {
   return `词数符合要求，可以提交。`;
 }
 
-function formatTimestamp(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
 export default function App() {
   const [writingText, setWritingText] = useState('');
   const [result, setResult] = useState<PracticeResponse | null>(null);
@@ -70,6 +67,15 @@ export default function App() {
   const [savedError, setSavedError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<SavedVocabularyDeleteError | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const [history, setHistory] = useState<PracticeSummary[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailStatus, setDetailStatus] = useState<DetailStatus>('idle');
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRequest = useRef(0);
+  const feedbackHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const wordCount = countWords(writingText);
   const currentCountState = countState(wordCount);
@@ -171,6 +177,59 @@ export default function App() {
     }
   }
 
+  async function refreshHistory() {
+    try {
+      const attempts = await listPractices();
+      setHistory(attempts);
+      setHistoryStatus('ready');
+    } catch {
+      setHistoryStatus('error');
+    }
+  }
+
+  useEffect(() => {
+    setHistoryStatus('loading');
+    void refreshHistory();
+  }, []);
+
+  async function handleHistoryRetry() {
+    setHistoryStatus('loading');
+    await refreshHistory();
+  }
+
+  async function handleSelect(id: string) {
+    const requestId = detailRequest.current + 1;
+    detailRequest.current = requestId;
+
+    setSelectedId(id);
+    setDetailStatus('loading');
+    setDetailError(null);
+    setErrorMessage(null);
+
+    try {
+      const practice = await getPractice(id);
+      if (requestId !== detailRequest.current) {
+        return;
+      }
+      setResult(practice);
+      setWritingText(practice.writingText);
+      setStatus('idle');
+      setDetailStatus('idle');
+      setHistoryCollapsed(true);
+      feedbackHeadingRef.current?.focus();
+    } catch (error) {
+      if (requestId !== detailRequest.current) {
+        return;
+      }
+      setDetailStatus('error');
+      setDetailError(
+        error instanceof ApiRequestError
+          ? error.message
+          : '无法加载该练习记录，请确认服务已启动。',
+      );
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) {
@@ -182,12 +241,16 @@ export default function App() {
     setErrorMessage(null);
     setResult(null);
     resetExplanation('idle');
+    setDetailStatus('idle');
+    setDetailError(null);
 
     try {
       const practice = await createPractice(writingText);
       setResult(practice);
+      setSelectedId(practice.id);
       setStatus('idle');
       void startExplanation(practice.id);
+      void refreshHistory();
     } catch (error) {
       setStatus('error');
       setErrorMessage(toErrorMessage(error));
@@ -253,6 +316,16 @@ export default function App() {
       )}
 
       <main className="workspace">
+        <HistoryPanel
+          summaries={history}
+          status={historyStatus}
+          selectedId={selectedId}
+          collapsed={historyCollapsed}
+          onSelect={handleSelect}
+          onRetry={handleHistoryRetry}
+          onToggle={() => setHistoryCollapsed((collapsed) => !collapsed)}
+        />
+
         <section className="panel editor-panel" aria-labelledby="editor-title">
           <div className="panel-heading">
             <div>
@@ -299,7 +372,9 @@ export default function App() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Structured Feedback</p>
-              <h2 id="feedback-title">结构化反馈</h2>
+              <h2 id="feedback-title" ref={feedbackHeadingRef} tabIndex={-1}>
+                结构化反馈
+              </h2>
             </div>
             {result && (
               <span className="result-meta">
@@ -316,19 +391,38 @@ export default function App() {
             </div>
           )}
 
-          {status !== 'submitting' && !result && (
+          {status !== 'submitting' && detailStatus === 'loading' && (
+            <div className="loading-state" role="status">
+              <span className="spinner" aria-hidden="true" />
+              <h3>正在加载这次练习记录…</h3>
+              <p>正在读取已保存的完整反馈。</p>
+            </div>
+          )}
+
+          {status !== 'submitting' && detailStatus === 'error' && (
+            <div className="error-banner detail-error" role="alert">
+              <p>{detailError}</p>
+              {selectedId && (
+                <button type="button" className="inline-retry" onClick={() => handleSelect(selectedId)}>
+                  重新加载
+                </button>
+              )}
+            </div>
+          )}
+
+          {status !== 'submitting' && detailStatus === 'idle' && !result && (
             <div className="empty-state">
               <span className="empty-icon" aria-hidden="true">
                 ✎
               </span>
               <h3>还没有反馈</h3>
               <p>
-                提交一篇 200-500 词的英文写作后，这里会展示纠错稿、自然改写、估计等级、评分、优点、学习问题和词汇建议。
+                提交一篇 200-500 词的英文写作后，这里会展示纠错稿、自然改写、估计等级、评分、优点、学习问题和词汇建议。也可以从练习历史回放过去的 Practice Attempt。
               </p>
             </div>
           )}
 
-          {status !== 'submitting' && result && (
+          {status !== 'submitting' && detailStatus !== 'loading' && result && (
             <FeedbackView
               result={result}
               savedWords={savedWords}

@@ -61,6 +61,16 @@ export interface PracticeResponse {
   createdAt: string;
 }
 
+export interface PracticeSummary {
+  id: string;
+  createdAt: string;
+  wordCount: number;
+  estimatedLevel: EstimatedLevel;
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+  preview: string;
+}
+
 export interface ApiError {
   code: string;
   message: string;

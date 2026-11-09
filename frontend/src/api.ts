@@ -2,6 +2,7 @@ import type {
   ApiError,
   DictionaryEntry,
   PracticeResponse,
+  PracticeSummary,
   SavedVocabularyEntry,
 } from './types';
 
@@ -81,6 +82,14 @@ export function deleteSavedVocabulary(id: string): Promise<void> {
   return request<void>(`/api/saved-vocabulary/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
+}
+
+export function listPractices(): Promise<PracticeSummary[]> {
+  return request<PracticeSummary[]>('/api/practices');
+}
+
+export function getPractice(id: string): Promise<PracticeResponse> {
+  return request<PracticeResponse>(`/api/practices/${encodeURIComponent(id)}`);
 }
 
 export interface ExplanationStreamHandlers {

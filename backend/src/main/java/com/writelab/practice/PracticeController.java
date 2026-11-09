@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,6 +27,11 @@ public class PracticeController {
     @ResponseStatus(HttpStatus.CREATED)
     public PracticeResponse create(@Valid @RequestBody CreatePracticeRequest request) {
         return practiceService.create(request.text());
+    }
+
+    @GetMapping
+    public List<PracticeAttemptSummary> list() {
+        return practiceService.list();
     }
 
     @GetMapping("/{id}")
