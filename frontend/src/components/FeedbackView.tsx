@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { categoryLabels, levelDescriptions, scoreLabels, severityLabels } from '../labels';
 import type { PracticeResponse, ToolInvocation, ToolInvocationStatus } from '../types';
 
@@ -69,7 +70,13 @@ function ScoreMeter({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function FeedbackView({ result }: { result: PracticeResponse }) {
+export function FeedbackView({
+  result,
+  children,
+}: {
+  result: PracticeResponse;
+  children?: ReactNode;
+}) {
   const { feedback } = result;
   const { scores, learningIssues, vocabularySuggestions } = feedback;
 
@@ -90,6 +97,8 @@ export function FeedbackView({ result }: { result: PracticeResponse }) {
           <ScoreMeter label={scoreLabels.coherence} value={scores.coherence} />
         </div>
       </div>
+
+      {children}
 
       <section className="feedback-section" aria-labelledby="strengths-title">
         <div className="section-title-row">

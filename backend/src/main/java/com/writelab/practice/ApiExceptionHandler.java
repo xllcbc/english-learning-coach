@@ -11,6 +11,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -28,6 +29,12 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> handlePracticeNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiError("PRACTICE_NOT_FOUND", "找不到对应的练习记录，请刷新后重试。"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return ResponseEntity.badRequest()
+                .body(new ApiError("INVALID_REQUEST", "请求参数格式不正确。"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

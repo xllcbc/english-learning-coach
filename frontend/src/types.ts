@@ -9,6 +9,8 @@ export type IssueCategory =
 
 export type IssueSeverity = 'MINOR' | 'MAJOR';
 
+export type ExplanationStatus = 'idle' | 'streaming' | 'complete' | 'error';
+
 export interface Scores {
   grammar: number;
   vocabulary: number;

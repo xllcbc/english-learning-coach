@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ApiRequestError, createPractice } from './api';
+import { ApiRequestError, createPractice, streamExplanation } from './api';
+import { ExplanationView } from './components/ExplanationView';
 import { FeedbackView } from './components/FeedbackView';
-import type { PracticeResponse } from './types';
+import type { ExplanationStatus, PracticeResponse } from './types';
 import { countWords, MAX_WORDS, MIN_WORDS } from './wordCount';
 
 type RequestStatus = 'idle' | 'submitting' | 'error';
@@ -50,11 +51,91 @@ export default function App() {
   const [result, setResult] = useState<PracticeResponse | null>(null);
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState('');
+  const [explanationStatus, setExplanationStatus] = useState<ExplanationStatus>('idle');
+  const [explanationError, setExplanationError] = useState<string | null>(null);
+  const explanationAbort = useRef<AbortController | null>(null);
 
   const wordCount = countWords(writingText);
   const currentCountState = countState(wordCount);
   const canSubmit = status !== 'submitting' && currentCountState === 'valid';
   const isMock = result?.mockMode ?? true;
+
+  useEffect(() => {
+    return () => {
+      explanationAbort.current?.abort();
+    };
+  }, []);
+
+  function cancelExplanation() {
+    explanationAbort.current?.abort();
+    explanationAbort.current = null;
+  }
+
+  function resetExplanation(status: ExplanationStatus) {
+    setExplanation('');
+    setExplanationError(null);
+    setExplanationStatus(status);
+  }
+
+  async function startExplanation(practiceId: string) {
+    cancelExplanation();
+
+    const controller = new AbortController();
+    explanationAbort.current = controller;
+    resetExplanation('streaming');
+
+    try {
+      await streamExplanation(
+        practiceId,
+        {
+          onStart: () => {
+            if (!controller.signal.aborted) {
+              setExplanationStatus('streaming');
+            }
+          },
+          onDelta: (text) => {
+            if (!controller.signal.aborted) {
+              setExplanation((current) => current + text);
+            }
+          },
+          onComplete: (fullText) => {
+            if (!controller.signal.aborted) {
+              setExplanation(fullText);
+              setExplanationStatus('complete');
+            }
+          },
+          onError: (message) => {
+            if (!controller.signal.aborted) {
+              setExplanationError(message);
+              setExplanationStatus('error');
+            }
+          },
+        },
+        controller.signal,
+      );
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      setExplanationError(
+        error instanceof ApiRequestError
+          ? error.message
+          : '无法连接教师讲解服务，请重试。',
+      );
+      setExplanationStatus('error');
+    } finally {
+      if (explanationAbort.current === controller) {
+        explanationAbort.current = null;
+      }
+    }
+  }
+
+  function handleRetryExplanation() {
+    if (result) {
+      void startExplanation(result.id);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,14 +143,17 @@ export default function App() {
       return;
     }
 
+    cancelExplanation();
     setStatus('submitting');
     setErrorMessage(null);
     setResult(null);
+    resetExplanation('idle');
 
     try {
       const practice = await createPractice(writingText);
       setResult(practice);
       setStatus('idle');
+      void startExplanation(practice.id);
     } catch (error) {
       setStatus('error');
       setErrorMessage(
@@ -184,7 +268,16 @@ export default function App() {
             </div>
           )}
 
-          {status !== 'submitting' && result && <FeedbackView result={result} />}
+          {status !== 'submitting' && result && (
+            <FeedbackView result={result}>
+              <ExplanationView
+                status={explanationStatus}
+                text={explanation}
+                error={explanationError}
+                onRetry={handleRetryExplanation}
+              />
+            </FeedbackView>
+          )}
         </section>
       </main>
     </div>
