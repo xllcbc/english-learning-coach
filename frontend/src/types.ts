@@ -1,0 +1,55 @@
+export type EstimatedLevel = 'A2' | 'B1' | 'B2' | 'C1';
+
+export type IssueCategory =
+  | 'GRAMMAR'
+  | 'VOCABULARY'
+  | 'SENTENCE_STRUCTURE'
+  | 'COHERENCE'
+  | 'PUNCTUATION';
+
+export type IssueSeverity = 'MINOR' | 'MAJOR';
+
+export interface Scores {
+  grammar: number;
+  vocabulary: number;
+  coherence: number;
+}
+
+export interface LearningIssue {
+  originalSentence: string;
+  suggestion: string;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  explanation: string;
+}
+
+export interface VocabularySuggestion {
+  word: string;
+  explanation: string;
+  example: string;
+}
+
+export interface StructuredFeedback {
+  correction: string;
+  naturalRevision: string;
+  estimatedLevel: EstimatedLevel;
+  scores: Scores;
+  strengths: string[];
+  learningIssues: LearningIssue[];
+  vocabularySuggestions: VocabularySuggestion[];
+}
+
+export interface PracticeResponse {
+  id: string;
+  writingText: string;
+  wordCount: number;
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+  feedback: StructuredFeedback;
+  createdAt: string;
+}
+
+export interface ApiError {
+  code: string;
+  message: string;
+}
