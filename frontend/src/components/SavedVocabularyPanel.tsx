@@ -86,9 +86,9 @@ export function SavedVocabularyPanel({
               <div className="saved-detail-heading">
                 <div>
                   <h3>{selected.word}</h3>
-                  <p className="saved-phonetic">{selected.phonetic}</p>
+                  {selected.phonetic && <p className="saved-phonetic">{selected.phonetic}</p>}
                 </div>
-                <span className="saved-pos-pill">{selected.partOfSpeech}</span>
+                {selected.partOfSpeech && <span className="saved-pos-pill">{selected.partOfSpeech}</span>}
               </div>
 
               <dl className="saved-detail-grid">
@@ -96,10 +96,12 @@ export function SavedVocabularyPanel({
                   <dt>中文释义</dt>
                   <dd>{selected.meaningZh}</dd>
                 </div>
-                <div>
-                  <dt>英文例句</dt>
-                  <dd>{selected.exampleEn}</dd>
-                </div>
+                {selected.exampleEn && (
+                  <div>
+                    <dt>英文例句</dt>
+                    <dd>{selected.exampleEn}</dd>
+                  </div>
+                )}
               </dl>
 
               {deleteError && deleteError.id === selected.id && (

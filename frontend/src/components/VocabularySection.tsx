@@ -77,7 +77,7 @@ function VocabularySuggestionCard({
         </span>
       </div>
       <p>{suggestion.explanation}</p>
-      <p className="vocabulary-example">{suggestion.example}</p>
+      {suggestion.example && <p className="vocabulary-example">{suggestion.example}</p>}
 
       {lookup.status === 'error' && (
         <div className="inline-error" role="alert">
@@ -91,22 +91,28 @@ function VocabularySuggestionCard({
       {lookup.status === 'found' && (
         <div className="lookup-result" aria-live="polite">
           <dl className="lookup-grid">
-            <div>
-              <dt>音标</dt>
-              <dd>{lookup.entry.phonetic}</dd>
-            </div>
-            <div>
-              <dt>词性</dt>
-              <dd>{lookup.entry.partOfSpeech}</dd>
-            </div>
+            {lookup.entry.phonetic && (
+              <div>
+                <dt>音标</dt>
+                <dd>{lookup.entry.phonetic}</dd>
+              </div>
+            )}
+            {lookup.entry.partOfSpeech && (
+              <div>
+                <dt>词性</dt>
+                <dd>{lookup.entry.partOfSpeech}</dd>
+              </div>
+            )}
             <div>
               <dt>中文释义</dt>
               <dd>{lookup.entry.meaningZh}</dd>
             </div>
-            <div className="lookup-example">
-              <dt>英文例句</dt>
-              <dd>{lookup.entry.exampleEn}</dd>
-            </div>
+            {lookup.entry.exampleEn && (
+              <div className="lookup-example">
+                <dt>英文例句</dt>
+                <dd>{lookup.entry.exampleEn}</dd>
+              </div>
+            )}
           </dl>
 
           <div className="lookup-actions">

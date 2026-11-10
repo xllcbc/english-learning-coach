@@ -30,7 +30,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "writelab.model.api-key="
+)
 @Testcontainers
 class PracticeApiIntegrationTest {
 
@@ -537,8 +540,12 @@ class PracticeApiIntegrationTest {
         });
     }
 
+    /**
+     * "lorem" is deliberately absent from dictionary_entry: filler words the mock model can look up
+     * would change which candidate words the automatic lookups report.
+     */
     private static String words(int count) {
-        return String.join(" ", Collections.nCopies(count, "practice"));
+        return String.join(" ", Collections.nCopies(count, "lorem"));
     }
 
     private static String withCandidates(int baseWords, String... candidates) {

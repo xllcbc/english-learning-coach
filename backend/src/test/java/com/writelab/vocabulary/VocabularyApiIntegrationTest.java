@@ -27,7 +27,10 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "writelab.model.api-key="
+)
 @Testcontainers
 class VocabularyApiIntegrationTest {
 
@@ -75,6 +78,17 @@ class VocabularyApiIntegrationTest {
         ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
         assertThat(error.code()).isEqualTo("DICTIONARY_ENTRY_NOT_FOUND");
         assertThat(error.message()).contains("unknownword", "词典");
+    }
+
+    @Test
+    void manualLookupResolvesEntryFromBundledDataset() throws Exception {
+        HttpResponse<String> response = get("/api/dictionary/focused");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        DictionaryBody entry = objectMapper.readValue(response.body(), DictionaryBody.class);
+        assertThat(entry.word()).isEqualTo("focused");
+        assertThat(entry.meaningZh()).contains("聚焦");
+        assertThat(entry.exampleEn()).isNotBlank();
     }
 
     @Test

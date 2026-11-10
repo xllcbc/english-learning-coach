@@ -4,9 +4,12 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class DictionaryService {
@@ -40,14 +43,25 @@ public class DictionaryService {
                 .optional();
     }
 
-    public List<DictionaryEntry> findAll() {
-        return jdbcClient.sql("""
-                        SELECT word, phonetic, part_of_speech, meaning_zh, example_en
-                        FROM dictionary_entry
-                        ORDER BY word
-                        """)
-                .query(ENTRY_MAPPER)
-                .list();
+    /**
+     * Returns the subset of {@code words} that the dictionary holds, so callers never have to load
+     * the whole dataset into memory.
+     */
+    public Set<String> retainKnown(Collection<String> words) {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String word : words) {
+            String key = normalize(word);
+            if (!key.isEmpty()) {
+                normalized.add(key);
+            }
+        }
+        if (normalized.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(jdbcClient.sql("SELECT word FROM dictionary_entry WHERE word IN (:words)")
+                .param("words", normalized)
+                .query(String.class)
+                .list());
     }
 
     public static String normalize(String word) {

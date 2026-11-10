@@ -8,8 +8,9 @@ import com.writelab.tools.LookupWordTool;
 import com.writelab.writing.WordCounter;
 
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -18,6 +19,18 @@ import java.util.regex.Pattern;
 public class MockFeedbackModel implements FeedbackModel {
 
     private static final int SIMULATED_LOOKUP_ATTEMPTS = LookupWordTool.MAX_AUTOMATIC_LOOKUPS + 1;
+
+    private static final Pattern WORD_TOKEN_PATTERN = Pattern.compile("[a-zA-Z][a-zA-Z']*");
+
+    /** Grammar words a full dictionary also covers, so they are never worth coaching on. */
+    private static final Set<String> FUNCTION_WORDS = Set.of(
+            "that", "this", "with", "from", "have", "were", "been", "being", "will", "would", "could",
+            "should", "might", "must", "shall", "their", "there", "them", "they", "your", "yours",
+            "ours", "hers", "which", "what", "when", "where", "whom", "whose", "because", "than",
+            "then", "into", "onto", "about", "after", "before", "during", "while", "until", "since",
+            "over", "under", "again", "also", "just", "like", "make", "made", "many", "much", "some",
+            "such", "more", "most", "other", "others", "each", "every", "both", "does", "did", "doing"
+    );
 
     private static final List<Map.Entry<String, String>> VOCABULARY_VARIANTS = List.of(
             Map.entry("a lot of", "many"),
@@ -109,40 +122,55 @@ public class MockFeedbackModel implements FeedbackModel {
     }
 
     private List<VocabularySuggestion> lookupVocabulary(String writingText, LookupWordRecorder recorder) {
-        List<String> candidates = mentionedWords(writingText, dictionaryService.findAll());
+        List<String> candidates = mentionedWords(writingText, dictionaryService);
         List<VocabularySuggestion> suggestions = new ArrayList<>();
         int attempts = Math.min(candidates.size(), SIMULATED_LOOKUP_ATTEMPTS);
         for (int index = 0; index < attempts; index++) {
             LookupResult result = recorder.lookup(candidates.get(index));
-            if (result.found()) {
+            // Suggestions always carry an example sentence, so an entry without one is skipped.
+            if (result.found() && !result.entry().exampleEn().isBlank()) {
                 suggestions.add(suggestionFromEntry(result.entry()));
             }
         }
         return suggestions.isEmpty() ? defaultSuggestions() : List.copyOf(suggestions);
     }
 
-    private static List<String> mentionedWords(String writingText, List<DictionaryEntry> entries) {
-        record Candidate(String word, int index) {
-        }
-        return entries.stream()
-                .map(entry -> new Candidate(entry.word(), firstMention(writingText, entry.word())))
-                .filter(candidate -> candidate.index() >= 0)
-                .sorted(Comparator.comparingInt(Candidate::index))
-                .map(Candidate::word)
-                .toList();
+    private static List<String> mentionedWords(String writingText, DictionaryService dictionaryService) {
+        List<String> tokens = orderedTokens(writingText);
+        Set<String> known = dictionaryService.retainKnown(tokens);
+        return tokens.stream().filter(known::contains).toList();
     }
 
-    private static int firstMention(String writingText, String word) {
-        Matcher matcher = Pattern
-                .compile("\\b" + Pattern.quote(word) + "\\b", Pattern.CASE_INSENSITIVE)
-                .matcher(writingText);
-        return matcher.find() ? matcher.start() : -1;
+    /**
+     * Words the learner used, in order of first mention, minus the grammar words that a full
+     * dictionary also happens to cover.
+     */
+    private static List<String> orderedTokens(String writingText) {
+        Set<String> tokens = new LinkedHashSet<>();
+        Matcher matcher = WORD_TOKEN_PATTERN.matcher(writingText);
+        while (matcher.find()) {
+            String token = matcher.group().toLowerCase(Locale.ROOT);
+            if (token.length() >= 4 && !FUNCTION_WORDS.contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return List.copyOf(tokens);
     }
 
     private static VocabularySuggestion suggestionFromEntry(DictionaryEntry entry) {
+        StringBuilder explanation = new StringBuilder();
+        if (!entry.partOfSpeech().isBlank()) {
+            explanation.append(entry.partOfSpeech()).append(' ');
+        }
+        if (!entry.phonetic().isBlank()) {
+            explanation.append(entry.phonetic()).append(' ');
+        }
+        if (!explanation.isEmpty()) {
+            explanation.append("· ");
+        }
         return new VocabularySuggestion(
                 entry.word(),
-                entry.partOfSpeech() + " " + entry.phonetic() + " · " + entry.meaningZh(),
+                explanation.append(entry.meaningZh()).toString(),
                 entry.exampleEn()
         );
     }
