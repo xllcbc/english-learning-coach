@@ -32,8 +32,9 @@ Flyway `V2` 只预置了 4 条手写 Dictionary Entry（moreover / consequently 
 | `meaning_zh` | 多个词性的释义用 `；` 连接，超过 400 字截断 |
 | `example_en` | Tatoeba 中包含该词形的最短真实句子（6–18 词）；没有则留空 |
 
-留空是设计允许的：前端会隐藏空字段，`MockFeedbackModel` 也只挑有例句的条目生成 Vocabulary Suggestion
-（`StructuredFeedback` 契约要求 `example` 非空）。
+留空是设计允许的：前端会隐藏空字段；自动查词的候选词由 `DictionaryService.retainSuggestable()` 在 SQL 层就筛掉
+没有例句的条目（`StructuredFeedback` 契约要求 Vocabulary Suggestion 的 `example` 非空），这样有限的两条自动查词
+预算不会花在给不出建议的词上。
 
 当前随包的例句来自 Tatoeba 英文句库的一部分（约 128 万句，截断自 24.9 MB 的导出文件），覆盖
 28,018 / 47,024 条条目。取全量句库重跑构建脚本可以提高这个比例。
@@ -69,8 +70,12 @@ docker exec writelab-postgres psql -U writelab -d writelab -c "DELETE FROM dicti
 ## 对自动查词链路的影响
 
 `MockFeedbackModel` 原先调用 `DictionaryService.findAll()` 把整张表读进内存，再对每个条目跑一次正则；条目数上到
-数万后这条路走不通。现在改为：文本分词 → 过滤语法词（`FUNCTION_WORDS`）→ `WHERE word IN (…)` 判断是否收录，
+数万后这条路走不通。现在改为：文本分词（`MIN_CANDIDATE_LENGTH = 4`）→ 过滤 `GRAMMAR_WORDS`（代词、助动词、
+介词连词这类既换不掉也不值得教的词）→ `retainSuggestable()` 用一条 SQL 同时判断「已收录」且「有例句」，
 仍然按「首次出现顺序」挑选候选词。
+
+被筛掉的词只保留纯语法词：`make` / `made` / `many` / `much` / `more` / `most` / `other` / `some` / `such` /
+`each` / `every` / `both` / `just` / `like` / `doing` 属于可以升级的表达，已经放回候选池。
 
 副作用是集成测试的填充文本不能再用真实英文单词——`PracticeApiIntegrationTest.words()` 因此使用 `lorem`，
 它不在数据集里，不会混进自动查词候选。

@@ -22,14 +22,21 @@ public class MockFeedbackModel implements FeedbackModel {
 
     private static final Pattern WORD_TOKEN_PATTERN = Pattern.compile("[a-zA-Z][a-zA-Z']*");
 
-    /** Grammar words a full dictionary also covers, so they are never worth coaching on. */
-    private static final Set<String> FUNCTION_WORDS = Set.of(
-            "that", "this", "with", "from", "have", "were", "been", "being", "will", "would", "could",
-            "should", "might", "must", "shall", "their", "there", "them", "they", "your", "yours",
-            "ours", "hers", "which", "what", "when", "where", "whom", "whose", "because", "than",
-            "then", "into", "onto", "about", "after", "before", "during", "while", "until", "since",
-            "over", "under", "again", "also", "just", "like", "make", "made", "many", "much", "some",
-            "such", "more", "most", "other", "others", "each", "every", "both", "does", "did", "doing"
+    /** One letter words carry no vocabulary lesson; the shortest coachable word in the dataset has four. */
+    private static final int MIN_CANDIDATE_LENGTH = 4;
+
+    /**
+     * Words a learner cannot upgrade to anything better, so coaching them is noise: pronouns,
+     * auxiliaries, modals, prepositions and conjunctions. Quantifiers and light verbs (many, other,
+     * make, like) stay out of this list on purpose — those are exactly what an IELTS rewrite replaces.
+     */
+    private static final Set<String> GRAMMAR_WORDS = Set.of(
+            "this", "that", "these", "those", "there", "their", "theirs", "them", "they", "your",
+            "yours", "ours", "hers", "whose", "whom", "which", "what", "when", "where", "because",
+            "although", "unless", "however", "therefore", "than", "then", "with", "from", "into",
+            "onto", "upon", "about", "after", "before", "during", "while", "until", "since", "over",
+            "under", "again", "also", "have", "has", "had", "was", "were", "been", "being",
+            "will", "would", "could", "should", "might", "must", "shall", "does", "did"
     );
 
     private static final List<Map.Entry<String, String>> VOCABULARY_VARIANTS = List.of(
@@ -127,8 +134,7 @@ public class MockFeedbackModel implements FeedbackModel {
         int attempts = Math.min(candidates.size(), SIMULATED_LOOKUP_ATTEMPTS);
         for (int index = 0; index < attempts; index++) {
             LookupResult result = recorder.lookup(candidates.get(index));
-            // Suggestions always carry an example sentence, so an entry without one is skipped.
-            if (result.found() && !result.entry().exampleEn().isBlank()) {
+            if (result.found()) {
                 suggestions.add(suggestionFromEntry(result.entry()));
             }
         }
@@ -137,20 +143,20 @@ public class MockFeedbackModel implements FeedbackModel {
 
     private static List<String> mentionedWords(String writingText, DictionaryService dictionaryService) {
         List<String> tokens = orderedTokens(writingText);
-        Set<String> known = dictionaryService.retainKnown(tokens);
-        return tokens.stream().filter(known::contains).toList();
+        Set<String> suggestable = dictionaryService.retainSuggestable(tokens);
+        return tokens.stream().filter(suggestable::contains).toList();
     }
 
     /**
-     * Words the learner used, in order of first mention, minus the grammar words that a full
-     * dictionary also happens to cover.
+     * Words the learner used, in order of first mention, minus the grammar words that carry no
+     * vocabulary lesson.
      */
     private static List<String> orderedTokens(String writingText) {
         Set<String> tokens = new LinkedHashSet<>();
         Matcher matcher = WORD_TOKEN_PATTERN.matcher(writingText);
         while (matcher.find()) {
             String token = matcher.group().toLowerCase(Locale.ROOT);
-            if (token.length() >= 4 && !FUNCTION_WORDS.contains(token)) {
+            if (token.length() >= MIN_CANDIDATE_LENGTH && !GRAMMAR_WORDS.contains(token)) {
                 tokens.add(token);
             }
         }

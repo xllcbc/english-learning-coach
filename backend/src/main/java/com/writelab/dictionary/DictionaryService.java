@@ -44,10 +44,11 @@ public class DictionaryService {
     }
 
     /**
-     * Returns the subset of {@code words} that the dictionary holds, so callers never have to load
-     * the whole dataset into memory.
+     * Returns the subset of {@code words} the dictionary can turn into a Vocabulary Suggestion: the
+     * entry must exist and carry an example sentence. Selecting candidates here rather than after
+     * the lookup stops an unsuggestable word from consuming one of the two automatic lookups.
      */
-    public Set<String> retainKnown(Collection<String> words) {
+    public Set<String> retainSuggestable(Collection<String> words) {
         Set<String> normalized = new LinkedHashSet<>();
         for (String word : words) {
             String key = normalize(word);
@@ -58,7 +59,10 @@ public class DictionaryService {
         if (normalized.isEmpty()) {
             return Set.of();
         }
-        return new HashSet<>(jdbcClient.sql("SELECT word FROM dictionary_entry WHERE word IN (:words)")
+        return new HashSet<>(jdbcClient.sql("""
+                        SELECT word FROM dictionary_entry
+                        WHERE word IN (:words) AND example_en <> ''
+                        """)
                 .param("words", normalized)
                 .query(String.class)
                 .list());

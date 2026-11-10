@@ -275,6 +275,35 @@ class PracticeApiIntegrationTest {
     }
 
     @Test
+    void suggestsUpgradeableContentWordFoundInDictionary() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "many")).body(),
+                PracticeBody.class
+        );
+
+        assertThat(body.toolInvocations())
+                .extracting(invocation -> invocation.arguments().get("word"))
+                .containsExactly("many");
+        assertThat(vocabularyFor(body, "many").example())
+                .isEqualTo(dictionaryEntry("many").get("example_en"));
+    }
+
+    @Test
+    void doesNotSpendAutomaticLookupOnEntryWithoutExampleSentence() throws Exception {
+        // "epitomize" is in the bundled dataset with an empty example_en: looking it up could never
+        // produce a Vocabulary Suggestion, so it must not consume the lookup budget.
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "epitomize")).body(),
+                PracticeBody.class
+        );
+
+        assertThat(body.toolInvocations()).isEmpty();
+        assertThat(body.feedback().vocabularySuggestions())
+                .extracting(VocabBody::word)
+                .containsExactly("moreover", "consequently");
+    }
+
+    @Test
     void performsOneAutomaticLookupAndUsesDictionaryEntryInSuggestion() throws Exception {
         String text = withCandidates(220, "moreover");
 
