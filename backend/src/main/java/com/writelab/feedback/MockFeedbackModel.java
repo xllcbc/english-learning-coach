@@ -57,18 +57,20 @@ public class MockFeedbackModel implements FeedbackModel {
                 "示例反馈：请检查这句话的主谓一致与时态，必要时拆分过长句子。"
         ));
         if (wordCount >= 300) {
+            String sentence = tidy(excerpts.get(1));
             issues.add(new LearningIssue(
                     excerpts.get(1),
-                    "Consider adding a linking phrase before this idea.",
+                    "In addition, " + lowerFirstUnlessI(sentence),
                     IssueCategory.COHERENCE,
                     IssueSeverity.MAJOR,
                     "示例反馈：段落之间可以使用连接词，让论证更连贯。"
             ));
         }
         if (wordCount >= 450) {
+            String sentence = tidy(excerpts.get(2));
             issues.add(new LearningIssue(
                     excerpts.get(2),
-                    "Try varying the repeated words in this sentence.",
+                    naturalize(sentence),
                     IssueCategory.VOCABULARY,
                     IssueSeverity.MINOR,
                     "示例反馈：适当替换重复词汇，可以提升表达丰富度。"

@@ -165,7 +165,7 @@ export function FeedbackView({
                     <dd>{issue.originalSentence}</dd>
                   </div>
                   <div>
-                    <dt>建议</dt>
+                    <dt>改为</dt>
                     <dd>{issue.suggestion}</dd>
                   </div>
                 </dl>

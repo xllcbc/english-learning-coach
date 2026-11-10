@@ -55,7 +55,7 @@ public class RealExplanationModel implements ExplanationModel {
             for (LearningIssue issue : issues) {
                 prompt.append(index++).append(". [").append(issue.category()).append('/').append(issue.severity()).append("] ")
                         .append("原句：").append(issue.originalSentence()).append(' ')
-                        .append("建议：").append(issue.suggestion()).append(' ')
+                        .append("改为：").append(issue.suggestion()).append(' ')
                         .append("解释：").append(issue.explanation()).append('\n');
             }
             prompt.append('\n');

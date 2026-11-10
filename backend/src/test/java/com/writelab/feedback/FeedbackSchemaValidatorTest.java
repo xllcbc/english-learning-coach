@@ -1,12 +1,20 @@
 package com.writelab.feedback;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.converter.BeanOutputConverter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FeedbackSchemaValidatorTest {
 
     private final FeedbackSchemaValidator validator = FeedbackSchemaValidator.forStructuredFeedback();
+
+    @Test
+    void describesSuggestionSemanticsInGeneratedSchema() {
+        String schema = new BeanOutputConverter<>(StructuredFeedback.class).getJsonSchema();
+
+        assertThat(schema).contains("\"suggestion\"", "最小英文修改稿");
+    }
 
     @Test
     void acceptsPayloadThatMatchesTheGeneratedSchema() {

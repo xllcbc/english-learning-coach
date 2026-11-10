@@ -40,7 +40,7 @@ public class MockExplanationModel implements ExplanationModel {
                     .append(categoryLabel(issue.category())).append("，")
                     .append(severityLabel(issue.severity())).append("）：\n");
             text.append("原句：").append(issue.originalSentence()).append("\n");
-            text.append("建议：").append(issue.suggestion()).append("\n");
+            text.append("改为：").append(issue.suggestion()).append("\n");
             text.append("讲解：").append(issue.explanation()).append("\n\n");
         }
 

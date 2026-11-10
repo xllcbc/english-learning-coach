@@ -514,6 +514,8 @@ class PracticeApiIntegrationTest {
         assertThat(feedback.learningIssues()).allSatisfy(issue -> {
             assertThat(issue.originalSentence()).isNotBlank();
             assertThat(issue.suggestion()).isNotBlank();
+            assertThat(issue.suggestion()).containsPattern("[A-Za-z]");
+            assertThat(issue.suggestion()).doesNotMatch("(?i)^(consider|try)\\b.*");
             assertThat(issue.explanation()).isNotBlank();
             assertThat(issue.explanation()).containsPattern("[\\u4e00-\\u9fff]");
             assertThat(Set.of("GRAMMAR", "VOCABULARY", "SENTENCE_STRUCTURE", "COHERENCE", "PUNCTUATION"))

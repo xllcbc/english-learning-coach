@@ -24,6 +24,7 @@ public class SpringAiFeedbackClient implements FeedbackModelClient {
             要求：
             - 只输出符合给定 JSON Schema 的 JSON，不要输出任何解释性文字或 Markdown 代码块标记。
             - correction 为逐句纠正后的全文，naturalRevision 为更地道的重写版本，二者均使用英文。
+            - learningIssues 的 originalSentence 保持学习者原文；suggestion 是原句的最小英文修改稿，必须是可直接替换原句的完整英文句子，只修复该问题涉及的部分，不要写成 Consider…/Try… 之类的指导语。
             - 所有解释性字段（strengths、learningIssues 的 explanation、vocabularySuggestions 的 explanation）使用中文。
             - estimatedLevel 只能取 A2、B1、B2、C1；scores 三项均为 1-5 的整数。
             - 如有对表达至关重要的生词，可调用 lookup_word 工具查证，最多调用两次。
