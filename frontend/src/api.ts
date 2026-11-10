@@ -24,12 +24,22 @@ export function toErrorMessage(error: unknown): string {
     : '无法连接后端服务，请确认服务已启动。';
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = timeoutMs === undefined ? undefined : setTimeout(() => controller.abort(), timeoutMs);
+
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, init);
+    response = await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
   } catch {
+    if (controller.signal.aborted) {
+      throw new ApiRequestError('REQUEST_TIMEOUT', '等待模型响应超时，请稍后重试。');
+    }
     throw new ApiRequestError('NETWORK_ERROR', '无法连接后端服务，请确认服务已启动。');
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 
   const payload: unknown = response.status === 204
@@ -47,6 +57,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+// Backend worst case is 2 x 120s calls plus backoff; abort only after the backend could have answered.
+const PRACTICE_TIMEOUT_MS = 250_000;
+
 export function createPractice(text: string): Promise<PracticeResponse> {
   return request<PracticeResponse>('/api/practices', {
     method: 'POST',
@@ -54,7 +67,7 @@ export function createPractice(text: string): Promise<PracticeResponse> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ text }),
-  });
+  }, PRACTICE_TIMEOUT_MS);
 }
 
 export function lookupWord(word: string): Promise<DictionaryEntry> {

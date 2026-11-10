@@ -1,6 +1,11 @@
 spring:
   application:
     name: writelab
+  config:
+    # Load .env from the working directory or the repo root (when run from backend/).
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/writelab}
     username: ${SPRING_DATASOURCE_USERNAME:writelab}
@@ -19,6 +24,10 @@ writelab:
     # A blank API key selects the deterministic Mock mode.
     api-key: ${WRITELAB_MODEL_API_KEY:}
     name: ${WRITELAB_MODEL_NAME:gpt-4o-mini}
+    # Per HTTP call. The SDK retries timeouts, so the worst-case wait is
+    # timeout x (1 + max-retries).
+    timeout: ${WRITELAB_MODEL_TIMEOUT:120s}
+    max-retries: ${WRITELAB_MODEL_MAX_RETRIES:1}
 
 logging:
   level:

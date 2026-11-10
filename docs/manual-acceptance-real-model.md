@@ -5,13 +5,18 @@
 
 ## 前置配置
 
-通过环境变量配置模型供应商（OpenAI 兼容接口）：
+把根目录 `.env.example` 复制为 `.env`，在其中填写模型供应商（OpenAI 兼容接口）。
+后端启动时会自动导入 `.env`（仓库根目录或当前工作目录），无需手动 export：
 
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `WRITELAB_MODEL_BASE_URL` | 供应商 Base URL | `https://api.openai.com` |
 | `WRITELAB_MODEL_API_KEY` | API Key；**留空即进入 Mock 模式** | 空 |
 | `WRITELAB_MODEL_NAME` | 模型名称 | `gpt-4o-mini` |
+| `WRITELAB_MODEL_TIMEOUT` | 单次 HTTP 调用超时 | `120s` |
+| `WRITELAB_MODEL_MAX_RETRIES` | SDK 重试次数；最坏等待为 `timeout × (1 + 次数)` | `1` |
+
+`.env` 已被 `.gitignore` 忽略，不会提交。修改后需要重启后端。
 
 启动后端（`backend/`）与前端（`frontend/`），前端通过 `VITE_API_BASE_URL` 指向后端。
 
@@ -41,6 +46,9 @@
      “模型多次返回的内容不符合要求，请稍后重试。”，日志中可见具体校验错误。
    - 模型调用本身失败（如 API Key 错误、网络不通）时不重试，返回稳定错误码
      `MODEL_CALL_FAILED`（HTTP 502）与中文提示“模型服务暂时不可用，请稍后重试。”。
+   - 单次调用超过 `WRITELAB_MODEL_TIMEOUT` 时，SDK 按 `WRITELAB_MODEL_MAX_RETRIES` 重试；
+     全部超时后返回稳定错误码 `MODEL_TIMEOUT`（HTTP 504）与中文提示“模型响应超时，请稍后重试。”，
+     日志中记录 `durationMs`。
 
 6. **密钥与 Prompt 安全**
    - 数据库 `practice_attempt` 表中不存在 API Key 或完整 Prompt（仅保存写作原文、结构化反馈、

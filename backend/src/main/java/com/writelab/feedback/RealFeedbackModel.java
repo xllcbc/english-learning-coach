@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.converter.BeanOutputConverter;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -50,13 +51,16 @@ public class RealFeedbackModel implements FeedbackModel {
         List<String> previousErrors = List.of();
 
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            long startedNanos = System.nanoTime();
             FeedbackAttempt result;
             try {
                 result = client.attempt(writingText, previousErrors);
             } catch (RuntimeException exception) {
                 // Transport/auth failures are not retried here: the OpenAI SDK already retries
                 // transient errors, and retrying 4xx would only resend the same request.
-                log.warn("真实模型调用失败，不再重试: attempt={}, cause={}", attempt, exception.getClass().getSimpleName());
+                log.warn("真实模型调用失败，不再重试: attempt={}, durationMs={}, cause={}",
+                        attempt, Duration.ofNanos(System.nanoTime() - startedNanos).toMillis(),
+                        exception.getClass().getSimpleName());
                 throw new ModelCallException("真实模型调用失败", exception);
             }
 
@@ -85,7 +89,8 @@ public class RealFeedbackModel implements FeedbackModel {
             }
 
             List<ToolInvocation> invocations = result.toolInvocations();
-            log.info("真实模型反馈生成成功: attempt={}, toolInvocations={}", attempt, invocations.size());
+            log.info("真实模型反馈生成成功: attempt={}, durationMs={}, toolInvocations={}",
+                    attempt, Duration.ofNanos(System.nanoTime() - startedNanos).toMillis(), invocations.size());
             return new FeedbackResult(feedback, invocations);
         }
 

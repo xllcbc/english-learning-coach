@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.io.InterruptedIOException;
+
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
@@ -96,9 +98,24 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ModelCallException.class)
     ResponseEntity<ApiError> handleModelCall(ModelCallException exception) {
-        log.warn("真实模型调用失败", exception.getCause() != null ? exception.getCause() : exception);
+        Throwable cause = exception.getCause() != null ? exception.getCause() : exception;
+        if (isTimeout(exception)) {
+            log.warn("真实模型调用超时", cause);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(new ApiError("MODEL_TIMEOUT", "模型响应超时，请稍后重试。"));
+        }
+        log.warn("真实模型调用失败", cause);
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(new ApiError("MODEL_CALL_FAILED", "模型服务暂时不可用，请稍后重试。"));
+    }
+
+    private static boolean isTimeout(Throwable throwable) {
+        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+            if (cause instanceof InterruptedIOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

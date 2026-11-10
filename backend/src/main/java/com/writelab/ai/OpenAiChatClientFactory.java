@@ -21,6 +21,8 @@ public final class OpenAiChatClientFactory {
                 .baseUrl(properties.baseUrl())
                 .apiKey(properties.apiKey())
                 .model(properties.name())
+                .timeout(properties.timeout())
+                .maxRetries(properties.maxRetries())
                 .build();
         OpenAiChatModel chatModel = OpenAiChatModel.builder()
                 .options(options)

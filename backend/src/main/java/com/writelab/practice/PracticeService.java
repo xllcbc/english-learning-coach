@@ -21,6 +21,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
@@ -41,28 +42,31 @@ public class PracticeService {
     private final PracticeAttemptRepository repository;
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public PracticeService(
             FeedbackModel feedbackModel,
             JdbcAggregateTemplate jdbcAggregateTemplate,
             PracticeAttemptRepository repository,
             JdbcClient jdbcClient,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
         this.repository = repository;
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
-    @Transactional
     public PracticeResponse create(String writingText) {
         int wordCount = WordCounter.count(writingText);
         if (wordCount < MIN_WORDS || wordCount > MAX_WORDS) {
             throw new WordCountOutOfRangeException(wordCount);
         }
 
+        // The model call can block for minutes; keep it outside the transaction so it never pins a pooled connection.
         FeedbackResult result = feedbackModel.generate(writingText);
         StructuredFeedback feedback = result.feedback();
         FeedbackValidator.validate(feedback);
@@ -90,7 +94,7 @@ public class PracticeService {
                 toVocabularyEntities(feedback.vocabularySuggestions()),
                 toToolInvocationEntities(result.toolInvocations())
         );
-        jdbcAggregateTemplate.insert(entity);
+        transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
 
         return toResponse(entity, feedback, result.toolInvocations());
     }

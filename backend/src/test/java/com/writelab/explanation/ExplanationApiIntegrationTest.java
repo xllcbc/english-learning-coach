@@ -31,7 +31,10 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "writelab.model.api-key="
+)
 @Testcontainers
 @Import(ExplanationApiIntegrationTest.FlakyExplanationConfig.class)
 class ExplanationApiIntegrationTest {
