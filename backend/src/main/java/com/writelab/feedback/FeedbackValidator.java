@@ -68,7 +68,7 @@ public final class FeedbackValidator {
                 continue;
             }
             requireText(errors, issue.originalSentence(), "Learning Issue 原句");
-            requireText(errors, issue.suggestion(), "Learning Issue 建议");
+            requireText(errors, issue.suggestion(), "Learning Issue 修改稿");
             requireText(errors, issue.explanation(), "Learning Issue 解释");
             if (issue.category() == null) {
                 errors.add("Learning Issue 类别不能为空");

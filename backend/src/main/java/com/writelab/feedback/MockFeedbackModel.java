@@ -8,7 +8,6 @@ import com.writelab.tools.LookupWordTool;
 import com.writelab.writing.WordCounter;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -38,7 +37,7 @@ public class MockFeedbackModel implements FeedbackModel {
         int wordCount = WordCounter.count(writingText);
         String correction = tidy(writingText);
         String naturalRevision = naturalize(correction);
-        List<String> excerpts = excerpts(writingText, 3);
+        List<String> sentences = firstSentences(writingText, 3);
 
         List<String> strengths = new ArrayList<>(List.of(
                 "能够围绕主题持续展开内容。",
@@ -50,16 +49,16 @@ public class MockFeedbackModel implements FeedbackModel {
 
         List<LearningIssue> issues = new ArrayList<>();
         issues.add(new LearningIssue(
-                excerpts.get(0),
-                tidy(excerpts.get(0)),
+                sentences.get(0),
+                tidy(sentences.get(0)),
                 IssueCategory.GRAMMAR,
                 IssueSeverity.MINOR,
                 "示例反馈：请检查这句话的主谓一致与时态，必要时拆分过长句子。"
         ));
         if (wordCount >= 300) {
-            String sentence = tidy(excerpts.get(1));
+            String sentence = tidy(sentences.get(1));
             issues.add(new LearningIssue(
-                    excerpts.get(1),
+                    sentences.get(1),
                     "In addition, " + lowerFirstUnlessI(sentence),
                     IssueCategory.COHERENCE,
                     IssueSeverity.MAJOR,
@@ -67,10 +66,9 @@ public class MockFeedbackModel implements FeedbackModel {
             ));
         }
         if (wordCount >= 450) {
-            String sentence = tidy(excerpts.get(2));
             issues.add(new LearningIssue(
-                    excerpts.get(2),
-                    naturalize(sentence),
+                    sentences.get(2),
+                    varyVocabulary(tidy(sentences.get(2))),
                     IssueCategory.VOCABULARY,
                     IssueSeverity.MINOR,
                     "示例反馈：适当替换重复词汇，可以提升表达丰富度。"
@@ -174,15 +172,18 @@ public class MockFeedbackModel implements FeedbackModel {
     }
 
     private static String naturalize(String corrected) {
-        String natural = corrected
-                .replace("very ", "particularly ")
-                .replace("a lot of ", "many ")
-                .replace("I think ", "In my view, ")
-                .replace("good ", "effective ");
+        String natural = varyVocabulary(corrected).replace("I think ", "In my view, ");
         if (natural.equals(corrected)) {
             natural = "To my mind, " + lowerFirstUnlessI(corrected);
         }
         return natural;
+    }
+
+    private static String varyVocabulary(String sentence) {
+        return sentence
+                .replace("very ", "particularly ")
+                .replace("a lot of ", "many ")
+                .replace("good ", "effective ");
     }
 
     private static String lowerFirstUnlessI(String text) {
@@ -192,26 +193,16 @@ public class MockFeedbackModel implements FeedbackModel {
         return Character.toLowerCase(text.charAt(0)) + text.substring(1);
     }
 
-    private static List<String> excerpts(String text, int count) {
+    private static List<String> firstSentences(String text, int count) {
         String stripped = text.strip();
         String[] sentences = stripped.split("(?<=[.!?])\\s+");
-        List<String> excerpts = new ArrayList<>();
+        List<String> selected = new ArrayList<>();
         for (int index = 0; index < count; index++) {
             String sentence = sentences.length == 0 || sentences[0].isEmpty()
                     ? stripped
                     : sentences[Math.min(index, sentences.length - 1)];
-            excerpts.add(excerpt(sentence));
+            selected.add(sentence.strip());
         }
-        return excerpts;
-    }
-
-    private static String excerpt(String text) {
-        String[] words = text.strip().split("\\s+");
-        if (words.length == 0 || words[0].isEmpty()) {
-            return text.strip();
-        }
-        int limit = Math.min(words.length, 18);
-        String excerpt = String.join(" ", Arrays.copyOf(words, limit));
-        return words.length > limit ? excerpt + "…" : excerpt;
+        return selected;
     }
 }
