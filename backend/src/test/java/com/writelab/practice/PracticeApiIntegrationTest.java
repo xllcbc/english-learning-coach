@@ -515,14 +515,19 @@ class PracticeApiIntegrationTest {
             assertThat(issue.originalSentence()).isNotBlank();
             assertThat(issue.suggestion()).isNotBlank();
             assertThat(issue.suggestion()).containsPattern("[A-Za-z]");
-            assertThat(issue.suggestion()).doesNotMatch("(?is).*\\b(consider|try)\\b.*");
-            assertThat(issue.suggestion()).matches("(?s).*[.!?…]$");
+            assertThat(issue.suggestion())
+                    .doesNotMatch("(?is)^\\s*(consider|try|please|you (should|could|might))\\b.*");
+            assertThat(issue.suggestion()).matches("(?s).*[.!?…][\"']?$");
             assertThat(issue.explanation()).isNotBlank();
             assertThat(issue.explanation()).containsPattern("[\\u4e00-\\u9fff]");
             assertThat(Set.of("GRAMMAR", "VOCABULARY", "SENTENCE_STRUCTURE", "COHERENCE", "PUNCTUATION"))
                     .contains(issue.category());
             assertThat(Set.of("MINOR", "MAJOR")).contains(issue.severity());
         });
+        assertThat(feedback.learningIssues())
+                .filteredOn(issue -> "VOCABULARY".equals(issue.category()))
+                .allSatisfy(issue -> assertThat(issue.suggestion())
+                        .isNotEqualToIgnoringCase(issue.originalSentence()));
 
         assertThat(feedback.vocabularySuggestions()).hasSizeLessThanOrEqualTo(5);
         assertThat(feedback.vocabularySuggestions()).allSatisfy(suggestion -> {

@@ -10,7 +10,7 @@ class FeedbackSchemaValidatorTest {
     private final FeedbackSchemaValidator validator = FeedbackSchemaValidator.forStructuredFeedback();
 
     @Test
-    void describesSuggestionSemanticsInGeneratedSchema() {
+    void describesLearningIssueRevisionSemanticsInGeneratedSchema() {
         String schema = new BeanOutputConverter<>(StructuredFeedback.class).getJsonSchema();
 
         assertThat(schema).contains("\"suggestion\"", "最小英文修改稿");

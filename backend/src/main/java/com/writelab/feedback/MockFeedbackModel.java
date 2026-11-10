@@ -10,12 +10,29 @@ import com.writelab.writing.WordCounter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MockFeedbackModel implements FeedbackModel {
 
     private static final int SIMULATED_LOOKUP_ATTEMPTS = LookupWordTool.MAX_AUTOMATIC_LOOKUPS + 1;
+
+    private static final List<Map.Entry<String, String>> VOCABULARY_VARIANTS = List.of(
+            Map.entry("a lot of", "many"),
+            Map.entry("very", "particularly"),
+            Map.entry("good", "effective"),
+            Map.entry("practice", "training"),
+            Map.entry("sentence", "statement"),
+            Map.entry("problem", "issue")
+    );
+
+    private static final Set<String> LOWERCASE_STARTERS = Set.of(
+            "A", "An", "The", "This", "That", "These", "Those", "It", "We", "They",
+            "He", "She", "Many", "Some", "Most", "Each", "Every", "However", "Although",
+            "When", "If", "In", "On", "For", "After", "Before", "Since", "While", "To"
+    );
 
     private final LookupWordTool lookupWordTool;
     private final DictionaryService dictionaryService;
@@ -59,7 +76,7 @@ public class MockFeedbackModel implements FeedbackModel {
             String sentence = tidy(sentences.get(1));
             issues.add(new LearningIssue(
                     sentences.get(1),
-                    "In addition, " + lowerFirstUnlessI(sentence),
+                    "In addition, " + lowerCommonStarter(sentence),
                     IssueCategory.COHERENCE,
                     IssueSeverity.MAJOR,
                     "示例反馈：段落之间可以使用连接词，让论证更连贯。"
@@ -174,20 +191,25 @@ public class MockFeedbackModel implements FeedbackModel {
     private static String naturalize(String corrected) {
         String natural = varyVocabulary(corrected).replace("I think ", "In my view, ");
         if (natural.equals(corrected)) {
-            natural = "To my mind, " + lowerFirstUnlessI(corrected);
+            natural = "To my mind, " + lowerCommonStarter(corrected);
         }
         return natural;
     }
 
     private static String varyVocabulary(String sentence) {
-        return sentence
-                .replace("very ", "particularly ")
-                .replace("a lot of ", "many ")
-                .replace("good ", "effective ");
+        for (Map.Entry<String, String> variant : VOCABULARY_VARIANTS) {
+            Matcher matcher = Pattern.compile("\\b" + Pattern.quote(variant.getKey()) + "\\b").matcher(sentence);
+            if (matcher.find()) {
+                return matcher.replaceFirst(variant.getValue());
+            }
+        }
+        return sentence;
     }
 
-    private static String lowerFirstUnlessI(String text) {
-        if (text.startsWith("I ") || text.startsWith("I'")) {
+    private static String lowerCommonStarter(String text) {
+        int space = text.indexOf(' ');
+        String firstWord = space < 0 ? text : text.substring(0, space);
+        if (!LOWERCASE_STARTERS.contains(firstWord)) {
             return text;
         }
         return Character.toLowerCase(text.charAt(0)) + text.substring(1);
