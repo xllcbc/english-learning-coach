@@ -10,6 +10,7 @@ import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackSchemaValidator;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
+import com.writelab.retrieval.CorpusExampleResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
@@ -73,6 +74,11 @@ public class ModelConfiguration {
     @Bean
     LearningMaterialRetriever keywordLearningMaterialRetriever(JdbcClient jdbcClient) {
         return new KeywordLearningMaterialRetriever(jdbcClient);
+    }
+
+    @Bean
+    CorpusExampleResolver corpusExampleResolver(LearningMaterialRetriever learningMaterialRetriever) {
+        return new CorpusExampleResolver(learningMaterialRetriever);
     }
 
     private static boolean hasApiKey(ConditionContext context) {

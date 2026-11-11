@@ -1,13 +1,15 @@
 package com.writelab.practice;
 
+import com.writelab.retrieval.CorpusSentenceSource;
+
 /**
- * Response view of a Vocabulary Suggestion. It carries the optional Corpus Sentence attribution,
- * while the model-facing {@link com.writelab.feedback.VocabularySuggestion} contract stays as is.
+ * Response view of a Vocabulary Suggestion. It carries the optional Corpus Sentence source, while
+ * the model-facing {@link com.writelab.feedback.VocabularySuggestion} contract stays as is.
  */
 public record VocabularySuggestionResponse(
         String word,
         String explanation,
         String example,
-        ExampleSource exampleSource
+        CorpusSentenceSource corpusSentenceSource
 ) {
 }

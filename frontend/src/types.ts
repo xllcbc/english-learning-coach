@@ -25,7 +25,7 @@ export interface LearningIssue {
   explanation: string;
 }
 
-export interface ExampleSource {
+export interface CorpusSentenceSource {
   source: string;
   license: string;
 }
@@ -34,7 +34,7 @@ export interface VocabularySuggestion {
   word: string;
   explanation: string;
   example: string;
-  exampleSource?: ExampleSource | null;
+  corpusSentenceSource?: CorpusSentenceSource | null;
 }
 
 export interface StructuredFeedback {

@@ -1,6 +1,5 @@
 package com.writelab.practice;
 
-import com.writelab.dictionary.DictionaryService;
 import com.writelab.feedback.EstimatedLevel;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackResult;
@@ -16,13 +15,11 @@ import com.writelab.persistence.PracticeAttemptRepository;
 import com.writelab.persistence.RetrievalHitEntity;
 import com.writelab.persistence.ToolInvocationEntity;
 import com.writelab.persistence.VocabularySuggestionEntity;
-import com.writelab.retrieval.CorpusSentence;
-import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.CorpusExampleResolver;
+import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.writing.WordCounter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -32,28 +29,19 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
+import java.util.function.IntFunction;
+import java.util.stream.Collectors;
 
 @Service
 public class PracticeService {
-
-    private static final Logger log = LoggerFactory.getLogger(PracticeService.class);
 
     static final int MIN_WORDS = 200;
     static final int MAX_WORDS = 500;
 
     private static final int PREVIEW_LENGTH = 140;
-
-    private static final String CORPUS_SENTENCE_HIT = "CORPUS_SENTENCE";
-    private static final String FIXED_ORDER = "FIXED_ORDER";
-    private static final String NO_CORPUS_SENTENCE = "NO_CORPUS_SENTENCE";
-    private static final String RETRIEVAL_FAILED = "RETRIEVAL_FAILED";
-
-    private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?])\\s+");
 
     private final FeedbackModel feedbackModel;
     private final JdbcAggregateTemplate jdbcAggregateTemplate;
@@ -61,7 +49,7 @@ public class PracticeService {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
-    private final LearningMaterialRetriever learningMaterialRetriever;
+    private final CorpusExampleResolver corpusExampleResolver;
 
     public PracticeService(
             FeedbackModel feedbackModel,
@@ -70,7 +58,7 @@ public class PracticeService {
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
-            LearningMaterialRetriever learningMaterialRetriever
+            CorpusExampleResolver corpusExampleResolver
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
@@ -78,7 +66,7 @@ public class PracticeService {
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
-        this.learningMaterialRetriever = learningMaterialRetriever;
+        this.corpusExampleResolver = corpusExampleResolver;
     }
 
     public PracticeResponse create(String writingText) {
@@ -95,8 +83,9 @@ public class PracticeService {
         ModelMode mode = feedbackModel.mode();
         UUID id = UUID.randomUUID();
 
-        // Corpus Sentence retrieval runs after validation and before the persistence transaction.
-        List<ResolvedSuggestion> resolved = resolveExamples(writingText, feedback.vocabularySuggestions());
+        // Corpus Sentence resolution runs after validation and before the persistence transaction.
+        List<CorpusExampleResolver.ResolvedSuggestion> resolved = corpusExampleResolver.resolve(
+                writingText, feedback.vocabularySuggestions());
         StructuredFeedback resolvedFeedback = withResolvedSuggestions(feedback, resolved);
 
         Instant createdAt = Instant.now();
@@ -122,7 +111,12 @@ public class PracticeService {
         );
         transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
 
-        return toResponse(entity, resolvedFeedback, result.toolInvocations(), exampleSources(resolved));
+        return toResponse(
+                entity,
+                resolvedFeedback,
+                result.toolInvocations(),
+                index -> resolved.get(index).corpusSentenceSource()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -165,64 +159,14 @@ public class PracticeService {
         List<ToolInvocation> toolInvocations = entity.toolInvocations().stream()
                 .map(this::toToolInvocation)
                 .toList();
+        Map<Integer, CorpusSentenceSource> sources = findCorpusSentenceSources(id);
 
-        return toResponse(entity, feedback, toolInvocations, findExampleSources(id));
-    }
-
-    private List<ResolvedSuggestion> resolveExamples(String writingText, List<VocabularySuggestion> suggestions) {
-        if (suggestions == null || suggestions.isEmpty()) {
-            return List.of();
-        }
-
-        Map<String, String> learnerSentences = new LinkedHashMap<>();
-        for (VocabularySuggestion suggestion : suggestions) {
-            String wordForm = DictionaryService.normalize(suggestion.word());
-            learnerSentences.putIfAbsent(wordForm, learnerSentence(writingText, suggestion.word()));
-        }
-
-        Map<String, List<CorpusSentence>> candidates;
-        String skipReason = null;
-        try {
-            candidates = learningMaterialRetriever.contextualExamples(learnerSentences);
-        } catch (RuntimeException exception) {
-            log.warn("语料例句检索失败，保留模型原例句: suggestions={}, cause={}",
-                    suggestions.size(), exception.getClass().getSimpleName());
-            candidates = Map.of();
-            skipReason = RETRIEVAL_FAILED;
-        }
-
-        List<ResolvedSuggestion> resolved = new ArrayList<>(suggestions.size());
-        for (VocabularySuggestion suggestion : suggestions) {
-            String wordForm = DictionaryService.normalize(suggestion.word());
-            List<CorpusSentence> wordCandidates = candidates.getOrDefault(wordForm, List.of());
-            if (!wordCandidates.isEmpty()) {
-                CorpusSentence adopted = wordCandidates.getFirst();
-                resolved.add(new ResolvedSuggestion(
-                        new VocabularySuggestion(suggestion.word(), suggestion.explanation(), adopted.sentence()),
-                        adopted.id(),
-                        new ExampleSource(adopted.source(), adopted.license()),
-                        new RetrievalHitEntity(
-                                UUID.randomUUID(), CORPUS_SENTENCE_HIT, wordForm, adopted.id(),
-                                1, null, FIXED_ORDER, null)
-                ));
-            } else {
-                resolved.add(new ResolvedSuggestion(
-                        suggestion,
-                        null,
-                        null,
-                        new RetrievalHitEntity(
-                                UUID.randomUUID(), CORPUS_SENTENCE_HIT, wordForm, null,
-                                null, null, FIXED_ORDER,
-                                skipReason == null ? NO_CORPUS_SENTENCE : skipReason)
-                ));
-            }
-        }
-        return resolved;
+        return toResponse(entity, feedback, toolInvocations, sources::get);
     }
 
     private static StructuredFeedback withResolvedSuggestions(
             StructuredFeedback feedback,
-            List<ResolvedSuggestion> resolved
+            List<CorpusExampleResolver.ResolvedSuggestion> resolved
     ) {
         return new StructuredFeedback(
                 feedback.correction(),
@@ -231,47 +175,31 @@ public class PracticeService {
                 feedback.scores(),
                 feedback.strengths(),
                 feedback.learningIssues(),
-                resolved.stream().map(ResolvedSuggestion::suggestion).toList()
+                resolved.stream().map(CorpusExampleResolver.ResolvedSuggestion::suggestion).toList()
         );
     }
 
-    private static String learnerSentence(String writingText, String word) {
-        Pattern wordPattern = Pattern.compile(
-                "\\b" + Pattern.quote(word.strip()) + "\\b", Pattern.CASE_INSENSITIVE);
-        for (String sentence : SENTENCE_BOUNDARY.split(writingText.strip())) {
-            String trimmed = sentence.strip();
-            if (wordPattern.matcher(trimmed).find()) {
-                return trimmed;
-            }
-        }
-        return "";
-    }
-
-    private static List<ExampleSource> exampleSources(List<ResolvedSuggestion> resolved) {
-        return resolved.stream().map(ResolvedSuggestion::exampleSource).toList();
-    }
-
-    private List<ExampleSource> findExampleSources(UUID practiceId) {
+    private Map<Integer, CorpusSentenceSource> findCorpusSentenceSources(UUID practiceId) {
         return jdbcClient.sql("""
-                        SELECT cs.source, cs.license
+                        SELECT vs.position, cs.source, cs.license
                         FROM vocabulary_suggestion vs
-                        LEFT JOIN corpus_sentence cs ON cs.id = vs.corpus_sentence_id
+                        JOIN corpus_sentence cs ON cs.id = vs.corpus_sentence_id
                         WHERE vs.practice_attempt_id = :id
-                        ORDER BY vs.position
                         """)
                 .param("id", practiceId)
-                .query((resultSet, rowNumber) -> {
-                    String source = resultSet.getString("source");
-                    return source == null ? null : new ExampleSource(source, resultSet.getString("license"));
-                })
-                .list();
+                .query((resultSet, rowNumber) -> Map.entry(
+                        resultSet.getInt("position"),
+                        new CorpusSentenceSource(resultSet.getString("source"), resultSet.getString("license"))))
+                .list()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private static PracticeResponse toResponse(
             PracticeAttemptEntity entity,
             StructuredFeedback feedback,
             List<ToolInvocation> toolInvocations,
-            List<ExampleSource> exampleSources
+            IntFunction<CorpusSentenceSource> sourceAt
     ) {
         ModelMode mode = ModelMode.valueOf(entity.modelMode());
         return new PracticeResponse(
@@ -280,7 +208,7 @@ public class PracticeService {
                 entity.wordCount(),
                 mode,
                 mode == ModelMode.MOCK,
-                toPracticeFeedback(feedback, exampleSources),
+                toPracticeFeedback(feedback, sourceAt),
                 toolInvocations,
                 entity.createdAt()
         );
@@ -288,15 +216,14 @@ public class PracticeService {
 
     private static PracticeFeedback toPracticeFeedback(
             StructuredFeedback feedback,
-            List<ExampleSource> exampleSources
+            IntFunction<CorpusSentenceSource> sourceAt
     ) {
         List<VocabularySuggestion> suggestions = feedback.vocabularySuggestions();
         List<VocabularySuggestionResponse> views = new ArrayList<>(suggestions.size());
         for (int index = 0; index < suggestions.size(); index++) {
             VocabularySuggestion suggestion = suggestions.get(index);
-            ExampleSource source = index < exampleSources.size() ? exampleSources.get(index) : null;
             views.add(new VocabularySuggestionResponse(
-                    suggestion.word(), suggestion.explanation(), suggestion.example(), source));
+                    suggestion.word(), suggestion.explanation(), suggestion.example(), sourceAt.apply(index)));
         }
         return new PracticeFeedback(
                 feedback.correction(),
@@ -322,7 +249,9 @@ public class PracticeService {
                 .toList();
     }
 
-    private static List<VocabularySuggestionEntity> toVocabularyEntities(List<ResolvedSuggestion> resolved) {
+    private static List<VocabularySuggestionEntity> toVocabularyEntities(
+            List<CorpusExampleResolver.ResolvedSuggestion> resolved
+    ) {
         return resolved.stream()
                 .map(entry -> new VocabularySuggestionEntity(
                         UUID.randomUUID(),
@@ -334,8 +263,24 @@ public class PracticeService {
                 .toList();
     }
 
-    private static List<RetrievalHitEntity> toRetrievalHitEntities(List<ResolvedSuggestion> resolved) {
-        return resolved.stream().map(ResolvedSuggestion::hit).toList();
+    private static List<RetrievalHitEntity> toRetrievalHitEntities(
+            List<CorpusExampleResolver.ResolvedSuggestion> resolved
+    ) {
+        return resolved.stream()
+                .map(entry -> {
+                    CorpusExampleResolver.RetrievalHit hit = entry.hit();
+                    return new RetrievalHitEntity(
+                            UUID.randomUUID(),
+                            hit.kind(),
+                            hit.wordForm(),
+                            hit.corpusSentenceId(),
+                            hit.ranking(),
+                            hit.similarityScore(),
+                            hit.ordering(),
+                            hit.skipReason()
+                    );
+                })
+                .toList();
     }
 
     private List<ToolInvocationEntity> toToolInvocationEntities(List<ToolInvocation> invocations) {
@@ -359,13 +304,5 @@ public class PracticeService {
                 ToolInvocationStatus.valueOf(entity.resultStatus()),
                 entity.durationMillis()
         );
-    }
-
-    private record ResolvedSuggestion(
-            VocabularySuggestion suggestion,
-            UUID corpusSentenceId,
-            ExampleSource exampleSource,
-            RetrievalHitEntity hit
-    ) {
     }
 }

@@ -1,6 +1,7 @@
 package com.writelab.retrieval;
 
 import com.writelab.dictionary.DictionaryService;
+import com.writelab.writing.WordCounter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -19,7 +20,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 public class KeywordLearningMaterialRetriever implements LearningMaterialRetriever {
 
     private static final Comparator<CorpusSentence> FIXED_ORDER =
-            Comparator.comparingInt((CorpusSentence sentence) -> wordCount(sentence.sentence()))
+            Comparator.comparingInt((CorpusSentence sentence) -> WordCounter.count(sentence.sentence()))
                     .thenComparing(CorpusSentence::id);
 
     private final JdbcClient jdbcClient;
@@ -58,11 +59,9 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
         Map<String, List<CorpusSentence>> candidates = new LinkedHashMap<>();
         rows.stream()
                 .sorted(FIXED_ORDER)
-                .forEach(row -> candidates.computeIfAbsent(row.wordForm(), key -> new ArrayList<>()).add(row));
+                .forEach(row -> candidates
+                        .computeIfAbsent(DictionaryService.normalize(row.wordForm()), key -> new ArrayList<>())
+                        .add(row));
         return candidates;
-    }
-
-    private static int wordCount(String sentence) {
-        return sentence.trim().split("\\s+").length;
     }
 }

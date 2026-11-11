@@ -78,9 +78,9 @@ function VocabularySuggestionCard({
       </div>
       <p>{suggestion.explanation}</p>
       {suggestion.example && <p className="vocabulary-example">{suggestion.example}</p>}
-      {suggestion.exampleSource && (
+      {suggestion.corpusSentenceSource && (
         <p className="vocabulary-example-source">
-          来源：{suggestion.exampleSource.source} · {suggestion.exampleSource.license}
+          来源：{suggestion.corpusSentenceSource.source} · {suggestion.corpusSentenceSource.license}
         </p>
       )}
 

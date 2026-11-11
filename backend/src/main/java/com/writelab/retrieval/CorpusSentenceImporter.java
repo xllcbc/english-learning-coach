@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -45,9 +46,9 @@ public class CorpusSentenceImporter implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         List<CorpusSentence> rows = readRows();
-        long existing = jdbcTemplate.queryForObject("SELECT count(*) FROM corpus_sentence", Long.class);
-        if (existing >= rows.size()) {
-            log.debug("Corpus holds {} sentences, skipping dataset import", existing);
+        long alreadyImported = countDatasetRows(rows);
+        if (alreadyImported >= rows.size()) {
+            log.debug("Corpus dataset already imported ({} of {} rows), skipping", alreadyImported, rows.size());
             return;
         }
 
@@ -55,7 +56,22 @@ public class CorpusSentenceImporter implements ApplicationRunner {
         log.info("Imported corpus dataset {} ({} rows written)", RESOURCE_PATH, inserted);
     }
 
-    private List<CorpusSentence> readRows() {
+    /**
+     * Counts only this dataset's deterministic ids, so unrelated rows never suppress a top-up.
+     */
+    private long countDatasetRows(List<CorpusSentence> rows) {
+        if (rows.isEmpty()) {
+            return 0;
+        }
+        String placeholders = String.join(",", Collections.nCopies(rows.size(), "?"));
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM corpus_sentence WHERE id IN (" + placeholders + ")",
+                Long.class,
+                rows.stream().map(CorpusSentence::id).toArray());
+        return count == null ? 0 : count;
+    }
+
+    static List<CorpusSentence> readRows() {
         List<CorpusSentence> rows = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 new ClassPathResource(RESOURCE_PATH).getInputStream(), StandardCharsets.UTF_8))) {

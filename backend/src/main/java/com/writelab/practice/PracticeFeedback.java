@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Response view of {@link com.writelab.feedback.StructuredFeedback}: identical JSON field names,
- * with Corpus Sentence attribution attached to each Vocabulary Suggestion.
+ * with the Corpus Sentence source attached to each Vocabulary Suggestion.
  */
 public record PracticeFeedback(
         String correction,

@@ -40,7 +40,7 @@ node tools/build-corpus.mjs
 
 `CorpusSentenceImporter` 是 `ApplicationRunner`，在 Flyway 之后执行：
 
-- 阈值取随包数据集的行数：库中已有行数 ≥ 文件行数时跳过，否则重新扫描并补写缺失行。数据集更新后无需改常量。
+- 阈值判断只数「本次数据集中已入库的 id」：全部 id 都在库里才跳过，因此额外的手工行或后续数据集不会掩盖缺失行。
 - 逐批多行 `INSERT ... ON CONFLICT (word_form, sentence) DO NOTHING`，整个导入在单个事务内，失败即回滚。
 - 行 id 由 `(word_form, sentence)` 派生（`UUID.nameUUIDFromBytes`），所以重复导入不会产生新 id，已有 Retrieval Hit 的引用不会失效。
 
@@ -60,4 +60,5 @@ docker exec writelab-postgres psql -U writelab -d writelab -c "DELETE FROM corpu
 
 - 确定性实现按固定次序排序，`similarity_score` 恒为 `NULL`，`ordering` 列为 `FIXED_ORDER` —— 这就是「相似度为空」的说明。
 - 没有候选句子时记录 `skip_reason = NO_CORPUS_SENTENCE`；检索本身抛异常时记录 `RETRIEVAL_FAILED`。
+- `ordering`、`similarity_score`、`skip_reason`、`corpus_sentence_id` 的含义也写在数据库列注释（`COMMENT ON COLUMN`）里，只查数据库即可读懂。
 - 两种情况下 Vocabulary Suggestion 都保留模型原例句，请求仍成功。

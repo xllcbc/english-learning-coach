@@ -1,13 +1,9 @@
 package com.writelab.retrieval;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
@@ -45,8 +41,8 @@ class CorpusSentenceImporterTest {
     }
 
     @Test
-    void bundledDatasetSentencesContainTheirWordForm() throws IOException {
-        List<CorpusSentence> rows = readBundledDataset();
+    void bundledDatasetSentencesContainTheirWordForm() {
+        List<CorpusSentence> rows = CorpusSentenceImporter.readRows();
 
         assertThat(rows).hasSizeGreaterThan(10);
         assertThat(rows).allSatisfy(row -> {
@@ -56,24 +52,5 @@ class CorpusSentenceImporterTest {
             assertThat(row.source()).startsWith("Tatoeba");
             assertThat(row.license()).isEqualTo("CC BY 2.0 FR");
         });
-    }
-
-    private static List<CorpusSentence> readBundledDataset() throws IOException {
-        List<CorpusSentence> rows = new java.util.ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                new ClassPathResource(CorpusSentenceImporter.RESOURCE_PATH).getInputStream(),
-                StandardCharsets.UTF_8))) {
-            String header = reader.readLine();
-            assertThat(header).isEqualTo("word_form,sentence,source,license");
-            String line;
-            int lineNumber = 1;
-            while ((line = reader.readLine()) != null) {
-                lineNumber++;
-                if (!line.isBlank()) {
-                    rows.add(CorpusSentenceImporter.parse(line, lineNumber));
-                }
-            }
-        }
-        return rows;
     }
 }

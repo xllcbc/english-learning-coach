@@ -9,6 +9,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(
@@ -47,6 +49,26 @@ class CorpusSentenceImportIntegrationTest {
         importer.run(null);
 
         assertThat(count()).isEqualTo(before);
+    }
+
+    @Test
+    void unrelatedRowsDoNotSuppressTheDatasetTopUp() {
+        long before = count();
+        jdbcClient.sql("DELETE FROM corpus_sentence WHERE word_form = 'consequently'").update();
+        jdbcClient.sql("""
+                        INSERT INTO corpus_sentence (id, word_form, sentence, source, license)
+                        VALUES (:id, 'handmade', 'A handmade sentence keeps the table above the dataset size.',
+                                'Project', 'CC BY 4.0')
+                        """)
+                .param("id", UUID.randomUUID())
+                .update();
+
+        importer.run(null);
+
+        assertThat(count()).isEqualTo(before + 1);
+        assertThat(jdbcClient.sql("SELECT count(*) FROM corpus_sentence WHERE word_form = 'consequently'")
+                .query(Long.class)
+                .single()).isEqualTo(1);
     }
 
     private long count() {

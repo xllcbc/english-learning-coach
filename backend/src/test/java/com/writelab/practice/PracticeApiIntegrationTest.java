@@ -257,7 +257,7 @@ class PracticeApiIntegrationTest {
         FeedbackBody restored = objectMapper.readValue(snapshot, FeedbackBody.class);
         assertThat(restored)
                 .usingRecursiveComparison()
-                .ignoringFields("vocabularySuggestions.exampleSource")
+                .ignoringFields("vocabularySuggestions.corpusSentenceSource")
                 .isEqualTo(body.feedback());
 
         String snapshotType = jdbcClient.sql("SELECT pg_typeof(structured_response)::text FROM practice_attempt WHERE id = :id")
@@ -274,7 +274,7 @@ class PracticeApiIntegrationTest {
         assertThat(persisted.vocabularySuggestions()).hasSize(body.feedback().vocabularySuggestions().size());
         assertThat(objectMapper.readValue(persisted.structuredResponse().value(), FeedbackBody.class))
                 .usingRecursiveComparison()
-                .ignoringFields("vocabularySuggestions.exampleSource")
+                .ignoringFields("vocabularySuggestions.corpusSentenceSource")
                 .isEqualTo(body.feedback());
     }
 
@@ -385,9 +385,9 @@ class PracticeApiIntegrationTest {
         assertThat(corpusSentences("many")).contains(suggestion.example());
         assertThat(suggestion.example()).containsPattern("(?i)\\bmany\\b");
         Map<String, Object> corpusRow = corpusSentenceRow(suggestion.example());
-        assertThat(suggestion.exampleSource()).isNotNull();
-        assertThat(suggestion.exampleSource().source()).isEqualTo(corpusRow.get("source"));
-        assertThat(suggestion.exampleSource().license()).isEqualTo(corpusRow.get("license"));
+        assertThat(suggestion.corpusSentenceSource()).isNotNull();
+        assertThat(suggestion.corpusSentenceSource().source()).isEqualTo(corpusRow.get("source"));
+        assertThat(suggestion.corpusSentenceSource().license()).isEqualTo(corpusRow.get("license"));
 
         Map<String, Object> hit = retrievalHit(body.id(), "many");
         assertThat(hit.get("kind")).isEqualTo("CORPUS_SENTENCE");
@@ -408,7 +408,7 @@ class PracticeApiIntegrationTest {
     }
 
     @Test
-    void replaysCorpusAttributionWhenReadingTheAttempt() throws Exception {
+    void replaysCorpusSentenceSourceWhenReadingTheAttempt() throws Exception {
         PracticeBody created = objectMapper.readValue(
                 postPractice(withCandidates(220, "many")).body(),
                 PracticeBody.class
@@ -420,8 +420,8 @@ class PracticeApiIntegrationTest {
         PracticeBody replayed = objectMapper.readValue(response.body(), PracticeBody.class);
         assertThat(vocabularyFor(replayed, "many").example())
                 .isEqualTo(vocabularyFor(created, "many").example());
-        assertThat(vocabularyFor(replayed, "many").exampleSource())
-                .isEqualTo(vocabularyFor(created, "many").exampleSource());
+        assertThat(vocabularyFor(replayed, "many").corpusSentenceSource())
+                .isEqualTo(vocabularyFor(created, "many").corpusSentenceSource());
     }
 
     @Test
@@ -433,7 +433,7 @@ class PracticeApiIntegrationTest {
 
         VocabBody suggestion = vocabularyFor(body, "weekend");
         assertThat(suggestion.example()).isEqualTo(dictionaryEntry("weekend").get("example_en"));
-        assertThat(suggestion.exampleSource()).isNull();
+        assertThat(suggestion.corpusSentenceSource()).isNull();
 
         Map<String, Object> hit = retrievalHit(body.id(), "weekend");
         assertThat(hit.get("corpus_sentence_id")).isNull();
@@ -452,7 +452,7 @@ class PracticeApiIntegrationTest {
         PracticeBody body = objectMapper.readValue(response.body(), PracticeBody.class);
         assertThat(vocabularyFor(body, "many").example())
                 .isEqualTo(dictionaryEntry("many").get("example_en"));
-        assertThat(vocabularyFor(body, "many").exampleSource()).isNull();
+        assertThat(vocabularyFor(body, "many").corpusSentenceSource()).isNull();
         assertThat(retrievalHit(body.id(), "many").get("skip_reason")).isEqualTo("RETRIEVAL_FAILED");
         assertThat(body.feedback().correction()).isNotBlank();
     }
@@ -784,11 +784,11 @@ class PracticeApiIntegrationTest {
             String word,
             String explanation,
             String example,
-            ExampleSourceBody exampleSource
+            CorpusSentenceSourceBody corpusSentenceSource
     ) {
     }
 
-    private record ExampleSourceBody(String source, String license) {
+    private record CorpusSentenceSourceBody(String source, String license) {
     }
 
     private record ErrorBody(String code, String message) {
