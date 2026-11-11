@@ -34,6 +34,16 @@ class CorpusSentenceImporterTest {
     }
 
     @Test
+    void normalizesWordFormToLowerCase() {
+        CorpusSentence parsed = CorpusSentenceImporter.parse(
+                "\"Many\",\"Are there many Moroccans in Germany?\",\"Tatoeba / yessoos\",\"CC BY 2.0 FR\"", 2);
+
+        assertThat(parsed.wordForm()).isEqualTo("many");
+        assertThat(parsed.id()).isEqualTo(UUID.nameUUIDFromBytes(
+                "many\nAre there many Moroccans in Germany?".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
     void rejectsRowWithUnexpectedColumnCount() {
         assertThatIllegalStateException()
                 .isThrownBy(() -> CorpusSentenceImporter.parse("\"many\",\"Only two\"", 7))

@@ -1,6 +1,6 @@
 CREATE TABLE corpus_sentence (
     id UUID PRIMARY KEY,
-    word_form VARCHAR(64) NOT NULL,
+    word_form VARCHAR(64) NOT NULL CHECK (word_form = lower(word_form)),
     sentence TEXT NOT NULL,
     source VARCHAR(128) NOT NULL,
     license VARCHAR(64) NOT NULL,

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,7 +125,7 @@ public class CorpusSentenceImporter implements ApplicationRunner {
         if (fields.size() != COLUMN_COUNT) {
             throw new IllegalStateException("语料数据集第 " + lineNumber + " 行有 " + fields.size() + " 列");
         }
-        String wordForm = fields.get(0);
+        String wordForm = fields.get(0).strip().toLowerCase(Locale.ROOT);
         String sentence = fields.get(1);
         return new CorpusSentence(
                 stableId(wordForm, sentence),

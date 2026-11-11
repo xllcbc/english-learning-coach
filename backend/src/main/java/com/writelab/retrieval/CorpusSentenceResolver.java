@@ -13,23 +13,23 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Resolves the Corpus Sentence replacement for each Vocabulary Suggestion and the Retrieval Hit
- * that describes what happened. Empty or failed retrieval keeps the model's own example. Callers
- * only persist the result, so retrieval vocabulary stays in this package.
+ * Resolves the Corpus Sentence that replaces each Vocabulary Suggestion's model-written example,
+ * together with the Retrieval Hit that describes what happened. Empty or failed retrieval keeps
+ * the model example. The caller owns persistence; this class owns retrieval vocabulary.
  */
-public class CorpusExampleResolver {
+public class CorpusSentenceResolver {
 
     static final String CORPUS_SENTENCE_HIT = "CORPUS_SENTENCE";
     static final String FIXED_ORDER = "FIXED_ORDER";
     static final String NO_CORPUS_SENTENCE = "NO_CORPUS_SENTENCE";
     static final String RETRIEVAL_FAILED = "RETRIEVAL_FAILED";
 
-    private static final Logger log = LoggerFactory.getLogger(CorpusExampleResolver.class);
+    private static final Logger log = LoggerFactory.getLogger(CorpusSentenceResolver.class);
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?])\\s+");
 
     private final LearningMaterialRetriever retriever;
 
-    public CorpusExampleResolver(LearningMaterialRetriever retriever) {
+    public CorpusSentenceResolver(LearningMaterialRetriever retriever) {
         this.retriever = retriever;
     }
 

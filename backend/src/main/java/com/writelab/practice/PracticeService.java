@@ -15,7 +15,7 @@ import com.writelab.persistence.PracticeAttemptRepository;
 import com.writelab.persistence.RetrievalHitEntity;
 import com.writelab.persistence.ToolInvocationEntity;
 import com.writelab.persistence.VocabularySuggestionEntity;
-import com.writelab.retrieval.CorpusExampleResolver;
+import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
@@ -49,7 +49,7 @@ public class PracticeService {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
-    private final CorpusExampleResolver corpusExampleResolver;
+    private final CorpusSentenceResolver corpusSentenceResolver;
 
     public PracticeService(
             FeedbackModel feedbackModel,
@@ -58,7 +58,7 @@ public class PracticeService {
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
-            CorpusExampleResolver corpusExampleResolver
+            CorpusSentenceResolver corpusSentenceResolver
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
@@ -66,7 +66,7 @@ public class PracticeService {
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
-        this.corpusExampleResolver = corpusExampleResolver;
+        this.corpusSentenceResolver = corpusSentenceResolver;
     }
 
     public PracticeResponse create(String writingText) {
@@ -84,7 +84,7 @@ public class PracticeService {
         UUID id = UUID.randomUUID();
 
         // Corpus Sentence resolution runs after validation and before the persistence transaction.
-        List<CorpusExampleResolver.ResolvedSuggestion> resolved = corpusExampleResolver.resolve(
+        List<CorpusSentenceResolver.ResolvedSuggestion> resolved = corpusSentenceResolver.resolve(
                 writingText, feedback.vocabularySuggestions());
         StructuredFeedback resolvedFeedback = withResolvedSuggestions(feedback, resolved);
 
@@ -166,7 +166,7 @@ public class PracticeService {
 
     private static StructuredFeedback withResolvedSuggestions(
             StructuredFeedback feedback,
-            List<CorpusExampleResolver.ResolvedSuggestion> resolved
+            List<CorpusSentenceResolver.ResolvedSuggestion> resolved
     ) {
         return new StructuredFeedback(
                 feedback.correction(),
@@ -175,7 +175,7 @@ public class PracticeService {
                 feedback.scores(),
                 feedback.strengths(),
                 feedback.learningIssues(),
-                resolved.stream().map(CorpusExampleResolver.ResolvedSuggestion::suggestion).toList()
+                resolved.stream().map(CorpusSentenceResolver.ResolvedSuggestion::suggestion).toList()
         );
     }
 
@@ -199,7 +199,7 @@ public class PracticeService {
             PracticeAttemptEntity entity,
             StructuredFeedback feedback,
             List<ToolInvocation> toolInvocations,
-            IntFunction<CorpusSentenceSource> sourceAt
+            IntFunction<CorpusSentenceSource> sourceByPosition
     ) {
         ModelMode mode = ModelMode.valueOf(entity.modelMode());
         return new PracticeResponse(
@@ -208,7 +208,7 @@ public class PracticeService {
                 entity.wordCount(),
                 mode,
                 mode == ModelMode.MOCK,
-                toPracticeFeedback(feedback, sourceAt),
+                toPracticeFeedback(feedback, sourceByPosition),
                 toolInvocations,
                 entity.createdAt()
         );
@@ -216,14 +216,14 @@ public class PracticeService {
 
     private static PracticeFeedback toPracticeFeedback(
             StructuredFeedback feedback,
-            IntFunction<CorpusSentenceSource> sourceAt
+            IntFunction<CorpusSentenceSource> sourceByPosition
     ) {
         List<VocabularySuggestion> suggestions = feedback.vocabularySuggestions();
         List<VocabularySuggestionResponse> views = new ArrayList<>(suggestions.size());
         for (int index = 0; index < suggestions.size(); index++) {
             VocabularySuggestion suggestion = suggestions.get(index);
             views.add(new VocabularySuggestionResponse(
-                    suggestion.word(), suggestion.explanation(), suggestion.example(), sourceAt.apply(index)));
+                    suggestion.word(), suggestion.explanation(), suggestion.example(), sourceByPosition.apply(index)));
         }
         return new PracticeFeedback(
                 feedback.correction(),
@@ -250,7 +250,7 @@ public class PracticeService {
     }
 
     private static List<VocabularySuggestionEntity> toVocabularyEntities(
-            List<CorpusExampleResolver.ResolvedSuggestion> resolved
+            List<CorpusSentenceResolver.ResolvedSuggestion> resolved
     ) {
         return resolved.stream()
                 .map(entry -> new VocabularySuggestionEntity(
@@ -264,11 +264,11 @@ public class PracticeService {
     }
 
     private static List<RetrievalHitEntity> toRetrievalHitEntities(
-            List<CorpusExampleResolver.ResolvedSuggestion> resolved
+            List<CorpusSentenceResolver.ResolvedSuggestion> resolved
     ) {
         return resolved.stream()
                 .map(entry -> {
-                    CorpusExampleResolver.RetrievalHit hit = entry.hit();
+                    CorpusSentenceResolver.RetrievalHit hit = entry.hit();
                     return new RetrievalHitEntity(
                             UUID.randomUUID(),
                             hit.kind(),

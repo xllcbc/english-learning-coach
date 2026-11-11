@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class CorpusExampleResolverTest {
+class CorpusSentenceResolverTest {
 
     private static final String WRITING_TEXT = "Many students practice daily. They improve quickly.";
 
@@ -17,16 +17,16 @@ class CorpusExampleResolverTest {
     void adoptsTheFirstCandidateAndRecordsTheHit() {
         CorpusSentence adopted = sentence("many", "Many students practice daily.");
         AtomicReference<Map<String, String>> queried = new AtomicReference<>();
-        CorpusExampleResolver resolver = new CorpusExampleResolver(learnerSentences -> {
+        CorpusSentenceResolver resolver = new CorpusSentenceResolver(learnerSentences -> {
             queried.set(learnerSentences);
             return Map.of("many", List.of(adopted, sentence("many", "Many people read books.")));
         });
 
-        List<CorpusExampleResolver.ResolvedSuggestion> resolved = resolver.resolve(
+        List<CorpusSentenceResolver.ResolvedSuggestion> resolved = resolver.resolve(
                 WRITING_TEXT, List.of(new VocabularySuggestion("Many", "许多", "Model written sentence.")));
 
         assertThat(queried.get()).containsEntry("many", "Many students practice daily.");
-        CorpusExampleResolver.ResolvedSuggestion result = resolved.getFirst();
+        CorpusSentenceResolver.ResolvedSuggestion result = resolved.getFirst();
         assertThat(result.suggestion().word()).isEqualTo("Many");
         assertThat(result.suggestion().explanation()).isEqualTo("许多");
         assertThat(result.suggestion().example()).isEqualTo("Many students practice daily.");
@@ -43,9 +43,9 @@ class CorpusExampleResolverTest {
 
     @Test
     void keepsTheModelExampleWhenNoCandidateMatches() {
-        CorpusExampleResolver resolver = new CorpusExampleResolver(learnerSentences -> Map.of());
+        CorpusSentenceResolver resolver = new CorpusSentenceResolver(learnerSentences -> Map.of());
 
-        CorpusExampleResolver.ResolvedSuggestion result = resolver.resolve(
+        CorpusSentenceResolver.ResolvedSuggestion result = resolver.resolve(
                 WRITING_TEXT, List.of(new VocabularySuggestion("many", "许多", "Model written sentence.")))
                 .getFirst();
 
@@ -59,11 +59,11 @@ class CorpusExampleResolverTest {
 
     @Test
     void keepsTheModelExampleWhenRetrievalThrows() {
-        CorpusExampleResolver resolver = new CorpusExampleResolver(learnerSentences -> {
+        CorpusSentenceResolver resolver = new CorpusSentenceResolver(learnerSentences -> {
             throw new IllegalStateException("retrieval backend unavailable");
         });
 
-        CorpusExampleResolver.ResolvedSuggestion result = resolver.resolve(
+        CorpusSentenceResolver.ResolvedSuggestion result = resolver.resolve(
                 WRITING_TEXT, List.of(new VocabularySuggestion("many", "许多", "Model written sentence.")))
                 .getFirst();
 
@@ -74,7 +74,7 @@ class CorpusExampleResolverTest {
 
     @Test
     void returnsNothingWhenThereAreNoSuggestions() {
-        CorpusExampleResolver resolver = new CorpusExampleResolver(learnerSentences -> {
+        CorpusSentenceResolver resolver = new CorpusSentenceResolver(learnerSentences -> {
             throw new AssertionError("retrieval must not run");
         });
 

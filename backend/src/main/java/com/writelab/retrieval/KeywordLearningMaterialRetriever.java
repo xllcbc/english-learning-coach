@@ -60,7 +60,7 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
         rows.stream()
                 .sorted(FIXED_ORDER)
                 .forEach(row -> candidates
-                        .computeIfAbsent(DictionaryService.normalize(row.wordForm()), key -> new ArrayList<>())
+                        .computeIfAbsent(row.wordForm(), key -> new ArrayList<>())
                         .add(row));
         return candidates;
     }

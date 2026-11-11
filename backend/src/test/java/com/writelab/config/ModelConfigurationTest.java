@@ -7,7 +7,7 @@ import com.writelab.explanation.MockExplanationModel;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
-import com.writelab.retrieval.CorpusExampleResolver;
+import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
@@ -36,7 +36,7 @@ class ModelConfigurationTest {
                     assertThat(context).hasSingleBean(LearningMaterialRetriever.class);
                     assertThat(context.getBean(LearningMaterialRetriever.class))
                             .isInstanceOf(KeywordLearningMaterialRetriever.class);
-                    assertThat(context).hasSingleBean(CorpusExampleResolver.class);
+                    assertThat(context).hasSingleBean(CorpusSentenceResolver.class);
                     assertThat(context).doesNotHaveBean(ChatClient.class);
                 });
     }

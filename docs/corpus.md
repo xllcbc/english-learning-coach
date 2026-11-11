@@ -25,6 +25,8 @@ Vocabulary Suggestion 的 `example` 原先由模型自撰（MOCK 模式抄 Dicti
 4. 仅保留 `CC BY 2.0 FR` 许可的 Tatoeba 句子。
 5. 同一词形内部按「词数升序、再按句子文本」排序后取前 4 句。
 
+`word_form` 统一存小写（导入时规范化，数据库用 `CHECK (word_form = lower(word_form))` 兜底），检索因此可以按 btree 索引做精确匹配。
+
 排序结果是确定性实现的「固定次序」：同一输入每次得到同一顺序。
 
 ## 生成方式
@@ -40,7 +42,7 @@ node tools/build-corpus.mjs
 
 `CorpusSentenceImporter` 是 `ApplicationRunner`，在 Flyway 之后执行：
 
-- 阈值判断只数「本次数据集中已入库的 id」：全部 id 都在库里才跳过，因此额外的手工行或后续数据集不会掩盖缺失行。
+- 阈值判断只数「本次数据集中已入库的 id」：全部 id 都在库里才跳过，因此额外的手工行或后续数据集不会掩盖缺失行。该判定按数据集的 id 列表绑定参数，服务于当前手工小语料；#15 语料规模化时随导入流程一起替换。
 - 逐批多行 `INSERT ... ON CONFLICT (word_form, sentence) DO NOTHING`，整个导入在单个事务内，失败即回滚。
 - 行 id 由 `(word_form, sentence)` 派生（`UUID.nameUUIDFromBytes`），所以重复导入不会产生新 id，已有 Retrieval Hit 的引用不会失效。
 
