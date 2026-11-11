@@ -13,6 +13,7 @@ public record PracticeResponse(
         int wordCount,
         ModelMode modelMode,
         boolean mockMode,
+        boolean hasExplanation,
         PracticeFeedback feedback,
         List<ToolInvocation> toolInvocations,
         Instant createdAt

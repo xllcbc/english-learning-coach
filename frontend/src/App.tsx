@@ -63,6 +63,7 @@ export default function App() {
   const [explanation, setExplanation] = useState('');
   const [explanationStatus, setExplanationStatus] = useState<ExplanationStatus>('idle');
   const [explanationError, setExplanationError] = useState<string | null>(null);
+  const [explanationReplay, setExplanationReplay] = useState(false);
   const explanationAbort = useRef<AbortController | null>(null);
   const [savedVocabulary, setSavedVocabulary] = useState<SavedVocabularyEntry[]>([]);
   const [savedStatus, setSavedStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -134,6 +135,7 @@ export default function App() {
     setExplanation('');
     setExplanationError(null);
     setExplanationStatus(status);
+    setExplanationReplay(false);
   }
 
   async function startExplanation(practiceId: string) {
@@ -147,8 +149,9 @@ export default function App() {
       await streamExplanation(
         practiceId,
         {
-          onStart: () => {
+          onStart: (replay) => {
             if (!controller.signal.aborted) {
+              setExplanationReplay(replay);
               setExplanationStatus('streaming');
             }
           },
@@ -189,7 +192,7 @@ export default function App() {
     }
   }
 
-  function handleRetryExplanation() {
+  function handleGenerateExplanation() {
     if (result) {
       void startExplanation(result.id);
     }
@@ -219,6 +222,8 @@ export default function App() {
     const requestId = detailRequest.current + 1;
     detailRequest.current = requestId;
 
+    cancelExplanation();
+    resetExplanation('idle');
     setSelectedId(id);
     setDetailStatus('loading');
     setDetailError(null);
@@ -234,6 +239,9 @@ export default function App() {
       setStatus('idle');
       setDetailStatus('idle');
       setHistoryCollapsed(true);
+      if (practice.hasExplanation) {
+        void startExplanation(practice.id);
+      }
       feedbackHeadingRef.current?.focus();
     } catch (error) {
       if (requestId !== detailRequest.current) {
@@ -450,7 +458,8 @@ export default function App() {
                 status={explanationStatus}
                 text={explanation}
                 error={explanationError}
-                onRetry={handleRetryExplanation}
+                replay={explanationReplay}
+                onGenerate={handleGenerateExplanation}
               />
             </FeedbackView>
           )}

@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
@@ -102,6 +103,7 @@ public class PracticeService {
                 resolvedFeedback.scores().coherence(),
                 new Jsonb(objectMapper.writeValueAsString(resolvedFeedback.strengths())),
                 new Jsonb(objectMapper.writeValueAsString(resolvedFeedback)),
+                null,
                 mode.name(),
                 createdAt,
                 toIssueEntities(resolvedFeedback.learningIssues()),
@@ -208,6 +210,7 @@ public class PracticeService {
                 entity.wordCount(),
                 mode,
                 mode == ModelMode.MOCK,
+                StringUtils.hasText(entity.teacherExplanation()),
                 toPracticeFeedback(feedback, sourceByPosition),
                 toolInvocations,
                 entity.createdAt()

@@ -60,6 +60,7 @@ class ExplanationApiIntegrationTest {
     @Test
     void streamsStartDeltaAndCompleteAndSavesTeacherExplanation() throws Exception {
         UUID practiceId = createPractice(explanationText());
+        assertThat(practiceDetail(practiceId).hasExplanation()).isFalse();
 
         StreamResult result = streamExplanation(practiceId);
 
@@ -83,6 +84,7 @@ class ExplanationApiIntegrationTest {
         assertThat(complete.explanation()).contains("第1点", "第2点", "第3点");
 
         assertThat(savedExplanation(practiceId)).isEqualTo(complete.explanation());
+        assertThat(practiceDetail(practiceId).hasExplanation()).isTrue();
     }
 
     @Test
@@ -221,6 +223,12 @@ class ExplanationApiIntegrationTest {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    private PracticeBody practiceDetail(UUID practiceId) throws Exception {
+        HttpResponse<String> response = get("/api/practices/" + practiceId);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), PracticeBody.class);
+    }
+
     private String savedExplanation(UUID practiceId) {
         return jdbcClient.sql("SELECT teacher_explanation FROM practice_attempt WHERE id = :id")
                 .param("id", practiceId)
@@ -311,6 +319,6 @@ class ExplanationApiIntegrationTest {
     private record CreateBody(String text) {
     }
 
-    private record PracticeBody(UUID id) {
+    private record PracticeBody(UUID id, boolean hasExplanation) {
     }
 }

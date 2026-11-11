@@ -62,6 +62,7 @@ export interface PracticeResponse {
   wordCount: number;
   modelMode: 'MOCK' | 'REAL';
   mockMode: boolean;
+  hasExplanation: boolean;
   feedback: StructuredFeedback;
   toolInvocations: ToolInvocation[];
   createdAt: string;

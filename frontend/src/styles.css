@@ -915,6 +915,17 @@ textarea {
   }
 }
 
+.explanation-empty {
+  margin-top: 12px;
+}
+
+.explanation-empty-note {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .explanation-error {
   padding: 14px 16px;
   border: 1px solid #efc4ba;

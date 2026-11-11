@@ -21,6 +21,7 @@ public record PracticeAttemptEntity(
         int coherenceScore,
         Jsonb strengths,
         Jsonb structuredResponse,
+        String teacherExplanation,
         String modelMode,
         Instant createdAt,
         @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")

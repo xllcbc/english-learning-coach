@@ -126,6 +126,7 @@ class PracticeApiIntegrationTest {
         assertThat(replayed.mockMode()).isEqualTo(created.mockMode());
         assertThat(replayed.feedback()).isEqualTo(created.feedback());
         assertThat(replayed.createdAt()).isNotBlank();
+        assertThat(replayed.hasExplanation()).isFalse();
         assertFeedbackContract(replayed.feedback());
 
         jdbcClient.sql("""
@@ -145,6 +146,23 @@ class PracticeApiIntegrationTest {
                 get(API_PATH + "/" + created.id()).body(),
                 PracticeBody.class);
         assertThat(fromSnapshot.feedback().correction()).isEqualTo("仅来自已保存快照的纠错稿。");
+    }
+
+    @Test
+    void reportsWhetherTeacherExplanationIsStored() throws Exception {
+        PracticeBody created = objectMapper.readValue(postPractice(words(200)).body(), PracticeBody.class);
+        assertThat(created.hasExplanation()).isFalse();
+
+        jdbcClient.sql("UPDATE practice_attempt SET teacher_explanation = :explanation WHERE id = :id")
+                .param("explanation", "这是一段已保存的教师讲解。")
+                .param("id", created.id())
+                .update();
+        assertThat(fetchPractice(created.id()).hasExplanation()).isTrue();
+
+        jdbcClient.sql("UPDATE practice_attempt SET teacher_explanation = '   ' WHERE id = :id")
+                .param("id", created.id())
+                .update();
+        assertThat(fetchPractice(created.id()).hasExplanation()).isFalse();
     }
 
     @Test
@@ -580,6 +598,12 @@ class PracticeApiIntegrationTest {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    private PracticeBody fetchPractice(UUID id) throws Exception {
+        HttpResponse<String> response = get(API_PATH + "/" + id);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), PracticeBody.class);
+    }
+
     private HttpResponse<String> put(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
@@ -743,6 +767,7 @@ class PracticeApiIntegrationTest {
             int wordCount,
             String modelMode,
             boolean mockMode,
+            boolean hasExplanation,
             FeedbackBody feedback,
             List<ToolInvocationBody> toolInvocations,
             String createdAt
