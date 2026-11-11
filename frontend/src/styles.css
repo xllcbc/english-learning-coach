@@ -845,6 +845,12 @@ textarea {
   font-style: italic;
 }
 
+.vocabulary-example-source {
+  margin-top: 4px !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+
 .explanation-card {
   padding: 18px 20px;
   border: 1px solid #c9e2d5;

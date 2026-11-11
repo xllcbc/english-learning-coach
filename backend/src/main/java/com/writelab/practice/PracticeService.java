@@ -1,5 +1,6 @@
 package com.writelab.practice;
 
+import com.writelab.dictionary.DictionaryService;
 import com.writelab.feedback.EstimatedLevel;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackResult;
@@ -12,11 +13,16 @@ import com.writelab.persistence.Jsonb;
 import com.writelab.persistence.LearningIssueEntity;
 import com.writelab.persistence.PracticeAttemptEntity;
 import com.writelab.persistence.PracticeAttemptRepository;
+import com.writelab.persistence.RetrievalHitEntity;
 import com.writelab.persistence.ToolInvocationEntity;
 import com.writelab.persistence.VocabularySuggestionEntity;
+import com.writelab.retrieval.CorpusSentence;
+import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.writing.WordCounter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -25,17 +31,29 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class PracticeService {
+
+    private static final Logger log = LoggerFactory.getLogger(PracticeService.class);
 
     static final int MIN_WORDS = 200;
     static final int MAX_WORDS = 500;
 
     private static final int PREVIEW_LENGTH = 140;
+
+    private static final String CORPUS_SENTENCE_HIT = "CORPUS_SENTENCE";
+    private static final String FIXED_ORDER = "FIXED_ORDER";
+    private static final String NO_CORPUS_SENTENCE = "NO_CORPUS_SENTENCE";
+    private static final String RETRIEVAL_FAILED = "RETRIEVAL_FAILED";
+
+    private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?])\\s+");
 
     private final FeedbackModel feedbackModel;
     private final JdbcAggregateTemplate jdbcAggregateTemplate;
@@ -43,6 +61,7 @@ public class PracticeService {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    private final LearningMaterialRetriever learningMaterialRetriever;
 
     public PracticeService(
             FeedbackModel feedbackModel,
@@ -50,7 +69,8 @@ public class PracticeService {
             PracticeAttemptRepository repository,
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            LearningMaterialRetriever learningMaterialRetriever
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
@@ -58,6 +78,7 @@ public class PracticeService {
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
+        this.learningMaterialRetriever = learningMaterialRetriever;
     }
 
     public PracticeResponse create(String writingText) {
@@ -74,29 +95,34 @@ public class PracticeService {
         ModelMode mode = feedbackModel.mode();
         UUID id = UUID.randomUUID();
 
+        // Corpus Sentence retrieval runs after validation and before the persistence transaction.
+        List<ResolvedSuggestion> resolved = resolveExamples(writingText, feedback.vocabularySuggestions());
+        StructuredFeedback resolvedFeedback = withResolvedSuggestions(feedback, resolved);
+
         Instant createdAt = Instant.now();
 
         PracticeAttemptEntity entity = new PracticeAttemptEntity(
                 id,
                 writingText,
                 wordCount,
-                feedback.correction(),
-                feedback.naturalRevision(),
-                feedback.estimatedLevel().name(),
-                feedback.scores().grammar(),
-                feedback.scores().vocabulary(),
-                feedback.scores().coherence(),
-                new Jsonb(objectMapper.writeValueAsString(feedback.strengths())),
-                new Jsonb(objectMapper.writeValueAsString(feedback)),
+                resolvedFeedback.correction(),
+                resolvedFeedback.naturalRevision(),
+                resolvedFeedback.estimatedLevel().name(),
+                resolvedFeedback.scores().grammar(),
+                resolvedFeedback.scores().vocabulary(),
+                resolvedFeedback.scores().coherence(),
+                new Jsonb(objectMapper.writeValueAsString(resolvedFeedback.strengths())),
+                new Jsonb(objectMapper.writeValueAsString(resolvedFeedback)),
                 mode.name(),
                 createdAt,
-                toIssueEntities(feedback.learningIssues()),
-                toVocabularyEntities(feedback.vocabularySuggestions()),
-                toToolInvocationEntities(result.toolInvocations())
+                toIssueEntities(resolvedFeedback.learningIssues()),
+                toVocabularyEntities(resolved),
+                toToolInvocationEntities(result.toolInvocations()),
+                toRetrievalHitEntities(resolved)
         );
         transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
 
-        return toResponse(entity, feedback, result.toolInvocations());
+        return toResponse(entity, resolvedFeedback, result.toolInvocations(), exampleSources(resolved));
     }
 
     @Transactional(readOnly = true)
@@ -140,13 +166,112 @@ public class PracticeService {
                 .map(this::toToolInvocation)
                 .toList();
 
-        return toResponse(entity, feedback, toolInvocations);
+        return toResponse(entity, feedback, toolInvocations, findExampleSources(id));
+    }
+
+    private List<ResolvedSuggestion> resolveExamples(String writingText, List<VocabularySuggestion> suggestions) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, String> learnerSentences = new LinkedHashMap<>();
+        for (VocabularySuggestion suggestion : suggestions) {
+            String wordForm = DictionaryService.normalize(suggestion.word());
+            learnerSentences.putIfAbsent(wordForm, learnerSentence(writingText, suggestion.word()));
+        }
+
+        Map<String, List<CorpusSentence>> candidates;
+        String skipReason = null;
+        try {
+            candidates = learningMaterialRetriever.contextualExamples(learnerSentences);
+        } catch (RuntimeException exception) {
+            log.warn("语料例句检索失败，保留模型原例句: suggestions={}, cause={}",
+                    suggestions.size(), exception.getClass().getSimpleName());
+            candidates = Map.of();
+            skipReason = RETRIEVAL_FAILED;
+        }
+
+        List<ResolvedSuggestion> resolved = new ArrayList<>(suggestions.size());
+        for (VocabularySuggestion suggestion : suggestions) {
+            String wordForm = DictionaryService.normalize(suggestion.word());
+            List<CorpusSentence> wordCandidates = candidates.getOrDefault(wordForm, List.of());
+            if (!wordCandidates.isEmpty()) {
+                CorpusSentence adopted = wordCandidates.getFirst();
+                resolved.add(new ResolvedSuggestion(
+                        new VocabularySuggestion(suggestion.word(), suggestion.explanation(), adopted.sentence()),
+                        adopted.id(),
+                        new ExampleSource(adopted.source(), adopted.license()),
+                        new RetrievalHitEntity(
+                                UUID.randomUUID(), CORPUS_SENTENCE_HIT, wordForm, adopted.id(),
+                                1, null, FIXED_ORDER, null)
+                ));
+            } else {
+                resolved.add(new ResolvedSuggestion(
+                        suggestion,
+                        null,
+                        null,
+                        new RetrievalHitEntity(
+                                UUID.randomUUID(), CORPUS_SENTENCE_HIT, wordForm, null,
+                                null, null, FIXED_ORDER,
+                                skipReason == null ? NO_CORPUS_SENTENCE : skipReason)
+                ));
+            }
+        }
+        return resolved;
+    }
+
+    private static StructuredFeedback withResolvedSuggestions(
+            StructuredFeedback feedback,
+            List<ResolvedSuggestion> resolved
+    ) {
+        return new StructuredFeedback(
+                feedback.correction(),
+                feedback.naturalRevision(),
+                feedback.estimatedLevel(),
+                feedback.scores(),
+                feedback.strengths(),
+                feedback.learningIssues(),
+                resolved.stream().map(ResolvedSuggestion::suggestion).toList()
+        );
+    }
+
+    private static String learnerSentence(String writingText, String word) {
+        Pattern wordPattern = Pattern.compile(
+                "\\b" + Pattern.quote(word.strip()) + "\\b", Pattern.CASE_INSENSITIVE);
+        for (String sentence : SENTENCE_BOUNDARY.split(writingText.strip())) {
+            String trimmed = sentence.strip();
+            if (wordPattern.matcher(trimmed).find()) {
+                return trimmed;
+            }
+        }
+        return "";
+    }
+
+    private static List<ExampleSource> exampleSources(List<ResolvedSuggestion> resolved) {
+        return resolved.stream().map(ResolvedSuggestion::exampleSource).toList();
+    }
+
+    private List<ExampleSource> findExampleSources(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT cs.source, cs.license
+                        FROM vocabulary_suggestion vs
+                        LEFT JOIN corpus_sentence cs ON cs.id = vs.corpus_sentence_id
+                        WHERE vs.practice_attempt_id = :id
+                        ORDER BY vs.position
+                        """)
+                .param("id", practiceId)
+                .query((resultSet, rowNumber) -> {
+                    String source = resultSet.getString("source");
+                    return source == null ? null : new ExampleSource(source, resultSet.getString("license"));
+                })
+                .list();
     }
 
     private static PracticeResponse toResponse(
             PracticeAttemptEntity entity,
             StructuredFeedback feedback,
-            List<ToolInvocation> toolInvocations
+            List<ToolInvocation> toolInvocations,
+            List<ExampleSource> exampleSources
     ) {
         ModelMode mode = ModelMode.valueOf(entity.modelMode());
         return new PracticeResponse(
@@ -155,9 +280,32 @@ public class PracticeService {
                 entity.wordCount(),
                 mode,
                 mode == ModelMode.MOCK,
-                feedback,
+                toPracticeFeedback(feedback, exampleSources),
                 toolInvocations,
                 entity.createdAt()
+        );
+    }
+
+    private static PracticeFeedback toPracticeFeedback(
+            StructuredFeedback feedback,
+            List<ExampleSource> exampleSources
+    ) {
+        List<VocabularySuggestion> suggestions = feedback.vocabularySuggestions();
+        List<VocabularySuggestionResponse> views = new ArrayList<>(suggestions.size());
+        for (int index = 0; index < suggestions.size(); index++) {
+            VocabularySuggestion suggestion = suggestions.get(index);
+            ExampleSource source = index < exampleSources.size() ? exampleSources.get(index) : null;
+            views.add(new VocabularySuggestionResponse(
+                    suggestion.word(), suggestion.explanation(), suggestion.example(), source));
+        }
+        return new PracticeFeedback(
+                feedback.correction(),
+                feedback.naturalRevision(),
+                feedback.estimatedLevel(),
+                feedback.scores(),
+                feedback.strengths(),
+                feedback.learningIssues(),
+                views
         );
     }
 
@@ -174,15 +322,20 @@ public class PracticeService {
                 .toList();
     }
 
-    private static List<VocabularySuggestionEntity> toVocabularyEntities(List<VocabularySuggestion> suggestions) {
-        return suggestions.stream()
-                .map(suggestion -> new VocabularySuggestionEntity(
+    private static List<VocabularySuggestionEntity> toVocabularyEntities(List<ResolvedSuggestion> resolved) {
+        return resolved.stream()
+                .map(entry -> new VocabularySuggestionEntity(
                         UUID.randomUUID(),
-                        suggestion.word(),
-                        suggestion.explanation(),
-                        suggestion.example()
+                        entry.suggestion().word(),
+                        entry.suggestion().explanation(),
+                        entry.suggestion().example(),
+                        entry.corpusSentenceId()
                 ))
                 .toList();
+    }
+
+    private static List<RetrievalHitEntity> toRetrievalHitEntities(List<ResolvedSuggestion> resolved) {
+        return resolved.stream().map(ResolvedSuggestion::hit).toList();
     }
 
     private List<ToolInvocationEntity> toToolInvocationEntities(List<ToolInvocation> invocations) {
@@ -206,5 +359,13 @@ public class PracticeService {
                 ToolInvocationStatus.valueOf(entity.resultStatus()),
                 entity.durationMillis()
         );
+    }
+
+    private record ResolvedSuggestion(
+            VocabularySuggestion suggestion,
+            UUID corpusSentenceId,
+            ExampleSource exampleSource,
+            RetrievalHitEntity hit
+    ) {
     }
 }

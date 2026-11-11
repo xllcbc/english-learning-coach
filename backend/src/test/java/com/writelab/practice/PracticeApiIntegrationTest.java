@@ -2,15 +2,18 @@ package com.writelab.practice;
 
 import com.writelab.persistence.PracticeAttemptEntity;
 import com.writelab.persistence.PracticeAttemptRepository;
+import com.writelab.retrieval.LearningMaterialRetriever;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -54,6 +57,9 @@ class PracticeApiIntegrationTest {
 
     @Autowired
     private PracticeAttemptRepository repository;
+
+    @MockitoSpyBean
+    private LearningMaterialRetriever learningMaterialRetriever;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -249,7 +255,10 @@ class PracticeApiIntegrationTest {
                 .query(String.class)
                 .single();
         FeedbackBody restored = objectMapper.readValue(snapshot, FeedbackBody.class);
-        assertThat(restored).isEqualTo(body.feedback());
+        assertThat(restored)
+                .usingRecursiveComparison()
+                .ignoringFields("vocabularySuggestions.exampleSource")
+                .isEqualTo(body.feedback());
 
         String snapshotType = jdbcClient.sql("SELECT pg_typeof(structured_response)::text FROM practice_attempt WHERE id = :id")
                 .param("id", body.id())
@@ -264,6 +273,8 @@ class PracticeApiIntegrationTest {
         assertThat(persisted.learningIssues()).hasSize(body.feedback().learningIssues().size());
         assertThat(persisted.vocabularySuggestions()).hasSize(body.feedback().vocabularySuggestions().size());
         assertThat(objectMapper.readValue(persisted.structuredResponse().value(), FeedbackBody.class))
+                .usingRecursiveComparison()
+                .ignoringFields("vocabularySuggestions.exampleSource")
                 .isEqualTo(body.feedback());
     }
 
@@ -285,7 +296,7 @@ class PracticeApiIntegrationTest {
                 .extracting(invocation -> invocation.arguments().get("word"))
                 .containsExactly("many");
         assertThat(vocabularyFor(body, "many").example())
-                .isEqualTo(dictionaryEntry("many").get("example_en"));
+                .isIn(corpusSentences("many"));
     }
 
     @Test
@@ -320,7 +331,7 @@ class PracticeApiIntegrationTest {
         VocabBody suggestion = vocabularyFor(body, "moreover");
         assertThat(suggestion.explanation()).contains((String) entry.get("phonetic"));
         assertThat(suggestion.explanation()).contains((String) entry.get("meaning_zh"));
-        assertThat(suggestion.example()).isEqualTo(entry.get("example_en"));
+        assertThat(suggestion.example()).isIn(corpusSentences("moreover"));
     }
 
     @Test
@@ -361,6 +372,89 @@ class PracticeApiIntegrationTest {
         assertThat(body.feedback().vocabularySuggestions())
                 .extracting(VocabBody::word)
                 .containsExactly("moreover", "consequently");
+    }
+
+    @Test
+    void replacesVocabularyExampleWithACorpusSentence() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "many")).body(),
+                PracticeBody.class
+        );
+
+        VocabBody suggestion = vocabularyFor(body, "many");
+        assertThat(corpusSentences("many")).contains(suggestion.example());
+        assertThat(suggestion.example()).containsPattern("(?i)\\bmany\\b");
+        Map<String, Object> corpusRow = corpusSentenceRow(suggestion.example());
+        assertThat(suggestion.exampleSource()).isNotNull();
+        assertThat(suggestion.exampleSource().source()).isEqualTo(corpusRow.get("source"));
+        assertThat(suggestion.exampleSource().license()).isEqualTo(corpusRow.get("license"));
+
+        Map<String, Object> hit = retrievalHit(body.id(), "many");
+        assertThat(hit.get("kind")).isEqualTo("CORPUS_SENTENCE");
+        assertThat(hit.get("corpus_sentence_id")).isEqualTo(corpusRow.get("id"));
+        assertThat(hit.get("ranking")).isEqualTo(1);
+        assertThat(hit.get("similarity_score")).isNull();
+        assertThat(hit.get("ordering")).isEqualTo("FIXED_ORDER");
+        assertThat(hit.get("skip_reason")).isNull();
+
+        UUID adopted = jdbcClient.sql("""
+                        SELECT corpus_sentence_id FROM vocabulary_suggestion
+                        WHERE practice_attempt_id = :id AND word = 'many'
+                        """)
+                .param("id", body.id())
+                .query((resultSet, rowNumber) -> resultSet.getObject("corpus_sentence_id", UUID.class))
+                .single();
+        assertThat(adopted).isEqualTo(corpusRow.get("id"));
+    }
+
+    @Test
+    void replaysCorpusAttributionWhenReadingTheAttempt() throws Exception {
+        PracticeBody created = objectMapper.readValue(
+                postPractice(withCandidates(220, "many")).body(),
+                PracticeBody.class
+        );
+
+        HttpResponse<String> response = get(API_PATH + "/" + created.id());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        PracticeBody replayed = objectMapper.readValue(response.body(), PracticeBody.class);
+        assertThat(vocabularyFor(replayed, "many").example())
+                .isEqualTo(vocabularyFor(created, "many").example());
+        assertThat(vocabularyFor(replayed, "many").exampleSource())
+                .isEqualTo(vocabularyFor(created, "many").exampleSource());
+    }
+
+    @Test
+    void keepsModelExampleWhenTheCorpusHasNoMatchingSentence() throws Exception {
+        PracticeBody body = objectMapper.readValue(
+                postPractice(withCandidates(220, "weekend")).body(),
+                PracticeBody.class
+        );
+
+        VocabBody suggestion = vocabularyFor(body, "weekend");
+        assertThat(suggestion.example()).isEqualTo(dictionaryEntry("weekend").get("example_en"));
+        assertThat(suggestion.exampleSource()).isNull();
+
+        Map<String, Object> hit = retrievalHit(body.id(), "weekend");
+        assertThat(hit.get("corpus_sentence_id")).isNull();
+        assertThat(hit.get("ranking")).isNull();
+        assertThat(hit.get("skip_reason")).isEqualTo("NO_CORPUS_SENTENCE");
+    }
+
+    @Test
+    void keepsModelExampleAndStillSucceedsWhenRetrievalFails() throws Exception {
+        Mockito.doThrow(new IllegalStateException("retrieval backend unavailable"))
+                .when(learningMaterialRetriever).contextualExamples(Mockito.any());
+
+        HttpResponse<String> response = postPractice(withCandidates(220, "many"));
+
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(201);
+        PracticeBody body = objectMapper.readValue(response.body(), PracticeBody.class);
+        assertThat(vocabularyFor(body, "many").example())
+                .isEqualTo(dictionaryEntry("many").get("example_en"));
+        assertThat(vocabularyFor(body, "many").exampleSource()).isNull();
+        assertThat(retrievalHit(body.id(), "many").get("skip_reason")).isEqualTo("RETRIEVAL_FAILED");
+        assertThat(body.feedback().correction()).isNotBlank();
     }
 
     @Test
@@ -592,6 +686,36 @@ class PracticeApiIntegrationTest {
                 .singleRow();
     }
 
+    private List<String> corpusSentences(String wordForm) {
+        return jdbcClient.sql("SELECT sentence FROM corpus_sentence WHERE word_form = :wordForm")
+                .param("wordForm", wordForm)
+                .query(String.class)
+                .list();
+    }
+
+    private Map<String, Object> corpusSentenceRow(String sentence) {
+        return jdbcClient.sql("""
+                        SELECT id, word_form, sentence, source, license
+                        FROM corpus_sentence
+                        WHERE sentence = :sentence
+                        """)
+                .param("sentence", sentence)
+                .query()
+                .singleRow();
+    }
+
+    private Map<String, Object> retrievalHit(UUID practiceId, String wordForm) {
+        return jdbcClient.sql("""
+                        SELECT kind, word_form, corpus_sentence_id, ranking, similarity_score, ordering, skip_reason
+                        FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND word_form = :wordForm
+                        """)
+                .param("id", practiceId)
+                .param("wordForm", wordForm)
+                .query()
+                .singleRow();
+    }
+
     private static VocabBody vocabularyFor(PracticeBody body, String word) {
         return body.feedback().vocabularySuggestions().stream()
                 .filter(suggestion -> suggestion.word().equals(word))
@@ -656,7 +780,15 @@ class PracticeApiIntegrationTest {
     ) {
     }
 
-    private record VocabBody(String word, String explanation, String example) {
+    private record VocabBody(
+            String word,
+            String explanation,
+            String example,
+            ExampleSourceBody exampleSource
+    ) {
+    }
+
+    private record ExampleSourceBody(String source, String license) {
     }
 
     private record ErrorBody(String code, String message) {

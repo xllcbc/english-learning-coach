@@ -78,6 +78,11 @@ function VocabularySuggestionCard({
       </div>
       <p>{suggestion.explanation}</p>
       {suggestion.example && <p className="vocabulary-example">{suggestion.example}</p>}
+      {suggestion.exampleSource && (
+        <p className="vocabulary-example-source">
+          来源：{suggestion.exampleSource.source} · {suggestion.exampleSource.license}
+        </p>
+      )}
 
       {lookup.status === 'error' && (
         <div className="inline-error" role="alert">

@@ -25,10 +25,16 @@ export interface LearningIssue {
   explanation: string;
 }
 
+export interface ExampleSource {
+  source: string;
+  license: string;
+}
+
 export interface VocabularySuggestion {
   word: string;
   explanation: string;
   example: string;
+  exampleSource?: ExampleSource | null;
 }
 
 export interface StructuredFeedback {

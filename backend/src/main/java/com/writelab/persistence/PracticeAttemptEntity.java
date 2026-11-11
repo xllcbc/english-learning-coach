@@ -28,6 +28,8 @@ public record PracticeAttemptEntity(
         @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
         List<VocabularySuggestionEntity> vocabularySuggestions,
         @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
-        List<ToolInvocationEntity> toolInvocations
+        List<ToolInvocationEntity> toolInvocations,
+        @MappedCollection(idColumn = "practice_attempt_id", keyColumn = "position")
+        List<RetrievalHitEntity> retrievalHits
 ) {
 }

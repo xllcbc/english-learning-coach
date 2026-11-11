@@ -10,6 +10,8 @@ import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackSchemaValidator;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
+import com.writelab.retrieval.KeywordLearningMaterialRetriever;
+import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -19,6 +21,7 @@ import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -61,6 +64,15 @@ public class ModelConfiguration {
     @Conditional(RealModelCondition.class)
     ExplanationModel realExplanationModel(ChatClient chatClient) {
         return new RealExplanationModel(chatClient);
+    }
+
+    /**
+     * The deterministic retrieval implementation serves both modes until the REAL vector
+     * implementation lands; that ticket narrows this bean with the same API-key condition.
+     */
+    @Bean
+    LearningMaterialRetriever keywordLearningMaterialRetriever(JdbcClient jdbcClient) {
+        return new KeywordLearningMaterialRetriever(jdbcClient);
     }
 
     private static boolean hasApiKey(ConditionContext context) {

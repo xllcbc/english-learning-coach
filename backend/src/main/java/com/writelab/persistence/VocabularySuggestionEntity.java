@@ -10,6 +10,7 @@ public record VocabularySuggestionEntity(
         @Id UUID id,
         String word,
         String explanation,
-        String example
+        String example,
+        UUID corpusSentenceId
 ) {
 }
