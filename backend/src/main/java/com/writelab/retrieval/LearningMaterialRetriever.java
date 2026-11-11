@@ -1,12 +1,13 @@
 package com.writelab.retrieval;
 
+import com.writelab.feedback.IssueCategory;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
 /**
- * The single application-side retrieval seam. This ticket implements Corpus Sentence lookup only;
- * Grounding Material lookup joins the interface with its own ticket. Callers live in the
- * application service layer, never inside a model adapter.
+ * The single application-side retrieval seam. Callers live in the application service layer, never
+ * inside a model adapter.
  */
 public interface LearningMaterialRetriever {
 
@@ -18,4 +19,15 @@ public interface LearningMaterialRetriever {
      * @return candidates per word form, already ordered; word forms without candidates are absent
      */
     Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences);
+
+    /**
+     * Looks up the Grounding Material a Teacher Explanation may cite for the Learning Issue
+     * categories in focus.
+     *
+     * @param categories focused categories; the deterministic implementation filters by them and
+     *                   ignores their order
+     * @return cited material in fixed order, capped by configuration; empty when nothing clears the
+     *         relevance threshold, which means the explanation must not cite anything
+     */
+    List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories);
 }

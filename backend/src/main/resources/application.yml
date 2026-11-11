@@ -28,6 +28,12 @@ writelab:
     # timeout x (1 + max-retries).
     timeout: ${WRITELAB_MODEL_TIMEOUT:120s}
     max-retries: ${WRITELAB_MODEL_MAX_RETRIES:1}
+  retrieval:
+    # Grounding Material a single Teacher Explanation may cite. min-hits is the deterministic
+    # stand-in for the relevance threshold; the vector implementation replaces it with similarity.
+    grounding-max-hits: ${WRITELAB_GROUNDING_MAX_HITS:6}
+    grounding-per-category-hits: ${WRITELAB_GROUNDING_PER_CATEGORY_HITS:2}
+    grounding-min-hits: ${WRITELAB_GROUNDING_MIN_HITS:2}
 
 logging:
   level:

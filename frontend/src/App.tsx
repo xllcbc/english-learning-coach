@@ -21,6 +21,7 @@ import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPan
 import { formatTimestamp } from './format';
 import type {
   ExplanationStatus,
+  GroundingCitation,
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
@@ -61,6 +62,7 @@ export default function App() {
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [explanation, setExplanation] = useState('');
+  const [explanationGrounding, setExplanationGrounding] = useState<GroundingCitation[]>([]);
   const [explanationStatus, setExplanationStatus] = useState<ExplanationStatus>('idle');
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const explanationAbort = useRef<AbortController | null>(null);
@@ -132,6 +134,7 @@ export default function App() {
 
   function resetExplanation(status: ExplanationStatus) {
     setExplanation('');
+    setExplanationGrounding([]);
     setExplanationError(null);
     setExplanationStatus(status);
   }
@@ -157,9 +160,10 @@ export default function App() {
               setExplanation((current) => current + text);
             }
           },
-          onComplete: (fullText) => {
+          onComplete: (fullText, groundingMaterials) => {
             if (!controller.signal.aborted) {
               setExplanation(fullText);
+              setExplanationGrounding(groundingMaterials);
               setExplanationStatus('complete');
             }
           },
@@ -449,6 +453,7 @@ export default function App() {
               <ExplanationView
                 status={explanationStatus}
                 text={explanation}
+                groundingMaterials={explanationGrounding}
                 error={explanationError}
                 onRetry={handleRetryExplanation}
               />

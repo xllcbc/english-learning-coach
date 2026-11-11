@@ -1,5 +1,13 @@
 package com.writelab.explanation;
 
+import com.writelab.config.RetrievalProperties;
+import com.writelab.feedback.IssueCategory;
+import com.writelab.retrieval.CorpusSentence;
+import com.writelab.retrieval.GroundingMaterial;
+import com.writelab.retrieval.GroundingMaterialImporter;
+import com.writelab.retrieval.GroundingMaterialLimits;
+import com.writelab.retrieval.KeywordLearningMaterialRetriever;
+import com.writelab.retrieval.LearningMaterialRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,13 +28,18 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,7 +49,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         properties = "writelab.model.api-key="
 )
 @Testcontainers
-@Import(ExplanationApiIntegrationTest.FlakyExplanationConfig.class)
+@Import({ExplanationApiIntegrationTest.FlakyExplanationConfig.class,
+        ExplanationApiIntegrationTest.FailableRetrievalConfig.class})
 class ExplanationApiIntegrationTest {
 
     @Container
@@ -54,6 +68,12 @@ class ExplanationApiIntegrationTest {
 
     @Autowired
     private FlakyExplanationModel explanationModel;
+
+    @Autowired
+    private FailableLearningMaterialRetriever learningMaterialRetriever;
+
+    @Autowired
+    private GroundingMaterialImporter groundingMaterialImporter;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -104,6 +124,96 @@ class ExplanationApiIntegrationTest {
         assertThat(String.join("", deltaTexts(replay))).isEqualTo(first.explanation());
         assertThat(eventNames(replay).getLast()).isEqualTo("complete");
         assertThat(eventNames(replay)).doesNotContain("error");
+    }
+
+    @Test
+    void citesGroundingMaterialAndReplaysTheSameCitationsWithoutRetrievingAgain() throws Exception {
+        UUID practiceId = createPractice(explanationText());
+
+        CompleteBody complete = readEvent(
+                streamExplanation(practiceId).events().getLast(),
+                CompleteBody.class
+        );
+
+        assertThat(complete.groundingMaterials()).isNotEmpty();
+        assertThat(complete.groundingMaterials())
+                .extracting(GroundingBody::reference)
+                .containsExactlyElementsOf(IntStream.rangeClosed(1, complete.groundingMaterials().size())
+                        .boxed()
+                        .toList());
+        assertThat(complete.groundingMaterials())
+                .extracting(GroundingBody::category)
+                .containsOnly("COHERENCE", "GRAMMAR", "VOCABULARY");
+        assertThat(complete.groundingMaterials()).allSatisfy(citation -> {
+            assertThat(citation.content()).isNotBlank();
+            assertThat(citation.source()).isEqualTo("WriteLab 自建依据材料");
+            assertThat(citation.license()).isEqualTo("CC BY 4.0");
+        });
+        assertThat(citationNumbers(complete.explanation()))
+                .as("every citation in the text names a returned material")
+                .isNotEmpty()
+                .allMatch(number -> number >= 1 && number <= complete.groundingMaterials().size());
+        assertThat(complete.explanation()).doesNotContain("依据：无");
+
+        long hits = groundingCitationCount(practiceId);
+        assertThat(hits).isEqualTo(complete.groundingMaterials().size());
+        assertThat(groundingOrderings(practiceId)).containsOnly("FIXED_ORDER");
+
+        CompleteBody replayed = readEvent(
+                streamExplanation(practiceId).events().getLast(),
+                CompleteBody.class
+        );
+
+        assertThat(replayed.explanation()).isEqualTo(complete.explanation());
+        assertThat(replayed.groundingMaterials()).isEqualTo(complete.groundingMaterials());
+        assertThat(groundingCitationCount(practiceId)).isEqualTo(hits);
+        assertThat(groundingHitCount(practiceId)).isEqualTo(hits);
+    }
+
+    @Test
+    void completesWithoutCitationsWhenNothingClearsTheRetrievalThreshold() throws Exception {
+        UUID practiceId = createPractice(explanationText());
+        jdbcClient.sql("DELETE FROM grounding_material").update();
+
+        try {
+            StreamResult result = streamExplanation(practiceId);
+
+            assertThat(result.status()).isEqualTo(200);
+            assertThat(eventNames(result).getFirst()).isEqualTo("start");
+            assertThat(eventNames(result).getLast()).isEqualTo("complete");
+            assertThat(eventNames(result)).doesNotContain("error");
+
+            CompleteBody complete = readEvent(result.events().getLast(), CompleteBody.class);
+            assertThat(complete.groundingMaterials()).isEmpty();
+            assertThat(complete.explanation()).doesNotContain("[依据").doesNotContain("依据：无");
+            assertThat(savedExplanation(practiceId)).isEqualTo(complete.explanation());
+
+            assertThat(groundingSkipReasons(practiceId)).containsExactly("NO_GROUNDING_MATERIAL");
+            assertThat(groundingCitationCount(practiceId)).isZero();
+        } finally {
+            groundingMaterialImporter.run(null);
+        }
+    }
+
+    @Test
+    void completesWithoutCitationsWhenRetrievalFails() throws Exception {
+        UUID practiceId = createPractice(explanationText());
+        learningMaterialRetriever.failNext();
+
+        StreamResult result = streamExplanation(practiceId);
+
+        assertThat(result.status()).isEqualTo(200);
+        assertThat(eventNames(result).getFirst()).isEqualTo("start");
+        assertThat(eventNames(result).getLast()).isEqualTo("complete");
+        assertThat(eventNames(result)).doesNotContain("error");
+
+        CompleteBody complete = readEvent(result.events().getLast(), CompleteBody.class);
+        assertThat(complete.groundingMaterials()).isEmpty();
+        assertThat(complete.explanation()).doesNotContain("[依据").doesNotContain("依据：无");
+        assertThat(savedExplanation(practiceId)).isEqualTo(complete.explanation());
+
+        assertThat(groundingSkipReasons(practiceId)).containsExactly("RETRIEVAL_FAILED");
+        assertThat(groundingCitationCount(practiceId)).isZero();
     }
 
     @Test
@@ -159,6 +269,55 @@ class ExplanationApiIntegrationTest {
         @Primary
         FlakyExplanationModel flakyExplanationModel(MockExplanationModel delegate) {
             return new FlakyExplanationModel(delegate);
+        }
+    }
+
+    /**
+     * Same pattern as the flaky model: delegates to the real deterministic retriever so only the
+     * failure behaviour under test is simulated.
+     */
+    @TestConfiguration
+    static class FailableRetrievalConfig {
+
+        @Bean
+        @Primary
+        FailableLearningMaterialRetriever failableLearningMaterialRetriever(
+                JdbcClient jdbcClient,
+                RetrievalProperties retrievalProperties
+        ) {
+            return new FailableLearningMaterialRetriever(new KeywordLearningMaterialRetriever(
+                    jdbcClient,
+                    new GroundingMaterialLimits(
+                            retrievalProperties.groundingPerCategoryHits(),
+                            retrievalProperties.groundingMaxHits(),
+                            retrievalProperties.groundingMinHits())));
+        }
+    }
+
+    static final class FailableLearningMaterialRetriever implements LearningMaterialRetriever {
+
+        private final LearningMaterialRetriever delegate;
+        private final AtomicBoolean failNext = new AtomicBoolean(false);
+
+        FailableLearningMaterialRetriever(LearningMaterialRetriever delegate) {
+            this.delegate = delegate;
+        }
+
+        void failNext() {
+            failNext.set(true);
+        }
+
+        @Override
+        public Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
+            return delegate.contextualExamples(learnerSentences);
+        }
+
+        @Override
+        public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
+            if (failNext.compareAndSet(true, false)) {
+                throw new IllegalStateException("模拟依据材料检索失败");
+            }
+            return delegate.groundingMaterials(categories);
         }
     }
 
@@ -227,6 +386,58 @@ class ExplanationApiIntegrationTest {
                 .query((resultSet, rowNum) -> resultSet.getString("teacher_explanation"))
                 .list()
                 .getFirst();
+    }
+
+    private long groundingHitCount(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT count(*) FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND kind = 'GROUNDING_MATERIAL'
+                        """)
+                .param("id", practiceId)
+                .query(Long.class)
+                .single();
+    }
+
+    private long groundingCitationCount(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT count(*) FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND kind = 'GROUNDING_MATERIAL'
+                            AND grounding_material_id IS NOT NULL
+                        """)
+                .param("id", practiceId)
+                .query(Long.class)
+                .single();
+    }
+
+    private static List<Integer> citationNumbers(String explanation) {
+        Matcher matcher = Pattern.compile("\\[依据(\\d+)]").matcher(explanation);
+        List<Integer> numbers = new ArrayList<>();
+        while (matcher.find()) {
+            numbers.add(Integer.parseInt(matcher.group(1)));
+        }
+        return numbers;
+    }
+
+    private List<String> groundingSkipReasons(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT skip_reason FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND kind = 'GROUNDING_MATERIAL'
+                        ORDER BY position
+                        """)
+                .param("id", practiceId)
+                .query(String.class)
+                .list();
+    }
+
+    private List<String> groundingOrderings(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT ordering FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND kind = 'GROUNDING_MATERIAL'
+                        ORDER BY position
+                        """)
+                .param("id", practiceId)
+                .query(String.class)
+                .list();
     }
 
     private <T> T readEvent(SseEvent event, Class<T> type) {
@@ -302,7 +513,16 @@ class ExplanationApiIntegrationTest {
     private record DeltaBody(String text) {
     }
 
-    private record CompleteBody(String explanation) {
+    private record CompleteBody(String explanation, List<GroundingBody> groundingMaterials) {
+    }
+
+    private record GroundingBody(
+            int reference,
+            String category,
+            String content,
+            String source,
+            String license
+    ) {
     }
 
     private record ErrorBody(String code, String message) {

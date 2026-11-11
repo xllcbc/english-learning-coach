@@ -47,7 +47,16 @@ export interface StructuredFeedback {
   vocabularySuggestions: VocabularySuggestion[];
 }
 
+export interface GroundingCitation {
+  reference: number;
+  category: IssueCategory;
+  content: string;
+  source: string;
+  license: string;
+}
+
 export type ToolInvocationStatus = 'SUCCESS' | 'NOT_FOUND' | 'BLOCKED' | 'FAILED';
+
 
 export interface ToolInvocation {
   toolName: string;
