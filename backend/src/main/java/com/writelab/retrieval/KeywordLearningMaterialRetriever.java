@@ -1,8 +1,10 @@
 package com.writelab.retrieval;
 
 import com.writelab.dictionary.DictionaryService;
+import com.writelab.feedback.IssueCategory;
 import com.writelab.writing.WordCounter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -13,9 +15,9 @@ import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * Deterministic Corpus Sentence retrieval: exact word-form filter, then fixed order (sentence
- * length ascending, then primary key). No embeddings, so the whole feedback path stays offline
- * testable and byte-for-byte repeatable.
+ * Deterministic retrieval: Corpus Sentence by exact word form, Grounding Material by Learning Issue
+ * category, both then ordered by a fixed rule (length ascending, then primary key). No embeddings,
+ * so the whole feedback and explanation path stays offline testable and byte-for-byte repeatable.
  */
 public class KeywordLearningMaterialRetriever implements LearningMaterialRetriever {
 
@@ -24,9 +26,11 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
                     .thenComparing(CorpusSentence::id);
 
     private final JdbcClient jdbcClient;
+    private final GroundingMaterialLimits groundingLimits;
 
-    public KeywordLearningMaterialRetriever(JdbcClient jdbcClient) {
+    public KeywordLearningMaterialRetriever(JdbcClient jdbcClient, GroundingMaterialLimits groundingLimits) {
         this.jdbcClient = jdbcClient;
+        this.groundingLimits = groundingLimits;
     }
 
     @Override
@@ -63,5 +67,42 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
                         .computeIfAbsent(row.wordForm(), key -> new ArrayList<>())
                         .add(row));
         return candidates;
+    }
+
+    @Override
+    public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
+        if (categories.isEmpty()) {
+            return List.of();
+        }
+        List<String> names = categories.stream().map(IssueCategory::name).distinct().toList();
+
+        List<GroundingMaterial> candidates = jdbcClient.sql("""
+                        WITH ranked AS (
+                            SELECT id, category, content, source, license,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY category
+                                       ORDER BY length(content), id
+                                   ) AS within_category_rank
+                            FROM grounding_material
+                            WHERE category IN (:categories)
+                        )
+                        SELECT id, category, content, source, license
+                        FROM ranked
+                        WHERE within_category_rank <= :perCategoryHits
+                        ORDER BY within_category_rank, category, length(content), id
+                        LIMIT :maxHits
+                        """)
+                .param("categories", names)
+                .param("perCategoryHits", groundingLimits.perCategoryHits())
+                .param("maxHits", groundingLimits.maxHits())
+                .query((resultSet, rowNumber) -> new GroundingMaterial(
+                        resultSet.getObject("id", UUID.class),
+                        IssueCategory.valueOf(resultSet.getString("category")),
+                        resultSet.getString("content"),
+                        resultSet.getString("source"),
+                        resultSet.getString("license")))
+                .list();
+
+        return candidates.size() >= groundingLimits.minHits() ? candidates : List.of();
     }
 }

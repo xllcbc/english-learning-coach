@@ -59,6 +59,7 @@ docker exec writelab-postgres psql -U writelab -d writelab -c "DELETE FROM corpu
 ## Retrieval Hit
 
 `retrieval_hit` 记录每次 Practice Attempt 的检索溯源：命中种类、词形、被采用的语料句子 id、名次、相似度与跳过原因。
+它同时记录教师讲解引用的依据材料，见 [Grounding Material 数据集](grounding-material.md)。
 
 - 确定性实现按固定次序排序，`similarity_score` 恒为 `NULL`，`ordering` 列为 `FIXED_ORDER` —— 这就是「相似度为空」的说明。
 - 没有候选句子时记录 `skip_reason = NO_CORPUS_SENTENCE`；检索本身抛异常时记录 `RETRIEVAL_FAILED`。

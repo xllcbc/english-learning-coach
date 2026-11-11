@@ -1,5 +1,6 @@
 package com.writelab.retrieval;
 
+import com.writelab.feedback.IssueCategory;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,7 @@ class KeywordLearningMaterialRetrieverTest {
         insert("zebra", "A zebra stopped.");
         insert("zebra", "The zebra crossed the river.");
         insert("zebras", "Two zebras grazed beside the quiet stream.");
+        seedGroundingMaterial();
     }
 
     @Test
@@ -76,6 +78,87 @@ class KeywordLearningMaterialRetrieverTest {
                 new LinkedHashMap<>(Map.of("unicorn", "A unicorn appeared.")));
 
         assertThat(candidates).isEmpty();
+    }
+
+    @Test
+    void filtersGroundingMaterialByFocusedCategoryInFixedOrder() {
+        List<GroundingMaterial> materials = retriever.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION));
+
+        assertThat(materials).extracting(GroundingMaterial::content)
+                .containsExactly("甲", "丁", "甲乙丙", "丁戊己");
+        assertThat(materials).allSatisfy(material -> {
+            assertThat(material.source()).isEqualTo("WriteLab 自建依据材料");
+            assertThat(material.license()).isEqualTo("CC BY 4.0");
+        });
+    }
+
+    @Test
+    void takesAtMostThePerCategoryAndOverallLimits() {
+        KeywordLearningMaterialRetriever capped = retrieverWith(new GroundingMaterialLimits(1, 6, 2));
+
+        assertThat(capped.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
+                .extracting(GroundingMaterial::content)
+                .containsExactly("甲", "丁");
+
+        KeywordLearningMaterialRetriever threeRows = retrieverWith(new GroundingMaterialLimits(2, 3, 2));
+
+        assertThat(threeRows.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
+                .extracting(GroundingMaterial::content)
+                .containsExactly("甲", "丁", "甲乙丙");
+    }
+
+    @Test
+    void returnsNoGroundingMaterialBelowTheThreshold() {
+        KeywordLearningMaterialRetriever demanding = retrieverWith(new GroundingMaterialLimits(2, 6, 5));
+
+        assertThat(demanding.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
+                .isEmpty();
+    }
+
+    @Test
+    void returnsNoGroundingMaterialForACategoryWithoutEntries() {
+        jdbcClient.sql("DELETE FROM grounding_material WHERE category = 'GRAMMAR'").update();
+
+        assertThat(retriever.groundingMaterials(List.of(IssueCategory.GRAMMAR))).isEmpty();
+    }
+
+    @Test
+    void groundsIdenticallyForTheSameCategoriesAndIgnoresTheirOrder() {
+        List<GroundingMaterial> first = retriever.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION));
+        List<GroundingMaterial> second = retriever.groundingMaterials(
+                List.of(IssueCategory.PUNCTUATION, IssueCategory.COHERENCE));
+
+        assertThat(second).isEqualTo(first);
+        assertThat(retriever.groundingMaterials(List.of())).isEmpty();
+    }
+
+    private KeywordLearningMaterialRetriever retrieverWith(GroundingMaterialLimits limits) {
+        return new KeywordLearningMaterialRetriever(jdbcClient, limits);
+    }
+
+    private void seedGroundingMaterial() {
+        for (IssueCategory category : List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)) {
+            jdbcClient.sql("DELETE FROM grounding_material WHERE category = :category")
+                    .param("category", category.name())
+                    .update();
+        }
+        insertMaterial(IssueCategory.COHERENCE, "甲乙丙");
+        insertMaterial(IssueCategory.COHERENCE, "甲");
+        insertMaterial(IssueCategory.PUNCTUATION, "丁戊己");
+        insertMaterial(IssueCategory.PUNCTUATION, "丁");
+    }
+
+    private void insertMaterial(IssueCategory category, String content) {
+        jdbcClient.sql("""
+                        INSERT INTO grounding_material (id, category, content, source, license)
+                        VALUES (:id, :category, :content, 'WriteLab 自建依据材料', 'CC BY 4.0')
+                        """)
+                .param("id", UUID.randomUUID())
+                .param("category", category.name())
+                .param("content", content)
+                .update();
     }
 
     private void insert(String wordForm, String sentence) {

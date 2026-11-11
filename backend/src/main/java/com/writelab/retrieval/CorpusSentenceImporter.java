@@ -121,7 +121,7 @@ public class CorpusSentenceImporter implements ApplicationRunner {
     }
 
     static CorpusSentence parse(String line, int lineNumber) {
-        List<String> fields = split(line);
+        List<String> fields = DatasetCsv.fields(line);
         if (fields.size() != COLUMN_COUNT) {
             throw new IllegalStateException("语料数据集第 " + lineNumber + " 行有 " + fields.size() + " 列");
         }
@@ -138,33 +138,5 @@ public class CorpusSentenceImporter implements ApplicationRunner {
 
     private static UUID stableId(String wordForm, String sentence) {
         return UUID.nameUUIDFromBytes((wordForm + "\n" + sentence).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static List<String> split(String line) {
-        List<String> fields = new ArrayList<>(COLUMN_COUNT);
-        StringBuilder current = new StringBuilder();
-        boolean quoted = false;
-        for (int index = 0; index < line.length(); index++) {
-            char character = line.charAt(index);
-            if (quoted) {
-                if (character == '"' && index + 1 < line.length() && line.charAt(index + 1) == '"') {
-                    current.append('"');
-                    index++;
-                } else if (character == '"') {
-                    quoted = false;
-                } else {
-                    current.append(character);
-                }
-            } else if (character == '"') {
-                quoted = true;
-            } else if (character == ',') {
-                fields.add(current.toString());
-                current.setLength(0);
-            } else {
-                current.append(character);
-            }
-        }
-        fields.add(current.toString());
-        return fields;
     }
 }

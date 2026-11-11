@@ -19,11 +19,6 @@ import java.util.regex.Pattern;
  */
 public class CorpusSentenceResolver {
 
-    static final String CORPUS_SENTENCE_HIT = "CORPUS_SENTENCE";
-    static final String FIXED_ORDER = "FIXED_ORDER";
-    static final String NO_CORPUS_SENTENCE = "NO_CORPUS_SENTENCE";
-    static final String RETRIEVAL_FAILED = "RETRIEVAL_FAILED";
-
     private static final Logger log = LoggerFactory.getLogger(CorpusSentenceResolver.class);
     private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?])\\s+");
 
@@ -52,7 +47,7 @@ public class CorpusSentenceResolver {
             log.warn("语料例句检索失败，保留模型原例句: suggestions={}, cause={}",
                     suggestions.size(), exception.getClass().getSimpleName());
             candidates = Map.of();
-            skipReason = RETRIEVAL_FAILED;
+            skipReason = RetrievalHit.RETRIEVAL_FAILED;
         }
 
         List<ResolvedSuggestion> resolved = new ArrayList<>(suggestions.size());
@@ -64,8 +59,8 @@ public class CorpusSentenceResolver {
                         suggestion,
                         null,
                         null,
-                        new RetrievalHit(CORPUS_SENTENCE_HIT, wordForm, null, null, null, FIXED_ORDER,
-                                skipReason == null ? NO_CORPUS_SENTENCE : skipReason)
+                        RetrievalHit.corpusSentence(wordForm, null, null,
+                                skipReason == null ? RetrievalHit.NO_CORPUS_SENTENCE : skipReason)
                 ));
             } else {
                 CorpusSentence adopted = wordCandidates.getFirst();
@@ -73,7 +68,7 @@ public class CorpusSentenceResolver {
                         new VocabularySuggestion(suggestion.word(), suggestion.explanation(), adopted.sentence()),
                         adopted.id(),
                         new CorpusSentenceSource(adopted.source(), adopted.license()),
-                        new RetrievalHit(CORPUS_SENTENCE_HIT, wordForm, adopted.id(), 1, null, FIXED_ORDER, null)
+                        RetrievalHit.corpusSentence(wordForm, adopted.id(), 1, null)
                 ));
             }
         }
@@ -97,17 +92,6 @@ public class CorpusSentenceResolver {
             UUID corpusSentenceId,
             CorpusSentenceSource corpusSentenceSource,
             RetrievalHit hit
-    ) {
-    }
-
-    public record RetrievalHit(
-            String kind,
-            String wordForm,
-            UUID corpusSentenceId,
-            Integer ranking,
-            Double similarityScore,
-            String ordering,
-            String skipReason
     ) {
     }
 }

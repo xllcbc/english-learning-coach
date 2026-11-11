@@ -1,8 +1,10 @@
-import type { ExplanationStatus } from '../types';
+import type { ExplanationStatus, GroundingCitation } from '../types';
+import { categoryLabels } from '../labels';
 
 interface ExplanationViewProps {
   status: ExplanationStatus;
   text: string;
+  groundingMaterials: GroundingCitation[];
   error: string | null;
   replay: boolean;
   onGenerate: () => void;
@@ -11,6 +13,7 @@ interface ExplanationViewProps {
 export function ExplanationView({
   status,
   text,
+  groundingMaterials,
   error,
   replay,
   onGenerate,
@@ -61,13 +64,36 @@ export function ExplanationView({
       )}
 
       {(status === 'streaming' || status === 'complete') && (
-        <div
-          className={isStreaming ? 'explanation-text is-streaming' : 'explanation-text'}
-          aria-live="polite"
-          aria-busy={isStreaming}
-        >
-          {text || '正在准备教师讲解…'}
-        </div>
+        <>
+          <div
+            className={isStreaming ? 'explanation-text is-streaming' : 'explanation-text'}
+            aria-live="polite"
+            aria-busy={isStreaming}
+          >
+            {text || '正在准备教师讲解…'}
+          </div>
+          {status === 'complete' && groundingMaterials.length > 0 && (
+            <div className="grounding-list" aria-labelledby="grounding-title">
+              <h4 id="grounding-title">
+                本次依据 <span className="section-hint">Grounding Material</span>
+              </h4>
+              <ul>
+                {groundingMaterials.map((material) => (
+                  <li key={material.reference} className="grounding-item">
+                    <p className="grounding-heading">
+                      <span className="grounding-reference">依据{material.reference}</span>
+                      <span className="grounding-category">{categoryLabels[material.category]}</span>
+                    </p>
+                    <p className="grounding-content">{material.content}</p>
+                    <p className="grounding-source">
+                      {material.source} · {material.license}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </section>
   );

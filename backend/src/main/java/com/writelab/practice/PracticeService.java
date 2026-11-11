@@ -17,6 +17,7 @@ import com.writelab.persistence.ToolInvocationEntity;
 import com.writelab.persistence.VocabularySuggestionEntity;
 import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
+import com.writelab.retrieval.RetrievalHit;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.writing.WordCounter;
@@ -271,12 +272,13 @@ public class PracticeService {
     ) {
         return resolved.stream()
                 .map(entry -> {
-                    CorpusSentenceResolver.RetrievalHit hit = entry.hit();
+                    RetrievalHit hit = entry.hit();
                     return new RetrievalHitEntity(
                             UUID.randomUUID(),
                             hit.kind(),
                             hit.wordForm(),
                             hit.corpusSentenceId(),
+                            hit.groundingMaterialId(),
                             hit.ranking(),
                             hit.similarityScore(),
                             hit.ordering(),

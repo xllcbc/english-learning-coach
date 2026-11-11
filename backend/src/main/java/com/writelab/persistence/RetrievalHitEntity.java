@@ -11,6 +11,7 @@ public record RetrievalHitEntity(
         String kind,
         String wordForm,
         UUID corpusSentenceId,
+        UUID groundingMaterialId,
         Integer ranking,
         Double similarityScore,
         String ordering,

@@ -11,6 +11,7 @@ import com.writelab.feedback.FeedbackSchemaValidator;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
 import com.writelab.retrieval.CorpusSentenceResolver;
+import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
@@ -33,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
  * SpEL expression, so the secret never appears in condition-evaluation output.
  */
 @Configuration
-@EnableConfigurationProperties(ModelProperties.class)
+@EnableConfigurationProperties({ModelProperties.class, RetrievalProperties.class})
 public class ModelConfiguration {
 
     @Bean
@@ -72,13 +73,22 @@ public class ModelConfiguration {
      * implementation lands; that ticket narrows this bean with the same API-key condition.
      */
     @Bean
-    LearningMaterialRetriever keywordLearningMaterialRetriever(JdbcClient jdbcClient) {
-        return new KeywordLearningMaterialRetriever(jdbcClient);
+    LearningMaterialRetriever keywordLearningMaterialRetriever(
+            JdbcClient jdbcClient,
+            RetrievalProperties retrievalProperties
+    ) {
+        return new KeywordLearningMaterialRetriever(
+                jdbcClient, retrievalProperties.groundingMaterialLimits());
     }
 
     @Bean
     CorpusSentenceResolver corpusExampleResolver(LearningMaterialRetriever learningMaterialRetriever) {
         return new CorpusSentenceResolver(learningMaterialRetriever);
+    }
+
+    @Bean
+    GroundingMaterialResolver groundingMaterialResolver(LearningMaterialRetriever learningMaterialRetriever) {
+        return new GroundingMaterialResolver(learningMaterialRetriever);
     }
 
     private static boolean hasApiKey(ConditionContext context) {
