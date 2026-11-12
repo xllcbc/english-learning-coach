@@ -27,7 +27,8 @@ Vocabulary Suggestion 的 `example` 原先由模型自撰（MOCK 模式抄 Dicti
 
 `word_form` 统一存小写（导入时规范化，数据库用 `CHECK (word_form = lower(word_form))` 兜底），检索因此可以按 btree 索引做精确匹配。
 
-排序结果是确定性实现的「固定次序」：同一输入每次得到同一顺序。
+排序结果是确定性实现的「固定次序」：同一输入每次得到同一顺序。配置 API key 后改用向量实现：先按 `word_form` 精确过滤，
+再用学习者原句的 embedding 按余弦相似度排序；详见 [REAL 向量检索](vector-retrieval.md)。
 
 ## 生成方式
 
@@ -62,6 +63,7 @@ docker exec writelab-postgres psql -U writelab -d writelab -c "DELETE FROM corpu
 它同时记录教师讲解引用的依据材料，见 [Grounding Material 数据集](grounding-material.md)。
 
 - 确定性实现按固定次序排序，`similarity_score` 恒为 `NULL`，`ordering` 列为 `FIXED_ORDER` —— 这就是「相似度为空」的说明。
-- 没有候选句子时记录 `skip_reason = NO_CORPUS_SENTENCE`；检索本身抛异常时记录 `RETRIEVAL_FAILED`。
+- 向量实现按余弦相似度排序，`ordering = VECTOR_SIMILARITY`，`similarity_score` 记录该分数。
+- 没有候选句子（含语料表为空、行尚未填充向量）时记录 `skip_reason = NO_CORPUS_SENTENCE`；检索或 embedding 抛异常时记录 `RETRIEVAL_FAILED`。
 - `ordering`、`similarity_score`、`skip_reason`、`corpus_sentence_id` 的含义也写在数据库列注释（`COMMENT ON COLUMN`）里，只查数据库即可读懂。
 - 两种情况下 Vocabulary Suggestion 都保留模型原例句，请求仍成功。

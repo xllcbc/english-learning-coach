@@ -24,6 +24,9 @@ writelab:
     # A blank API key selects the deterministic Mock mode.
     api-key: ${WRITELAB_MODEL_API_KEY:}
     name: ${WRITELAB_MODEL_NAME:gpt-4o-mini}
+    # Independent embedding model; dimensions are fixed at 512 to match halfvec(512).
+    # Base URL, API key and timeout are shared with the chat model.
+    embedding-name: ${WRITELAB_MODEL_EMBEDDING_NAME:text-embedding-3-small}
     # Per HTTP call. The SDK retries timeouts, so the worst-case wait is
     # timeout x (1 + max-retries).
     timeout: ${WRITELAB_MODEL_TIMEOUT:120s}
@@ -33,7 +36,11 @@ writelab:
     # stand-in for the relevance threshold; the vector implementation replaces it with similarity.
     grounding-max-hits: ${WRITELAB_GROUNDING_MAX_HITS:6}
     grounding-per-category-hits: ${WRITELAB_GROUNDING_PER_CATEGORY_HITS:2}
+    # Deterministic stand-in: fewer matching notes than this count as no relevant material.
     grounding-min-hits: ${WRITELAB_GROUNDING_MIN_HITS:2}
+    # Vector mode replaces min-hits with cosine similarity; below the threshold counts as no
+    # relevant material. The final value is tuned by the offline evaluation ticket.
+    grounding-similarity-threshold: ${WRITELAB_GROUNDING_SIMILARITY_THRESHOLD:0.3}
 
 logging:
   level:

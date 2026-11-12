@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,27 +33,42 @@ public class GroundingMaterialResolver {
             return new GroundingResult(List.of(), List.of());
         }
 
-        List<GroundingMaterial> materials;
+        List<RankedGroundingMaterial> rankedMaterials;
         String skipReason = null;
         try {
-            materials = retriever.groundingMaterials(categories);
+            rankedMaterials = retriever.groundingMaterials(categories, focusedQuery(feedback));
         } catch (RuntimeException exception) {
             log.warn("依据材料检索失败，本次讲解不引用依据: categories={}, cause={}",
                     categories, exception.getClass().getSimpleName());
-            materials = List.of();
+            rankedMaterials = List.of();
             skipReason = RetrievalHit.RETRIEVAL_FAILED;
         }
 
-        if (materials.isEmpty()) {
+        if (rankedMaterials.isEmpty()) {
             return new GroundingResult(List.of(), List.of(RetrievalHit.groundingMaterial(
                     null, null, skipReason == null ? RetrievalHit.NO_GROUNDING_MATERIAL : skipReason)));
         }
 
-        List<RetrievalHit> hits = new ArrayList<>(materials.size());
-        for (int index = 0; index < materials.size(); index++) {
-            hits.add(RetrievalHit.groundingMaterial(materials.get(index).id(), index + 1, null));
+        List<GroundingMaterial> materials = new ArrayList<>(rankedMaterials.size());
+        List<RetrievalHit> hits = new ArrayList<>(rankedMaterials.size());
+        for (int index = 0; index < rankedMaterials.size(); index++) {
+            RankedGroundingMaterial ranked = rankedMaterials.get(index);
+            materials.add(ranked.material());
+            hits.add(RetrievalHit.groundingMaterial(
+                    ranked.material().id(), index + 1, ranked.similarityScore(), null));
         }
         return new GroundingResult(materials, hits);
+    }
+
+    /**
+     * The focused Learning Issues are the semantic query for the vector implementation. The
+     * deterministic implementation ignores it, so this text never reaches a prompt or a log.
+     */
+    private static String focusedQuery(StructuredFeedback feedback) {
+        return feedback.focusedIssues().stream()
+                .map(issue -> String.join("\n",
+                        issue.originalSentence(), issue.suggestion(), issue.explanation()))
+                .collect(Collectors.joining("\n"));
     }
 
     private static List<IssueCategory> focusedCategories(StructuredFeedback feedback) {

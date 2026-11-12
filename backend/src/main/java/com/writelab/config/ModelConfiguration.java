@@ -1,7 +1,9 @@
 package com.writelab.config;
 
 import com.writelab.ai.OpenAiChatClientFactory;
+import com.writelab.ai.OpenAiEmbeddingModelFactory;
 import com.writelab.ai.RealExplanationModel;
+import com.writelab.ai.SpringAiEmbeddingClient;
 import com.writelab.ai.SpringAiFeedbackClient;
 import com.writelab.dictionary.DictionaryService;
 import com.writelab.explanation.ExplanationModel;
@@ -11,11 +13,14 @@ import com.writelab.feedback.FeedbackSchemaValidator;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
 import com.writelab.retrieval.CorpusSentenceResolver;
+import com.writelab.retrieval.EmbeddingClient;
 import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
@@ -69,16 +74,41 @@ public class ModelConfiguration {
     }
 
     /**
-     * The deterministic retrieval implementation serves both modes until the REAL vector
-     * implementation lands; that ticket narrows this bean with the same API-key condition.
+     * The same API-key condition that selects the model adapters selects the retrieval
+     * implementation, so there is no second switch dimension. Without a key no embedding model or
+     * embedding client bean exists, and no code path can call the embedding service.
      */
     @Bean
+    @Conditional(MockModelCondition.class)
     LearningMaterialRetriever keywordLearningMaterialRetriever(
             JdbcClient jdbcClient,
             RetrievalProperties retrievalProperties
     ) {
         return new KeywordLearningMaterialRetriever(
                 jdbcClient, retrievalProperties.groundingMaterialLimits());
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    EmbeddingModel embeddingModel(ModelProperties properties) {
+        return OpenAiEmbeddingModelFactory.create(properties);
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    EmbeddingClient embeddingClient(EmbeddingModel embeddingModel) {
+        return new SpringAiEmbeddingClient(embeddingModel);
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    LearningMaterialRetriever vectorLearningMaterialRetriever(
+            JdbcClient jdbcClient,
+            EmbeddingClient embeddingClient,
+            RetrievalProperties retrievalProperties
+    ) {
+        return new VectorLearningMaterialRetriever(
+                jdbcClient, embeddingClient, retrievalProperties.vectorRetrievalSettings());
     }
 
     @Bean

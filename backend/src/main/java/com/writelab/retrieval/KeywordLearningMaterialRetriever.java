@@ -34,7 +34,7 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
     }
 
     @Override
-    public Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
+    public Map<String, List<RankedCorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
         Set<String> wordForms = new LinkedHashSet<>();
         for (String wordForm : learnerSentences.keySet()) {
             String normalized = DictionaryService.normalize(wordForm);
@@ -60,23 +60,24 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
                         resultSet.getString("license")))
                 .list();
 
-        Map<String, List<CorpusSentence>> candidates = new LinkedHashMap<>();
+        Map<String, List<RankedCorpusSentence>> candidates = new LinkedHashMap<>();
         rows.stream()
                 .sorted(FIXED_ORDER)
                 .forEach(row -> candidates
                         .computeIfAbsent(row.wordForm(), key -> new ArrayList<>())
-                        .add(row));
+                        .add(RankedCorpusSentence.fixed(row)));
         return candidates;
     }
 
     @Override
-    public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
+    public List<RankedGroundingMaterial> groundingMaterials(
+            Collection<IssueCategory> categories, String queryText) {
         if (categories.isEmpty()) {
             return List.of();
         }
         List<String> names = categories.stream().map(IssueCategory::name).distinct().toList();
 
-        List<GroundingMaterial> candidates = jdbcClient.sql("""
+        List<RankedGroundingMaterial> candidates = jdbcClient.sql("""
                         WITH ranked AS (
                             SELECT id, category, content, source, license,
                                    ROW_NUMBER() OVER (
@@ -95,12 +96,12 @@ public class KeywordLearningMaterialRetriever implements LearningMaterialRetriev
                 .param("categories", names)
                 .param("perCategoryHits", groundingLimits.perCategoryHits())
                 .param("maxHits", groundingLimits.maxHits())
-                .query((resultSet, rowNumber) -> new GroundingMaterial(
+                .query((resultSet, rowNumber) -> RankedGroundingMaterial.fixed(new GroundingMaterial(
                         resultSet.getObject("id", UUID.class),
                         IssueCategory.valueOf(resultSet.getString("category")),
                         resultSet.getString("content"),
                         resultSet.getString("source"),
-                        resultSet.getString("license")))
+                        resultSet.getString("license"))))
                 .list();
 
         return candidates.size() >= groundingLimits.minHits() ? candidates : List.of();
