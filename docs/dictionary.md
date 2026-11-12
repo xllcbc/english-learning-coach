@@ -48,6 +48,9 @@ node tools/build-dictionary.mjs <path/to/ecdict.csv> [eng_sentences.tsv] [out.cs
 默认输出到 `backend/src/main/resources/dictionary/ecdict-ielts-common.csv`。该脚本不在 Maven 或 CI 链路里，
 只在调整筛选口径或补例句时手动执行。ECDICT 全量 CSV 约 66 MB，不入仓库。
 
+这套 CSV 同时也是 [Corpus Sentence 数据集](corpus.md) 的词形来源：`tools/build-corpus.mjs` 读取这里的
+`word` 列，因此「核心词 + 词形扩展」只有一份定义。重建词典后需要重新生成语料例句数据集，否则新词形不会有候选句子。
+
 ## 导入时机与幂等
 
 `DictionaryDatasetImporter` 是 `ApplicationRunner`，在 Flyway 之后执行：

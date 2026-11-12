@@ -5,10 +5,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -21,6 +21,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Loads the bundled Corpus Sentence dataset. Rows get an id derived from (word form, sentence),
  * so re-importing the same dataset keeps Retrieval Hit references stable.
+ *
+ * <p>The dataset holds hundreds of thousands of rows, so the importer streams the CSV twice:
+ * once to count the threshold and once inside the import transaction. The threshold is the total
+ * row count; like the dictionary importer's fixed floor it can be suppressed by extra rows, but a
+ * larger dataset still tops up because its row count exceeds the table's.
  */
 @Component
 public class CorpusSentenceImporter implements ApplicationRunner {
@@ -30,7 +35,7 @@ public class CorpusSentenceImporter implements ApplicationRunner {
     static final String RESOURCE_PATH = "corpus/sentences.csv";
     private static final String HEADER = "word_form,sentence,source,license";
     private static final int COLUMN_COUNT = 4;
-    private static final int BATCH_ROWS = 200;
+    private static final int BATCH_ROWS = 500;
 
     private static final String INSERT_PREFIX =
             "INSERT INTO corpus_sentence (id, word_form, sentence, source, license) VALUES ";
@@ -46,34 +51,50 @@ public class CorpusSentenceImporter implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        List<CorpusSentence> rows = readRows();
-        long alreadyImported = countDatasetRows(rows);
-        if (alreadyImported >= rows.size()) {
-            log.debug("Corpus dataset already imported ({} of {} rows), skipping", alreadyImported, rows.size());
+        long startedAt = System.nanoTime();
+        long datasetRows = countRows();
+        if (datasetRows == 0) {
+            log.warn("Corpus dataset {} is empty, skipping import", RESOURCE_PATH);
             return;
         }
 
-        Integer inserted = transactionTemplate.execute(status -> insertAll(rows));
-        log.info("Imported corpus dataset {} ({} rows written)", RESOURCE_PATH, inserted);
-    }
-
-    /**
-     * Counts only this dataset's deterministic ids, so unrelated rows never suppress a top-up.
-     */
-    private long countDatasetRows(List<CorpusSentence> rows) {
-        if (rows.isEmpty()) {
-            return 0;
+        Long count = jdbcTemplate.queryForObject("SELECT count(*) FROM corpus_sentence", Long.class);
+        long rowsInTable = count == null ? 0 : count;
+        if (rowsInTable >= datasetRows) {
+            log.debug("Corpus dataset already imported ({} rows in table, {} in dataset), skipping",
+                    rowsInTable, datasetRows);
+            return;
         }
-        String placeholders = String.join(",", Collections.nCopies(rows.size(), "?"));
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM corpus_sentence WHERE id IN (" + placeholders + ")",
-                Long.class,
-                rows.stream().map(CorpusSentence::id).toArray());
-        return count == null ? 0 : count;
+
+        ImportResult result = transactionTemplate.execute(status -> importRows());
+        long millis = (System.nanoTime() - startedAt) / 1_000_000;
+        log.info("Imported corpus dataset {} ({} rows read, {} written, {} rows in table) in {} ms",
+                RESOURCE_PATH, result.rowsRead(), result.written(), rowsInTable + result.written(), millis);
     }
 
-    static List<CorpusSentence> readRows() {
-        List<CorpusSentence> rows = new ArrayList<>();
+    private ImportResult importRows() {
+        List<CorpusSentence> batch = new ArrayList<>(BATCH_ROWS);
+        BatchCounter counter = new BatchCounter();
+        forEachRow(row -> {
+            batch.add(row);
+            counter.rowsRead++;
+            if (batch.size() == BATCH_ROWS) {
+                counter.written += insertBatch(batch);
+                batch.clear();
+            }
+        });
+        if (!batch.isEmpty()) {
+            counter.written += insertBatch(batch);
+        }
+        return new ImportResult(counter.rowsRead, counter.written);
+    }
+
+    static long countRows() {
+        return forEachRow(row -> { });
+    }
+
+    static long forEachRow(Consumer<CorpusSentence> action) {
+        long count = 0;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 new ClassPathResource(RESOURCE_PATH).getInputStream(), StandardCharsets.UTF_8))) {
             String header = reader.readLine();
@@ -85,21 +106,14 @@ public class CorpusSentenceImporter implements ApplicationRunner {
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
                 if (!line.isBlank()) {
-                    rows.add(parse(line, lineNumber));
+                    action.accept(parse(line, lineNumber));
+                    count++;
                 }
             }
+            return count;
         } catch (IOException exception) {
             throw new IllegalStateException("导入语料数据集失败: " + RESOURCE_PATH, exception);
         }
-        return rows;
-    }
-
-    private int insertAll(List<CorpusSentence> rows) {
-        int total = 0;
-        for (int start = 0; start < rows.size(); start += BATCH_ROWS) {
-            total += insertBatch(rows.subList(start, Math.min(start + BATCH_ROWS, rows.size())));
-        }
-        return total;
     }
 
     private int insertBatch(List<CorpusSentence> rows) {
@@ -138,5 +152,13 @@ public class CorpusSentenceImporter implements ApplicationRunner {
 
     private static UUID stableId(String wordForm, String sentence) {
         return UUID.nameUUIDFromBytes((wordForm + "\n" + sentence).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record ImportResult(int rowsRead, int written) {
+    }
+
+    private static final class BatchCounter {
+        private int rowsRead;
+        private int written;
     }
 }

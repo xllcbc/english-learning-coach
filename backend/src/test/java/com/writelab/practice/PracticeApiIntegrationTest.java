@@ -402,7 +402,7 @@ class PracticeApiIntegrationTest {
         VocabBody suggestion = vocabularyFor(body, "many");
         assertThat(corpusSentences("many")).contains(suggestion.example());
         assertThat(suggestion.example()).containsPattern("(?i)\\bmany\\b");
-        Map<String, Object> corpusRow = corpusSentenceRow(suggestion.example());
+        Map<String, Object> corpusRow = corpusSentenceRow(suggestion.word(), suggestion.example());
         assertThat(suggestion.corpusSentenceSource()).isNotNull();
         assertThat(suggestion.corpusSentenceSource().source()).isEqualTo(corpusRow.get("source"));
         assertThat(suggestion.corpusSentenceSource().license()).isEqualTo(corpusRow.get("license"));
@@ -444,16 +444,18 @@ class PracticeApiIntegrationTest {
 
     @Test
     void keepsModelExampleWhenTheCorpusHasNoMatchingSentence() throws Exception {
+        // "contrive" has a dictionary example but no Corpus Sentence: every upstream sentence for
+        // it contains non-ASCII punctuation, which the dataset filter rejects.
         PracticeBody body = objectMapper.readValue(
-                postPractice(withCandidates(220, "weekend")).body(),
+                postPractice(withCandidates(220, "contrive")).body(),
                 PracticeBody.class
         );
 
-        VocabBody suggestion = vocabularyFor(body, "weekend");
-        assertThat(suggestion.example()).isEqualTo(dictionaryEntry("weekend").get("example_en"));
+        VocabBody suggestion = vocabularyFor(body, "contrive");
+        assertThat(suggestion.example()).isEqualTo(dictionaryEntry("contrive").get("example_en"));
         assertThat(suggestion.corpusSentenceSource()).isNull();
 
-        Map<String, Object> hit = retrievalHit(body.id(), "weekend");
+        Map<String, Object> hit = retrievalHit(body.id(), "contrive");
         assertThat(hit.get("corpus_sentence_id")).isNull();
         assertThat(hit.get("ranking")).isNull();
         assertThat(hit.get("skip_reason")).isEqualTo("NO_CORPUS_SENTENCE");
@@ -717,12 +719,13 @@ class PracticeApiIntegrationTest {
                 .list();
     }
 
-    private Map<String, Object> corpusSentenceRow(String sentence) {
+    private Map<String, Object> corpusSentenceRow(String word, String sentence) {
         return jdbcClient.sql("""
                         SELECT id, word_form, sentence, source, license
                         FROM corpus_sentence
-                        WHERE sentence = :sentence
+                        WHERE word_form = :wordForm AND sentence = :sentence
                         """)
+                .param("wordForm", word.toLowerCase(java.util.Locale.ROOT))
                 .param("sentence", sentence)
                 .query()
                 .singleRow();

@@ -1,6 +1,8 @@
 package com.writelab.retrieval;
 
 import com.writelab.feedback.IssueCategory;
+import com.writelab.writing.WordCounter;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +67,20 @@ class KeywordLearningMaterialRetrieverTest {
     }
 
     @Test
+    void returnsEveryBundledCandidateForAWordFormInFixedOrder() {
+        List<RankedCorpusSentence> candidates = retriever.contextualExamples(
+                Map.of("many", "Many choices remain.")).get("many");
+
+        assertThat(candidates).hasSize(12);
+        assertThat(candidates).allSatisfy(candidate ->
+                assertThat(candidate.corpusSentence().sentence()).containsPattern("(?i)\\bmany\\b"));
+        assertThat(candidates).isSortedAccordingTo(
+                Comparator.comparingInt((RankedCorpusSentence candidate) ->
+                                WordCounter.count(candidate.corpusSentence().sentence()))
+                        .thenComparing(candidate -> candidate.corpusSentence().id()));
+    }
+
+    @Test
     void returnsTheSameCandidatesForTheSameWordFormRegardlessOfLearnerSentence() {
         Map<String, List<RankedCorpusSentence>> first =
                 retriever.contextualExamples(Map.of("zebra", "first query"));
@@ -77,7 +93,7 @@ class KeywordLearningMaterialRetrieverTest {
     @Test
     void omitsWordFormsWithoutCandidates() {
         Map<String, List<RankedCorpusSentence>> candidates = retriever.contextualExamples(
-                new LinkedHashMap<>(Map.of("unicorn", "A unicorn appeared.")));
+                new LinkedHashMap<>(Map.of("zzznotaword", "A zzznotaword appeared.")));
 
         assertThat(candidates).isEmpty();
     }

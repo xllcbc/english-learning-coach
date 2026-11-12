@@ -1,5 +1,6 @@
 package com.writelab.retrieval;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -8,8 +9,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,19 +30,28 @@ class CorpusSentenceImportIntegrationTest {
     private JdbcClient jdbcClient;
 
     @Test
+    void importReachesTheCorpusSentenceDatasetSize() {
+        assertThat(count()).isEqualTo(CorpusSentenceImporter.countRows());
+        assertThat(count()).isGreaterThan(200_000);
+    }
+
+    @Test
     void repeatedStartupDoesNotWriteRowsAgain() {
         long before = count();
 
         importer.run(null);
 
-        assertThat(before).isGreaterThan(10);
+        assertThat(before).isGreaterThan(200_000);
         assertThat(count()).isEqualTo(before);
     }
 
     @Test
-    void restoresMissingRowsWhenTheTableFallsBelowTheDatasetSize() {
+    void restoresMissingCorpusSentencesWhenTheTableFallsBelowTheDatasetSize() {
         long before = count();
-        jdbcClient.sql("DELETE FROM corpus_sentence WHERE word_form = 'consequently'").update();
+        String victim = anyWordFormExcept("many");
+        jdbcClient.sql("DELETE FROM corpus_sentence WHERE word_form = :wordForm")
+                .param("wordForm", victim)
+                .update();
         assertThat(count()).isLessThan(before);
 
         importer.run(null);
@@ -52,23 +60,53 @@ class CorpusSentenceImportIntegrationTest {
     }
 
     @Test
-    void unrelatedRowsDoNotSuppressTheDatasetTopUp() {
-        long before = count();
-        jdbcClient.sql("DELETE FROM corpus_sentence WHERE word_form = 'consequently'").update();
-        jdbcClient.sql("""
-                        INSERT INTO corpus_sentence (id, word_form, sentence, source, license)
-                        VALUES (:id, 'handmade', 'A handmade sentence keeps the table above the dataset size.',
-                                'Project', 'CC BY 4.0')
+    void topUpKeepsACuratedRowThatSharesAWordFormAndSentence() {
+        Map<String, Object> curated = jdbcClient.sql("""
+                        SELECT word_form, sentence
+                        FROM corpus_sentence
+                        WHERE word_form = 'many'
+                        LIMIT 1
                         """)
-                .param("id", UUID.randomUUID())
+                .query()
+                .singleRow();
+        jdbcClient.sql("""
+                        UPDATE corpus_sentence
+                        SET source = 'Project curated', license = 'CC BY 4.0'
+                        WHERE word_form = :wordForm AND sentence = :sentence
+                        """)
+                .param("wordForm", curated.get("word_form"))
+                .param("sentence", curated.get("sentence"))
+                .update();
+        String victim = anyWordFormExcept("many");
+        jdbcClient.sql("DELETE FROM corpus_sentence WHERE word_form = :wordForm")
+                .param("wordForm", victim)
                 .update();
 
         importer.run(null);
 
-        assertThat(count()).isEqualTo(before + 1);
-        assertThat(jdbcClient.sql("SELECT count(*) FROM corpus_sentence WHERE word_form = 'consequently'")
-                .query(Long.class)
-                .single()).isEqualTo(1);
+        Map<String, Object> replay = jdbcClient.sql("""
+                        SELECT source, license
+                        FROM corpus_sentence
+                        WHERE word_form = :wordForm AND sentence = :sentence
+                        """)
+                .param("wordForm", curated.get("word_form"))
+                .param("sentence", curated.get("sentence"))
+                .query()
+                .singleRow();
+        assertThat(replay.get("source")).isEqualTo("Project curated");
+        assertThat(replay.get("license")).isEqualTo("CC BY 4.0");
+    }
+
+    private String anyWordFormExcept(String excluded) {
+        return jdbcClient.sql("""
+                        SELECT word_form
+                        FROM corpus_sentence
+                        WHERE word_form <> :excluded
+                        LIMIT 1
+                        """)
+                .param("excluded", excluded)
+                .query(String.class)
+                .single();
     }
 
     private long count() {

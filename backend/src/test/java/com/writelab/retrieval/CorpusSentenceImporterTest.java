@@ -1,8 +1,12 @@
 package com.writelab.retrieval;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,16 +55,46 @@ class CorpusSentenceImporterTest {
     }
 
     @Test
-    void bundledDatasetSentencesContainTheirWordForm() {
-        List<CorpusSentence> rows = CorpusSentenceImporter.readRows();
+    void bundledCorpusSentencesAreRealAndCappedPerWordForm() {
+        Map<String, Integer> perWordForm = new HashMap<>();
+        AtomicReference<String> violation = new AtomicReference<>();
 
-        assertThat(rows).hasSizeGreaterThan(10);
-        assertThat(rows).allSatisfy(row -> {
-            assertThat(row.wordForm()).isNotBlank();
-            assertThat(row.sentence().toLowerCase(java.util.Locale.ROOT))
-                    .containsPattern("\\b" + java.util.regex.Pattern.quote(row.wordForm()) + "\\b");
-            assertThat(row.source()).startsWith("Tatoeba");
-            assertThat(row.license()).isEqualTo("CC BY 2.0 FR");
+        long streamed = CorpusSentenceImporter.forEachRow(row -> {
+            int count = perWordForm.merge(row.wordForm(), 1, Integer::sum);
+            String problem = problemWith(row, count);
+            if (problem != null) {
+                violation.compareAndSet(null, problem);
+            }
         });
+
+        assertThat(violation.get()).isNull();
+        assertThat(streamed).isEqualTo(CorpusSentenceImporter.countRows()).isGreaterThan(200_000);
+        assertThat(perWordForm).containsKey("many");
+        assertThat(perWordForm.values()).allSatisfy(count -> assertThat(count).isBetween(1, 12));
+        assertThat(perWordForm.size()).isGreaterThan(30_000);
+    }
+
+    private static String problemWith(CorpusSentence row, int countForWordForm) {
+        if (countForWordForm > 12) {
+            return row.wordForm() + " 超过 12 句";
+        }
+        if (row.wordForm().isBlank()) {
+            return "空词形";
+        }
+        if (!row.wordForm().equals(row.wordForm().toLowerCase(Locale.ROOT))) {
+            return "词形不是小写: " + row.wordForm();
+        }
+        Pattern word = Pattern.compile(
+                "\\b" + Pattern.quote(row.wordForm()) + "\\b", Pattern.CASE_INSENSITIVE);
+        if (!word.matcher(row.sentence()).find()) {
+            return "句子不含词形: " + row.wordForm();
+        }
+        if (!row.source().startsWith("Tatoeba")) {
+            return "来源不是 Tatoeba: " + row.source();
+        }
+        if (!"CC BY 2.0 FR".equals(row.license())) {
+            return "许可不是 CC BY 2.0 FR: " + row.license();
+        }
+        return null;
     }
 }
