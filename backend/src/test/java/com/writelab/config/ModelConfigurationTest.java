@@ -8,12 +8,15 @@ import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
 import com.writelab.retrieval.CorpusSentenceResolver;
+import com.writelab.retrieval.EmbeddingClient;
 import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.ObjectMapper;
@@ -40,6 +43,8 @@ class ModelConfigurationTest {
                     assertThat(context).hasSingleBean(CorpusSentenceResolver.class);
                     assertThat(context).hasSingleBean(GroundingMaterialResolver.class);
                     assertThat(context).doesNotHaveBean(ChatClient.class);
+                    assertThat(context).doesNotHaveBean(EmbeddingModel.class);
+                    assertThat(context).doesNotHaveBean(EmbeddingClient.class);
                 });
     }
 
@@ -73,6 +78,24 @@ class ModelConfigurationTest {
                     assertThat(context.getBean(FeedbackModel.class)).isInstanceOf(RealFeedbackModel.class);
                     assertThat(context.getBean(ExplanationModel.class)).isInstanceOf(RealExplanationModel.class);
                     assertThat(context).hasSingleBean(ChatClient.class);
+                });
+    }
+
+    @Test
+    void usesVectorRetrievalAndBuildsTheEmbeddingClientWhenApiKeyIsPresent() {
+        runner.withPropertyValues(
+                        "writelab.model.api-key=test-key",
+                        "writelab.model.base-url=https://api.openai.com",
+                        "writelab.model.name=gpt-4o-mini",
+                        "writelab.model.embedding-name=text-embedding-3-small")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(LearningMaterialRetriever.class);
+                    assertThat(context.getBean(LearningMaterialRetriever.class))
+                            .isInstanceOf(VectorLearningMaterialRetriever.class);
+                    assertThat(context).hasSingleBean(EmbeddingClient.class);
+                    assertThat(context).hasSingleBean(EmbeddingModel.class);
+                    assertThat(context).hasSingleBean(CorpusSentenceResolver.class);
+                    assertThat(context).hasSingleBean(GroundingMaterialResolver.class);
                 });
     }
 }

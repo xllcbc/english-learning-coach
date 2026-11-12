@@ -22,7 +22,9 @@ class CorpusSentenceResolverTest {
         AtomicReference<Map<String, String>> queried = new AtomicReference<>();
         CorpusSentenceResolver resolver = resolverOf(learnerSentences -> {
             queried.set(learnerSentences);
-            return Map.of("many", List.of(adopted, sentence("many", "Many people read books.")));
+            return Map.of("many", List.of(
+                    RankedCorpusSentence.fixed(adopted),
+                    RankedCorpusSentence.fixed(sentence("many", "Many people read books."))));
         });
 
         List<CorpusSentenceResolver.ResolvedSuggestion> resolved = resolver.resolve(
@@ -90,18 +92,35 @@ class CorpusSentenceResolverTest {
      * The retrieval seam carries a second method for Grounding Material; this seam under test only
      * ever uses Corpus Sentence lookup, so the other one must stay untouched.
      */
+    @Test
+    void recordsVectorSimilarityWhenTheAdoptedCandidateIsSemanticallyRanked() {
+        CorpusSentence adopted = sentence("many", "Many students practice daily.");
+        CorpusSentenceResolver resolver = resolverOf(learnerSentences -> Map.of(
+                "many", List.of(RankedCorpusSentence.semantic(adopted, 0.82))));
+
+        CorpusSentenceResolver.ResolvedSuggestion result = resolver.resolve(
+                WRITING_TEXT, List.of(new VocabularySuggestion("many", "许多", "Model written sentence.")))
+                .getFirst();
+
+        assertThat(result.suggestion().example()).isEqualTo("Many students practice daily.");
+        assertThat(result.hit().ranking()).isEqualTo(1);
+        assertThat(result.hit().similarityScore()).isEqualTo(0.82);
+        assertThat(result.hit().ordering()).isEqualTo("VECTOR_SIMILARITY");
+    }
+
     private static CorpusSentenceResolver resolverOf(
-            Function<Map<String, String>, Map<String, List<CorpusSentence>>> contextualExamples
+            Function<Map<String, String>, Map<String, List<RankedCorpusSentence>>> contextualExamples
     ) {
         return new CorpusSentenceResolver(new LearningMaterialRetriever() {
 
             @Override
-            public Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
+            public Map<String, List<RankedCorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
                 return contextualExamples.apply(learnerSentences);
             }
 
             @Override
-            public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
+            public List<RankedGroundingMaterial> groundingMaterials(
+                    Collection<IssueCategory> categories, String queryText) {
                 throw new AssertionError("grounding material must not be retrieved here");
             }
         });

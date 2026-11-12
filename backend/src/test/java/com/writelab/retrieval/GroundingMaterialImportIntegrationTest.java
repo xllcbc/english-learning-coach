@@ -68,10 +68,11 @@ class GroundingMaterialImportIntegrationTest {
     @Test
     void startupRetrievalGroundsEveryIssueCategory() {
         for (IssueCategory category : IssueCategory.values()) {
-            assertThat(retriever.groundingMaterials(List.of(category)))
+            assertThat(retriever.groundingMaterials(List.of(category), "类别 " + category))
                     .as("category %s", category)
                     .isNotEmpty()
-                    .allSatisfy(material -> {
+                    .allSatisfy(ranked -> {
+                        GroundingMaterial material = ranked.material();
                         assertThat(material.category()).isEqualTo(category);
                         assertThat(material.source()).isEqualTo("WriteLab 自建依据材料");
                         assertThat(material.license()).isEqualTo("CC BY 4.0");

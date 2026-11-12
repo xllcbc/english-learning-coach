@@ -46,35 +46,37 @@ class KeywordLearningMaterialRetrieverTest {
 
     @Test
     void filtersByExactWordFormAndOrdersBySentenceLength() {
-        Map<String, List<CorpusSentence>> candidates = retriever.contextualExamples(Map.of(
+        Map<String, List<RankedCorpusSentence>> candidates = retriever.contextualExamples(Map.of(
                 "zebra", "I saw a zebra yesterday.",
                 "Zebras", "Zebras are interesting."
         ));
 
         assertThat(candidates.keySet()).containsExactlyInAnyOrder("zebra", "zebras");
         assertThat(candidates.get("zebra"))
-                .extracting(CorpusSentence::sentence)
+                .extracting(candidate -> candidate.corpusSentence().sentence())
                 .containsExactly(
                         "A zebra stopped.",
                         "The zebra crossed the river.",
                         "The zebra crossed the wide river quickly."
                 );
         assertThat(candidates.get("zebras"))
-                .extracting(CorpusSentence::sentence)
+                .extracting(candidate -> candidate.corpusSentence().sentence())
                 .containsExactly("Two zebras grazed beside the quiet stream.");
     }
 
     @Test
     void returnsTheSameCandidatesForTheSameWordFormRegardlessOfLearnerSentence() {
-        Map<String, List<CorpusSentence>> first = retriever.contextualExamples(Map.of("zebra", "first query"));
-        Map<String, List<CorpusSentence>> second = retriever.contextualExamples(Map.of("zebra", "a different query"));
+        Map<String, List<RankedCorpusSentence>> first =
+                retriever.contextualExamples(Map.of("zebra", "first query"));
+        Map<String, List<RankedCorpusSentence>> second =
+                retriever.contextualExamples(Map.of("zebra", "a different query"));
 
         assertThat(second).isEqualTo(first);
     }
 
     @Test
     void omitsWordFormsWithoutCandidates() {
-        Map<String, List<CorpusSentence>> candidates = retriever.contextualExamples(
+        Map<String, List<RankedCorpusSentence>> candidates = retriever.contextualExamples(
                 new LinkedHashMap<>(Map.of("unicorn", "A unicorn appeared.")));
 
         assertThat(candidates).isEmpty();
@@ -82,14 +84,15 @@ class KeywordLearningMaterialRetrieverTest {
 
     @Test
     void filtersGroundingMaterialByFocusedCategoryInFixedOrder() {
-        List<GroundingMaterial> materials = retriever.groundingMaterials(
-                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION));
+        List<RankedGroundingMaterial> materials = retriever.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION), "段落衔接");
 
-        assertThat(materials).extracting(GroundingMaterial::content)
+        assertThat(materials).extracting(material -> material.material().content())
                 .containsExactly("甲", "丁", "甲乙丙", "丁戊己");
         assertThat(materials).allSatisfy(material -> {
-            assertThat(material.source()).isEqualTo("WriteLab 自建依据材料");
-            assertThat(material.license()).isEqualTo("CC BY 4.0");
+            assertThat(material.material().source()).isEqualTo("WriteLab 自建依据材料");
+            assertThat(material.material().license()).isEqualTo("CC BY 4.0");
+            assertThat(material.similarityScore()).isNull();
         });
     }
 
@@ -97,14 +100,16 @@ class KeywordLearningMaterialRetrieverTest {
     void takesAtMostThePerCategoryAndOverallLimits() {
         KeywordLearningMaterialRetriever capped = retrieverWith(new GroundingMaterialLimits(1, 6, 2));
 
-        assertThat(capped.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
-                .extracting(GroundingMaterial::content)
+        assertThat(capped.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION), "段落衔接"))
+                .extracting(material -> material.material().content())
                 .containsExactly("甲", "丁");
 
         KeywordLearningMaterialRetriever threeRows = retrieverWith(new GroundingMaterialLimits(2, 3, 2));
 
-        assertThat(threeRows.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
-                .extracting(GroundingMaterial::content)
+        assertThat(threeRows.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION), "段落衔接"))
+                .extracting(material -> material.material().content())
                 .containsExactly("甲", "丁", "甲乙丙");
     }
 
@@ -112,7 +117,8 @@ class KeywordLearningMaterialRetrieverTest {
     void returnsNoGroundingMaterialBelowTheThreshold() {
         KeywordLearningMaterialRetriever demanding = retrieverWith(new GroundingMaterialLimits(2, 6, 5));
 
-        assertThat(demanding.groundingMaterials(List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION)))
+        assertThat(demanding.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION), "段落衔接"))
                 .isEmpty();
     }
 
@@ -120,18 +126,18 @@ class KeywordLearningMaterialRetrieverTest {
     void returnsNoGroundingMaterialForACategoryWithoutEntries() {
         jdbcClient.sql("DELETE FROM grounding_material WHERE category = 'GRAMMAR'").update();
 
-        assertThat(retriever.groundingMaterials(List.of(IssueCategory.GRAMMAR))).isEmpty();
+        assertThat(retriever.groundingMaterials(List.of(IssueCategory.GRAMMAR), "主谓一致")).isEmpty();
     }
 
     @Test
     void groundsIdenticallyForTheSameCategoriesAndIgnoresTheirOrder() {
-        List<GroundingMaterial> first = retriever.groundingMaterials(
-                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION));
-        List<GroundingMaterial> second = retriever.groundingMaterials(
-                List.of(IssueCategory.PUNCTUATION, IssueCategory.COHERENCE));
+        List<RankedGroundingMaterial> first = retriever.groundingMaterials(
+                List.of(IssueCategory.COHERENCE, IssueCategory.PUNCTUATION), "段落衔接");
+        List<RankedGroundingMaterial> second = retriever.groundingMaterials(
+                List.of(IssueCategory.PUNCTUATION, IssueCategory.COHERENCE), "段落衔接");
 
         assertThat(second).isEqualTo(first);
-        assertThat(retriever.groundingMaterials(List.of())).isEmpty();
+        assertThat(retriever.groundingMaterials(List.of(), "段落衔接")).isEmpty();
     }
 
     private KeywordLearningMaterialRetriever retrieverWith(GroundingMaterialLimits limits) {

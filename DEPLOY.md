@@ -35,6 +35,8 @@ cp .env.example .env
 - `WRITELAB_CORS_ALLOWED_ORIGINS`：允许访问后端的前端地址，多个用逗号分隔。
 - `WRITELAB_MODEL_API_KEY`：留空时后端运行在确定性 Mock 模式，不调用真实模型。
 - `WRITELAB_MODEL_BASE_URL` / `WRITELAB_MODEL_NAME`：真实模型接入时填写。
+- `WRITELAB_MODEL_EMBEDDING_NAME`：真实模式下的 embedding 模型，复用同一 base URL、API key 与超时，维度固定 512。
+  未配置 API key 时不会构造 embedding 客户端。
 
 后端启动时会自动从工作目录或仓库根目录加载 `.env`（`backend/src/main/resources/application.yml:4-8`），无需手动 export。
 

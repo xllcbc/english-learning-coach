@@ -2,12 +2,13 @@ package com.writelab.explanation;
 
 import com.writelab.config.RetrievalProperties;
 import com.writelab.feedback.IssueCategory;
-import com.writelab.retrieval.CorpusSentence;
-import com.writelab.retrieval.GroundingMaterial;
 import com.writelab.retrieval.GroundingMaterialImporter;
 import com.writelab.retrieval.GroundingMaterialLimits;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.RankedCorpusSentence;
+import com.writelab.retrieval.RankedGroundingMaterial;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,6 +45,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -76,6 +79,11 @@ class ExplanationApiIntegrationTest {
     private GroundingMaterialImporter groundingMaterialImporter;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @BeforeEach
+    void resetRetrievalStub() {
+        learningMaterialRetriever.reset();
+    }
 
     @Test
     void streamsStartDeltaAndCompleteAndSavesTeacherExplanation() throws Exception {
@@ -198,6 +206,23 @@ class ExplanationApiIntegrationTest {
     }
 
     @Test
+    void persistsVectorSimilarityAndOrderingForGroundingHits() throws Exception {
+        UUID practiceId = createPractice(explanationText());
+        learningMaterialRetriever.useSemanticScores(0.91);
+
+        CompleteBody complete = readEvent(
+                streamExplanation(practiceId).events().getLast(),
+                CompleteBody.class
+        );
+
+        assertThat(complete.groundingMaterials()).isNotEmpty();
+        assertThat(groundingOrderings(practiceId)).containsOnly("VECTOR_SIMILARITY");
+        assertThat(groundingSimilarityScores(practiceId))
+                .isNotEmpty()
+                .allSatisfy(score -> assertThat(score).isCloseTo(0.91, within(0.0001)));
+    }
+
+    @Test
     void completesWithoutCitationsWhenRetrievalFails() throws Exception {
         UUID practiceId = createPractice(explanationText());
         learningMaterialRetriever.failNext();
@@ -300,6 +325,7 @@ class ExplanationApiIntegrationTest {
 
         private final LearningMaterialRetriever delegate;
         private final AtomicBoolean failNext = new AtomicBoolean(false);
+        private final AtomicReference<Double> semanticScore = new AtomicReference<>();
 
         FailableLearningMaterialRetriever(LearningMaterialRetriever delegate) {
             this.delegate = delegate;
@@ -309,17 +335,34 @@ class ExplanationApiIntegrationTest {
             failNext.set(true);
         }
 
+        void useSemanticScores(double score) {
+            semanticScore.set(score);
+        }
+
+        void reset() {
+            failNext.set(false);
+            semanticScore.set(null);
+        }
+
         @Override
-        public Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
+        public Map<String, List<RankedCorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
             return delegate.contextualExamples(learnerSentences);
         }
 
         @Override
-        public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
+        public List<RankedGroundingMaterial> groundingMaterials(
+                Collection<IssueCategory> categories, String queryText) {
             if (failNext.compareAndSet(true, false)) {
                 throw new IllegalStateException("模拟依据材料检索失败");
             }
-            return delegate.groundingMaterials(categories);
+            List<RankedGroundingMaterial> materials = delegate.groundingMaterials(categories, queryText);
+            Double score = semanticScore.get();
+            if (score == null) {
+                return materials;
+            }
+            return materials.stream()
+                    .map(material -> RankedGroundingMaterial.semantic(material.material(), score))
+                    .toList();
         }
     }
 
@@ -434,6 +477,18 @@ class ExplanationApiIntegrationTest {
                         """)
                 .param("id", practiceId)
                 .query(String.class)
+                .list();
+    }
+
+    private List<Double> groundingSimilarityScores(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT similarity_score FROM retrieval_hit
+                        WHERE practice_attempt_id = :id AND kind = 'GROUNDING_MATERIAL'
+                            AND grounding_material_id IS NOT NULL
+                        ORDER BY position
+                        """)
+                .param("id", practiceId)
+                .query(Double.class)
                 .list();
     }
 

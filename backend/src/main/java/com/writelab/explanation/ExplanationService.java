@@ -162,10 +162,11 @@ public class ExplanationService {
                                 id, practice_attempt_id, position, kind, word_form,
                                 corpus_sentence_id, grounding_material_id, ranking, similarity_score,
                                 ordering, skip_reason
-                            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, ?)
+                            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(), practiceId, position, hit.kind(),
-                    hit.groundingMaterialId(), hit.ranking(), hit.ordering(), hit.skipReason());
+                    hit.groundingMaterialId(), hit.ranking(), hit.similarityScore(),
+                    hit.ordering(), hit.skipReason());
         }
     }
 

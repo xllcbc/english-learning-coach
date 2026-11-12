@@ -39,7 +39,7 @@ public class CorpusSentenceResolver {
             learnerSentences.putIfAbsent(wordForm, learnerSentence(writingText, suggestion.word()));
         }
 
-        Map<String, List<CorpusSentence>> candidates;
+        Map<String, List<RankedCorpusSentence>> candidates;
         String skipReason = null;
         try {
             candidates = retriever.contextualExamples(learnerSentences);
@@ -53,7 +53,7 @@ public class CorpusSentenceResolver {
         List<ResolvedSuggestion> resolved = new ArrayList<>(suggestions.size());
         for (VocabularySuggestion suggestion : suggestions) {
             String wordForm = DictionaryService.normalize(suggestion.word());
-            List<CorpusSentence> wordCandidates = candidates.getOrDefault(wordForm, List.of());
+            List<RankedCorpusSentence> wordCandidates = candidates.getOrDefault(wordForm, List.of());
             if (wordCandidates.isEmpty()) {
                 resolved.add(new ResolvedSuggestion(
                         suggestion,
@@ -63,12 +63,15 @@ public class CorpusSentenceResolver {
                                 skipReason == null ? RetrievalHit.NO_CORPUS_SENTENCE : skipReason)
                 ));
             } else {
-                CorpusSentence adopted = wordCandidates.getFirst();
+                RankedCorpusSentence adopted = wordCandidates.getFirst();
+                CorpusSentence adoptedSentence = adopted.corpusSentence();
                 resolved.add(new ResolvedSuggestion(
-                        new VocabularySuggestion(suggestion.word(), suggestion.explanation(), adopted.sentence()),
-                        adopted.id(),
-                        new CorpusSentenceSource(adopted.source(), adopted.license()),
-                        RetrievalHit.corpusSentence(wordForm, adopted.id(), 1, null)
+                        new VocabularySuggestion(
+                                suggestion.word(), suggestion.explanation(), adoptedSentence.sentence()),
+                        adoptedSentence.id(),
+                        new CorpusSentenceSource(adoptedSentence.source(), adoptedSentence.license()),
+                        RetrievalHit.corpusSentence(
+                                wordForm, adoptedSentence.id(), 1, adopted.similarityScore(), null)
                 ));
             }
         }

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,9 +23,9 @@ class GroundingMaterialResolverTest {
         GroundingMaterial grammar = material(IssueCategory.GRAMMAR, "主谓一致。");
         GroundingMaterial coherence = material(IssueCategory.COHERENCE, "段落只围绕一个中心句。");
         AtomicReference<List<IssueCategory>> queried = new AtomicReference<>();
-        GroundingMaterialResolver resolver = resolverOf(categories -> {
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> {
             queried.set(List.copyOf(categories));
-            return List.of(grammar, coherence);
+            return List.of(RankedGroundingMaterial.fixed(grammar), RankedGroundingMaterial.fixed(coherence));
         });
 
         GroundingMaterialResolver.GroundingResult result = resolver.resolve(
@@ -52,7 +52,7 @@ class GroundingMaterialResolverTest {
 
     @Test
     void recordsOneSkippedHitWhenNothingIsRelevant() {
-        GroundingMaterialResolver resolver = resolverOf(categories -> List.of());
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> List.of());
 
         GroundingMaterialResolver.GroundingResult result =
                 resolver.resolve(feedback(issue(IssueCategory.PUNCTUATION, IssueSeverity.MAJOR)));
@@ -66,7 +66,7 @@ class GroundingMaterialResolverTest {
 
     @Test
     void recordsRetrievalFailureWithoutCitingAnything() {
-        GroundingMaterialResolver resolver = resolverOf(categories -> {
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> {
             throw new IllegalStateException("retrieval backend unavailable");
         });
 
@@ -80,7 +80,7 @@ class GroundingMaterialResolverTest {
 
     @Test
     void retrievesNothingWhenTheWritingHasNoLearningIssue() {
-        GroundingMaterialResolver resolver = resolverOf(categories -> {
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> {
             throw new AssertionError("retrieval must not run");
         });
 
@@ -93,9 +93,9 @@ class GroundingMaterialResolverTest {
     @Test
     void asksEachFocusedCategoryOnlyOnce() {
         AtomicReference<List<IssueCategory>> queried = new AtomicReference<>();
-        GroundingMaterialResolver resolver = resolverOf(categories -> {
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> {
             queried.set(List.copyOf(categories));
-            return List.of(material(IssueCategory.GRAMMAR, "主谓一致。"));
+            return List.of(RankedGroundingMaterial.fixed(material(IssueCategory.GRAMMAR, "主谓一致。")));
         });
 
         resolver.resolve(feedback(
@@ -109,19 +109,43 @@ class GroundingMaterialResolverTest {
      * The retrieval seam carries a second method for Corpus Sentences; this seam under test only ever
      * uses Grounding Material lookup, so the other one must stay untouched.
      */
+    @Test
+    void recordsVectorSimilarityAndUsesFocusedIssueTextAsTheQuery() {
+        GroundingMaterial grammar = material(IssueCategory.GRAMMAR, "主谓一致。");
+        AtomicReference<String> queryText = new AtomicReference<>();
+        GroundingMaterialResolver resolver = resolverOf((categories, query) -> {
+            queryText.set(query);
+            return List.of(RankedGroundingMaterial.semantic(grammar, 0.77));
+        });
+
+        GroundingMaterialResolver.GroundingResult result =
+                resolver.resolve(feedback(issue(IssueCategory.GRAMMAR, IssueSeverity.MAJOR)));
+
+        assertThat(queryText.get()).contains("It are a problem.");
+        assertThat(queryText.get()).contains("It is a problem.");
+        assertThat(queryText.get()).contains("主谓一致问题。");
+        assertThat(result.materials()).containsExactly(grammar);
+        assertThat(result.hits()).hasSize(1);
+        RetrievalHit hit = result.hits().getFirst();
+        assertThat(hit.ranking()).isEqualTo(1);
+        assertThat(hit.similarityScore()).isEqualTo(0.77);
+        assertThat(hit.ordering()).isEqualTo("VECTOR_SIMILARITY");
+    }
+
     private static GroundingMaterialResolver resolverOf(
-            Function<Collection<IssueCategory>, List<GroundingMaterial>> groundingMaterials
+            BiFunction<Collection<IssueCategory>, String, List<RankedGroundingMaterial>> groundingMaterials
     ) {
         return new GroundingMaterialResolver(new LearningMaterialRetriever() {
 
             @Override
-            public Map<String, List<CorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
+            public Map<String, List<RankedCorpusSentence>> contextualExamples(Map<String, String> learnerSentences) {
                 throw new AssertionError("corpus sentences must not be retrieved here");
             }
 
             @Override
-            public List<GroundingMaterial> groundingMaterials(Collection<IssueCategory> categories) {
-                return groundingMaterials.apply(categories);
+            public List<RankedGroundingMaterial> groundingMaterials(
+                    Collection<IssueCategory> categories, String queryText) {
+                return groundingMaterials.apply(categories, queryText);
             }
         });
     }

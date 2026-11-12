@@ -13,6 +13,7 @@
 | `WRITELAB_MODEL_BASE_URL` | 供应商 Base URL | `https://api.openai.com` |
 | `WRITELAB_MODEL_API_KEY` | API Key；**留空即进入 Mock 模式** | 空 |
 | `WRITELAB_MODEL_NAME` | 模型名称 | `gpt-4o-mini` |
+| `WRITELAB_MODEL_EMBEDDING_NAME` | embedding 模型名称；复用同一 base URL、API key 与超时，维度固定 512 | `text-embedding-3-small` |
 | `WRITELAB_MODEL_TIMEOUT` | 单次 HTTP 调用超时 | `120s` |
 | `WRITELAB_MODEL_MAX_RETRIES` | SDK 重试次数；最坏等待为 `timeout × (1 + 次数)` | `1` |
 
@@ -50,7 +51,14 @@
      全部超时后返回稳定错误码 `MODEL_TIMEOUT`（HTTP 504）与中文提示“模型响应超时，请稍后重试。”，
      日志中记录 `durationMs`。
 
-6. **密钥与 Prompt 安全**
+6. **向量检索降级**
+   - 已配置 API Key 但语料表尚未填充向量时，提交 Writing Practice 仍返回 201，教师讲解仍以 `complete` 结束，
+     只是 Vocabulary Suggestion 保留模型原例句、讲解不引用依据。
+   - `retrieval_hit` 中对应记录为 `skip_reason = NO_CORPUS_SENTENCE` / `NO_GROUNDING_MATERIAL`；
+     若 embedding 服务不可用则为 `RETRIEVAL_FAILED`，接口不新增错误码。
+   - embedding 模型名由 `WRITELAB_MODEL_EMBEDDING_NAME` 控制；修改后重启生效。
+
+7. **密钥与 Prompt 安全**
    - 数据库 `practice_attempt` 表中不存在 API Key 或完整 Prompt（仅保存写作原文、结构化反馈、
      教师讲解、工具调用记录）。
    - 在普通日志（INFO/WARN）中检索 API Key 与完整 Prompt，均不应出现；`org.springframework.ai`
@@ -65,4 +73,5 @@
 | 3 工具调用上限 | ☐ 通过 ☐ 不通过 | |
 | 4 流式讲解 | ☐ 通过 ☐ 不通过 | |
 | 5 校验与重试 | ☐ 通过 ☐ 不通过 | |
-| 6 密钥与 Prompt 安全 | ☐ 通过 ☐ 不通过 | |
+| 6 向量检索降级 | ☐ 通过 ☐ 不通过 | |
+| 7 密钥与 Prompt 安全 | ☐ 通过 ☐ 不通过 | |

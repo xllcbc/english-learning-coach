@@ -27,12 +27,16 @@
 
 ## 检索与阈值
 
-`LearningMaterialRetriever.groundingMaterials(categories)` 是应用侧接缝的第二个方法，确定性实现按以下规则工作：
+`LearningMaterialRetriever.groundingMaterials(categories, queryText)` 是应用侧接缝的第二个方法。`queryText` 是本轮聚焦学习问题的文本，
+确定性实现忽略它，向量实现把它作为相似度查询；确定性实现按以下规则工作：
 
 - **按聚焦类别过滤**：类别来自 `StructuredFeedback.focusedIssues()`（最严重的至多 5 条学习问题），所以检索、提示词编号与离线讲解文本共用同一顺序。
 - **固定次序**：先取每个类别中正文最短的条目（长度、id 依次兜底），按类别名轮转，再取第二层；结果与传入类别的顺序无关，同一类别集合每次得到同一列表。
 - **数量上限**：每类至多 `grounding-per-category-hits` 条、总计至多 `grounding-max-hits` 条。
-- **阈值**：命中数少于 `grounding-min-hits` 视为「没有相关依据」，返回空列表，讲解不引用任何条目。确定性实现没有相似度，因此先用条数阈值占位；#14 引入向量检索后会改为相似度阈值，配置项随之替换。
+- **阈值**：确定性实现用命中数少于 `grounding-min-hits` 视为「没有相关依据」，返回空列表，讲解不引用任何条目。
+  向量实现改用余弦相似度阈值 `grounding-similarity-threshold`；低于阈值的条目被丢弃，全部低于阈值时返回空列表，不填充占位内容。
+  向量模式先按类别过滤，再在每个类别内按相似度取前 `grounding-per-category-hits` 条、全局至多 `grounding-max-hits` 条；
+  详见 [REAL 向量检索](vector-retrieval.md)。
 
 配置位于 `application.yml` 的 `writelab.retrieval.*`，可用环境变量覆盖：
 
@@ -40,7 +44,8 @@
 | --- | --- | --- |
 | `WRITELAB_GROUNDING_MAX_HITS` | 6 | 单次讲解最多引用的条目数 |
 | `WRITELAB_GROUNDING_PER_CATEGORY_HITS` | 2 | 每个聚焦类别最多取回的条目数 |
-| `WRITELAB_GROUNDING_MIN_HITS` | 2 | 少于该条数视为没有相关依据 |
+| `WRITELAB_GROUNDING_MIN_HITS` | 2 | 确定性实现：少于该条数视为没有相关依据 |
+| `WRITELAB_GROUNDING_SIMILARITY_THRESHOLD` | 0.3 | 向量实现：低于该余弦相似度视为没有相关依据 |
 
 ## 讲解与引用
 
@@ -53,8 +58,8 @@
 
 依据材料的命中写入同一张 `retrieval_hit` 表，`kind = 'GROUNDING_MATERIAL'`：
 
-- 提供的每一条材料一行，`grounding_material_id` 指向条目，`ranking` 是它与讲解中 `[依据N]` 对应的编号，`ordering = FIXED_ORDER`。清单是「本次可引用的材料」，离线实现只引用每个聚焦类别的首条，因此正文可能引用其中一部分。
-- 没有候选或命中低于阈值时只写一行 `skip_reason = NO_GROUNDING_MATERIAL`；检索抛异常时只写一行 `skip_reason = RETRIEVAL_FAILED`，讲解照常完成，仅不引用依据。
+- 提供的每一条材料一行，`grounding_material_id` 指向条目，`ranking` 是它与讲解中 `[依据N]` 对应的编号。确定性实现 `ordering = FIXED_ORDER`；向量实现 `ordering = VECTOR_SIMILARITY` 并记录 `similarity_score`。清单是「本次可引用的材料」，离线实现只引用每个聚焦类别的首条，因此正文可能引用其中一部分。
+- 没有候选、没有向量或命中低于阈值时只写一行 `skip_reason = NO_GROUNDING_MATERIAL`；检索或 embedding 抛异常时只写一行 `skip_reason = RETRIEVAL_FAILED`，讲解照常完成，仅不引用依据。
 - 讲解成功保存时才写入命中（与 `teacher_explanation` 同一事务），并先删除该次练习已有的 `GROUNDING_MATERIAL` 命中，避免重试后叠加两套溯源。
 - 表上的唯一键是 `(practice_attempt_id, kind, position)`：语料命中在练习创建时占用 0..n-1，依据材料命中在讲解生成时按自己的 `position` 写入，互不冲突。
 

@@ -13,11 +13,25 @@ import java.time.Duration;
  * key so it can never leak into logs through the properties object.
  */
 @ConfigurationProperties(prefix = "writelab.model")
-public record ModelProperties(String baseUrl, String apiKey, String name, Duration timeout, int maxRetries) {
+public record ModelProperties(
+        String baseUrl,
+        String apiKey,
+        String name,
+        String embeddingName,
+        Duration timeout,
+        int maxRetries
+) {
+
+    public static final String DEFAULT_EMBEDDING_NAME = "text-embedding-3-small";
+
+    public ModelProperties {
+        embeddingName = StringUtils.hasText(embeddingName) ? embeddingName : DEFAULT_EMBEDDING_NAME;
+    }
 
     @Override
     public String toString() {
         return "ModelProperties[baseUrl=" + baseUrl + ", apiKey=" + (StringUtils.hasText(apiKey) ? "****" : "")
-                + ", name=" + name + ", timeout=" + timeout + ", maxRetries=" + maxRetries + "]";
+                + ", name=" + name + ", embeddingName=" + embeddingName + ", timeout=" + timeout
+                + ", maxRetries=" + maxRetries + "]";
     }
 }
