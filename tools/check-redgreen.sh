@@ -30,8 +30,9 @@ done
 
 [ "$count" -ge 2 ] || { echo "x 提交数不足（红绿至少两次），实际 $count"; fail=1; }
 
-shopt -s nullglob
-red_files=(docs/red/issue-*.md)
-[ ${#red_files[@]} -gt 0 ] || { echo "x 没有任何 docs/red 记录"; exit 1; }
+if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
+  echo "x 没有任何 docs/red 记录"
+  exit 1
+fi
 
 exit "$fail"
