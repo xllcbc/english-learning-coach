@@ -4,10 +4,11 @@
 #   base   对比基线，默认 master
 #   target 被检查的分支，默认 HEAD（在沙箱 worktree 里跑时就是 agent 分支）
 #
-# 三种提交：
-#   red:   只允许改 src/test/，必须成对出现的第一半
-#   green: 只允许改 src/main/（文档可并入），必须成对出现的第二半
-#   docs:  只允许改 docs/、tools/ 或 markdown；不参与红绿配对
+# 四种提交：
+#   red:    只允许改 src/test/，必须成对出现的第一半
+#   green:  只允许改 src/main/（文档可并入），必须成对出现的第二半
+#   docs:   只允许改 docs/、tools/ 或 markdown；不参与红绿配对
+#   config: 只允许改运行时配置（yml/yaml/properties/toml/json）；不碰 Java 代码与测试
 set -euo pipefail
 
 base="${1:-master}"
@@ -22,7 +23,9 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
 
   has_test=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/test/' || true)
   has_main=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/main/' || true)
+  has_java_main=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/main/java/' || true)
   has_docs=$(printf '%s\n' "$changed" | grep -cE '(^|/)(docs|tools)/|\.md$' || true)
+  has_config=$(printf '%s\n' "$changed" | grep -cE '(^|/)(application|bootstrap)[^/]*\.(ya?ml|properties)$|(^|/)src/main/resources/.*\.(ya?ml|properties|json|toml)$|\.(ya?ml|properties|toml)$' || true)
 
   case "$subject" in
     red:*)
@@ -41,8 +44,12 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
       [ "$has_main" -eq 0 ] || { echo "x $sha 是 docs 提交却改了 src/main/"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 docs 提交却改了 src/test/"; fail=1; }
       [ "$has_docs" -gt 0 ] || { echo "x $sha 是 docs 提交却没有改 docs/、tools/ 或 markdown"; fail=1; } ;;
+    config:*)
+      [ "$has_java_main" -eq 0 ] || { echo "x $sha 是 config 提交却改了 src/main/java/"; fail=1; }
+      [ "$has_test" -eq 0 ] || { echo "x $sha 是 config 提交却改了 src/test/"; fail=1; }
+      [ "$has_config" -gt 0 ] || { echo "x $sha 是 config 提交却没有改配置文件"; fail=1; } ;;
     *)
-      echo "! $sha 没有 red/green/docs 前缀：$subject"
+      echo "! $sha 没有 red/green/docs/config 前缀：$subject"
       fail=1 ;;
   esac
 done

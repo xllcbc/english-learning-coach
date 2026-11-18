@@ -23,14 +23,14 @@
 4. **验收标准是唯一的测试清单。** 每条 AC 必须能对应到一个测试方法名。对应不上的，在 issue 里留言说明，不要自己发明行为。
 5. **不许改已有测试的断言来让新代码通过。** 要改，先在 issue 里说清为什么原断言是错的。
 6. **绿色 = `cd backend && mvn -q -Pno-containers test` 通过。** 容器测试（`*IntegrationTest`、`*RetrieverTest`）不归你跑，红了也不许改。
-7. **代码 AC 两个 commit：** `red: <AC 摘要>` 只含测试文件；`green: <AC 摘要>` 只含实现文件。**纯文档/工具 AC 一个 `docs: <AC 摘要>`**，只改 `docs/`、`tools/` 或 markdown，不碰 `src/main`、`src/test`；不要为了凑红绿去写假测试。文档改动并入 `green` 或单独的 `docs:`。
+7. **代码 AC 两个 commit：** `red: <AC 摘要>` 只含测试文件；`green: <AC 摘要>` 只含实现文件。**纯文档/工具 AC 一个 `docs: <AC 摘要>`**，只改 `docs/`、`tools/` 或 markdown，不碰 `src/main`、`src/test`。**纯配置 AC 一个 `config: <AC 摘要>`**，只改 yml/yaml/properties/toml/json 运行时配置，不碰 Java 代码与测试；如果配置改动会改变行为，仍走 red/green。不要为了凑红绿去写假测试。
 
 ## 收尾
 
-全部 AC 都有对应红绿提交（纯文档/工具 AC 有 `docs:` 提交）后：
+全部 AC 都有对应红绿提交（纯文档/工具 AC 有 `docs:`，纯配置 AC 有 `config:`）后：
 
 1. `bash tools/check-redgreen.sh {{TARGET_BRANCH}}` 必须通过
-2. 在 issue 里评论：逐条 AC + 对应测试方法名/文档路径 + commit sha；`docs:` 的 AC 只写文档路径和 sha
+2. 在 issue 里评论：逐条 AC + 对应测试方法名/文档路径 + commit sha；`docs:`/`config:` 的 AC 只写路径和 sha
 3. **不要关闭 issue。** 在评论里写明“等待人工合并 `agent/issue-<号>` 后再关闭”。
 
 没有任何可做的了，输出：
