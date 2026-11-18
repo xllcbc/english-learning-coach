@@ -2,6 +2,7 @@
 .idea/
 .vscode/
 .DS_Store
+.scratch/
 
 target/
 build/
@@ -15,3 +16,4 @@ dist/
 *.log
 *.db
 *.mv.db
+.alma-snapshots
