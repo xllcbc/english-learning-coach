@@ -1117,7 +1117,7 @@ mvn -Pno-containers test 2>&1 | grep -E "^\[INFO\] Running "
 
 期望：列表里**没有**上面那 7 个类。
 
-然后 prompt 里把命令写死成 `mvn -q -Pno-containers test`，并明确告诉它：**容器测试不归你跑，红了也不许改。** 否则 agent 会去改测试让它变绿——那比"不写测试"更坏。
+然后 prompt 里把命令写死成 `cd backend && mvn -q -Pno-containers test`，并明确告诉它：**容器测试不归你跑，红了也不许改。** 否则 agent 会去改测试让它变绿——那比"不写测试"更坏。
 
 ### 9.3 完整 `main.mts`（本仓库版）
 
@@ -1167,7 +1167,7 @@ await run({
       onSandboxReady: [
         {
           command:
-            "mvn -q -Dmaven.repo.local=/home/xllcbc/.cache/sandcastle/m2 " +
+            "cd backend && mvn -q -Dmaven.repo.local=/home/xllcbc/.cache/sandcastle/m2 " +
             "-Pno-containers -DskipTests compile",
           timeoutMs: 600_000,
         },
@@ -1208,7 +1208,7 @@ console.log(`跑完先审计：bash tools/check-redgreen.sh master agent/issue-$
 3. **测试只测外部行为。** 通过 public 接口观察。禁止：测 private/static 工具方法、直接查库验证、断言某个依赖被调用了几次或顺序如何。
 4. **验收标准是唯一的测试清单。** 每条 AC 必须能对应到一个测试方法名。对应不上的，在 issue 里留言说明，不要自己发明行为。
 5. **不许改已有测试的断言来让新代码通过。** 要改，先在 issue 里说清为什么原断言是错的。
-6. **绿色 = `mvn -q -Pno-containers test` 通过。** 容器测试（`*IntegrationTest`、`*RetrieverTest`）不归你跑，红了也不许改。
+6. **绿色 = `cd backend && mvn -q -Pno-containers test` 通过。** 容器测试（`*IntegrationTest`、`*RetrieverTest`）不归你跑，红了也不许改。
 7. **两个 commit：** `red: <AC 摘要>` 只含测试文件；`green: <AC 摘要>` 只含实现文件。文档改动并入 `green`。
 
 ## 收尾
