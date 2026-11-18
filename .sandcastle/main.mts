@@ -42,7 +42,7 @@ await run({
       onSandboxReady: [
         {
           command:
-            "mvn -q -Dmaven.repo.local=/home/xllcbc/.cache/sandcastle/m2 " +
+            "cd backend && mvn -q -Dmaven.repo.local=/home/xllcbc/.cache/sandcastle/m2 " +
             "-Pno-containers -DskipTests compile",
           timeoutMs: 600_000,
         },
