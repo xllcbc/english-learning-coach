@@ -75,6 +75,7 @@ opencode("opencode-go/deepseek-v4.1-flash", { captureSessions: false })
 | D6 | 先在玩具仓库验证，再复制进本仓库 | 直接在本仓库调 | 玩具仓库是学习沙盘，改坏不心疼 |
 | D7 | 提交 `.sandcastle/` 脚本、prompt、`package.json`、`tsconfig.json`、`package-lock.json` 和根 `.gitignore`，忽略凭据与产物 | 全部本地保留 / 全部提交 | 换机器不用重建；`.env`、`worktrees/`、`logs/`、`node_modules/` 不能进 git |
 | D8 | §9 第一票用临时 smoke issue | 直接开 #8 或 #16 | 先隔离“Java/bwrap/Maven/TDD 流水线”这一个风险，再上真活 |
+| D9 | 纯文档/工具 AC 用 `docs:` 提交，不参与红绿配对 | 强行写假测试 / 把文档硬塞进 green | #16 这类票有文档/评测 AC；假测试和混提交都会破坏门禁 |
 
 ## 4. 设计
 
@@ -264,6 +265,7 @@ fork stdout:    菠萝台风
 - §9.3 的 `main.mts` 改用 `opencodeV2()`。
 - §6.3 增加 `.env` 覆盖警告；§10 增加 JDK mount / `Model unavailable` / `cd backend` / 门禁四行。
 - §8.3 门禁要求 red/green 交替、奇数提交失败、未前缀提交直接失败；§9.4 prompt 不再关 issue。
+- §8.3/§9.4 增加 `docs:` 提交类型（纯文档/工具 AC）；门禁不把它计入红绿配对，但不能碰 `src/main`/`src/test`。
 - §9.1 补 `npm install`、`verify-adapter.test.ts`、`docs/red/.gitkeep`；附录验证命令改为本仓库 `npm test`，真实 E2E 留在玩具仓库。
 
 首页或 §6.4 加一句链接：本方案的背景与决定见 `docs/sandcastle-v2-compat.md`。
@@ -287,13 +289,14 @@ fork stdout:    菠萝台风
 | 宿主上 `check-redgreen.sh` 报“没有任何 docs/red 记录” | 脚本从 `$target` 的树里读 `docs/red/...`，不看当前工作区 |
 | CRLF/LF 造成 `git status` 假修改 | `.gitattributes` 固定 `* text=auto eol=lf`；用 `git diff --ignore-cr-at-eol` 复核 |
 | 未前缀或奇数提交绕过门禁 | 门禁要求 red/green 交替、奇数提交失败、未前缀提交直接 fail |
+| 纯文档 AC 被门禁判失败 | 用 `docs:` 提交；门禁已支持，docs 不参与配对，但不能碰 `src/main`/`src/test` |
 | agent 自己关 issue 但分支未合并 | prompt 已改为不关；人工合并后再关 |
 | 需要临时回到阉割版 | 把 `main.mts` 换回 `opencode(..., { captureSessions: false })`，保留适配层文件不动 |
 
 ## 9. 未决事项
 
 - smoke 分支 `agent/issue-18` 保留未合并；`#18` 是旧 prompt 下关闭的 smoke 例外，新 prompt 不再关未合并 issue。
-- 下一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。
+- 下一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。`#16` 的 AC3/5/7 是纯文档/评测/spec 回填，用 `docs:` 提交；代码 AC 仍走 red/green。
 
 ## 10. 参考
 
