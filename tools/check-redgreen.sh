@@ -15,6 +15,7 @@ base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 rg_count=0
+code_count=0
 expected="red"
 
 for sha in $(git rev-list --reverse "$base".."$target"); do
@@ -27,6 +28,10 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
   has_docs=$(printf '%s\n' "$changed" | grep -cE '(^|/)(docs|tools)/|\.md$' || true)
   has_config=$(printf '%s\n' "$changed" | grep -cE '(^|/)(application|bootstrap)[^/]*\.(ya?ml|properties)$|(^|/)src/main/resources/.*\.(ya?ml|properties|json|toml)$|\.(ya?ml|properties|toml)$' || true)
 
+  if [ "$has_test" -gt 0 ] || [ "$has_java_main" -gt 0 ]; then
+    code_count=$((code_count + 1))
+  fi
+
   case "$subject" in
     red:*)
       [ "$expected" = "red" ] || { echo "x $sha 应该是 green 却出现了 red"; fail=1; }
@@ -37,7 +42,7 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
     green:*)
       [ "$expected" = "green" ] || { echo "x $sha 应该是 red 却出现了 green"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; }
-      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; }
+      [ "$has_java_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/java/"; fail=1; }
       expected="red"
       rg_count=$((rg_count + 1)) ;;
     docs:*)
@@ -54,12 +59,14 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
   esac
 done
 
-[ "$rg_count" -ge 2 ] || { echo "x 红绿提交不足两次，实际 $rg_count"; fail=1; }
-[ "$expected" = "red" ] || { echo "x 红绿提交没有成对（最后缺少 green）"; fail=1; }
+if [ "$code_count" -gt 0 ]; then
+  [ "$rg_count" -ge 2 ] || { echo "x 红绿提交不足两次，实际 $rg_count"; fail=1; }
+  [ "$expected" = "red" ] || { echo "x 红绿提交没有成对（最后缺少 green）"; fail=1; }
 
-if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
-  echo "x 没有任何 docs/red 记录"
-  exit 1
+  if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
+    echo "x 没有任何 docs/red 记录"
+    exit 1
+  fi
 fi
 
 exit "$fail"
