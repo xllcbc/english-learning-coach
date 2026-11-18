@@ -689,6 +689,8 @@ GH_TOKEN=...
 
 `.env` 的键会与 `process.env` 合并；agent provider 的 `env` 覆盖 `.env` 里的同名键。注意：**agent provider 的 env 与 sandbox provider 的 env 不能有重叠键**，否则 `run()` 直接报错。
 
+> 只在宿主真的 `export` 了变量时才写 `env: { OPENCODE_API_KEY: process.env.OPENCODE_API_KEY! }`。如果宿主没有这个变量、你又写了 `process.env.OPENCODE_API_KEY ?? ""`，空字符串会覆盖 `.env` 里的真 key，opencode 会报 `Model unavailable`。用 `.env` 时就把 `env` 整个删掉。
+
 **② 想挂载 `auth.json`？bwrap 里做不到。**
 
 这条值得单独写清楚，因为很多人第一反应就是"把 auth 文件挂进去"。源码里有两条硬约束：
@@ -1149,9 +1151,8 @@ await run({
     ],
   }),
 
-  agent: opencodeV2("opencode-go/deepseek-v4.1-flash", {
-    env: { OPENCODE_API_KEY: process.env.OPENCODE_API_KEY ?? "" },
-  }),
+  // 凭据走 .sandcastle/.env；不要再传空的 process.env 覆盖它
+  agent: opencodeV2("opencode-go/deepseek-v4.1-flash"),
 
   promptFile: ".sandcastle/prompt.md",
   promptArgs: { ISSUE_NUMBER: issue },

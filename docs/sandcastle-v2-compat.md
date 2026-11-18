@@ -256,6 +256,7 @@ fork stdout:    菠萝台风
 | `--dangerously-skip-permissions` 未来被删 | 改 `buildPrintCommand` 的包装（本轮不做），或改用 `--auto` |
 | 沙箱里的 export/import 撞宿主 opencode 端口 | 已用 `--standalone` 解决；即使将来 bwrap 隔离 network，保留它也无副作用 |
 | JDK/Maven 装在 `~/.local/opt`，bwrap 的私有 `/home` 隐藏 `libjli.so` | 在 `bwrap({ mounts })` 里只读挂载 `~/.local/opt`；见指南 §9.2 |
+| 把 `process.env.OPENCODE_API_KEY ?? ""` 传给 provider，覆盖 `.env` 里的真 key | 用 `.sandcastle/.env` 时不要传 `env`；宿主没 export 时它会覆盖成空字符串 |
 | 原会话继续改同一批文件 | 第 5 步硬闸门；第 4 步先确认文件归属；本方案不碰 126 个 WIP 文件 |
 | 需要临时回到阉割版 | 把 `main.mts` 换回 `opencode(..., { captureSessions: false })`，保留适配层文件不动 |
 
