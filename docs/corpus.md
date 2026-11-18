@@ -116,6 +116,10 @@ docker exec writelab-postgres psql -U writelab -d writelab -c \
 - **向量增量（#14 落地后）**：`halfvec(512)` = 1,024 B/行；HNSW（cosine，m≈16）索引约 1.2 KB/行，合计约 **2.2 KB/行**。
   240k 行约 **0.5–0.65 GB**；若增长到 40 万行约 **0.9–1.1 GB**。这是单机 PostgreSQL 可接受的量级，也是 spec 选择 512 维而不是
   1,536 维的原因。
+- **实测（#16 建索引后）**：240,843 行全部填充 512 维向量后，`corpus_sentence` 表 + TOAST + 索引共
+  **625.1 MB**，其中 HNSW 索引 **294 MB**（约 1.22 KB/行），表本体约 **284 MB**（约 1.18 KB/行）；
+  数据库总大小 **647 MB**。与上面的 0.5–0.65 GB 估算同一量级。建索引是手动离线操作，见
+  [检索离线评测与索引构建](retrieval-evaluation.md)。
 - **一次性 embedding 成本**：按 `text-embedding-3-small` 的 0.02 美元/百万 token、平均 11 token/句估算，
   240,829 × 11 ≈ 2.65 M token ≈ **0.05 美元**；按 2 倍重试/批处理余量计 **< 0.11 美元**。
   40 万行约 4.4 M token ≈ **0.09 美元**，余量后 **< 0.18 美元**。价格与分词器会变，公式是
