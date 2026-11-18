@@ -51,12 +51,15 @@
      全部超时后返回稳定错误码 `MODEL_TIMEOUT`（HTTP 504）与中文提示“模型响应超时，请稍后重试。”，
      日志中记录 `durationMs`。
 
-6. **向量检索降级**
+6. **向量检索与离线索引**
    - 已配置 API Key 但语料表尚未填充向量时，提交 Writing Practice 仍返回 201，教师讲解仍以 `complete` 结束，
      只是 Vocabulary Suggestion 保留模型原例句、讲解不引用依据。
-   - `retrieval_hit` 中对应记录为 `skip_reason = NO_CORPUS_SENTENCE` / `NO_GROUNDING_MATERIAL`；
-     若 embedding 服务不可用则为 `RETRIEVAL_FAILED`，接口不新增错误码。
-   - embedding 模型名由 `WRITELAB_MODEL_EMBEDDING_NAME` 控制；修改后重启生效。
+   - 运行 `tools/retrieval-tooling.sh build` 后，同一请求的 Vocabulary Suggestion 应替换为真实 Corpus
+     Sentence（含目标词形与来源署名），教师讲解的 `complete` 事件应带 `groundingMaterials`。
+   - `retrieval_hit` 中对应记录为 `VECTOR_SIMILARITY` 并带相似度；没有候选时为
+     `skip_reason = NO_CORPUS_SENTENCE` / `NO_GROUNDING_MATERIAL`，embedding 服务不可用时为
+     `RETRIEVAL_FAILED`，接口不新增错误码。
+   - embedding 模型名由 `WRITELAB_MODEL_EMBEDDING_NAME` 控制；修改后重启并重跑 `build --refresh` 才生效。
 
 7. **密钥与 Prompt 安全**
    - 数据库 `practice_attempt` 表中不存在 API Key 或完整 Prompt（仅保存写作原文、结构化反馈、

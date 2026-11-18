@@ -26,13 +26,13 @@ embedding 模型名是独立配置项，维度固定 512；base url、API key �
 | `WRITELAB_MODEL_EMBEDDING_NAME` | `text-embedding-3-small` | embedding 模型；请求时固定 `dimensions=512` |
 | `WRITELAB_GROUNDING_MAX_HITS` | 6 | 每次讲解最多引用的依据材料条数 |
 | `WRITELAB_GROUNDING_PER_CATEGORY_HITS` | 2 | 每个聚焦类别按相似度取前 N 条 |
-| `WRITELAB_GROUNDING_SIMILARITY_THRESHOLD` | 0.3 | 低于该余弦相似度视为「无相关依据材料」 |
+| `WRITELAB_GROUNDING_SIMILARITY_THRESHOLD` | 0.6 | 低于该余弦相似度视为「无相关依据材料」 |
 | `WRITELAB_GROUNDING_MIN_HITS` | 2 | **仅确定性实现使用**，向量模式以相似度阈值替代 |
 
-阈值与 top-k 的最终默认值由离线评测（#16）调整并回填本文档。
+阈值与 top-k 的最终默认值由[离线评测](retrieval-evaluation.md)确定：0.60 是仍保持标注材料 100% 命中的
+最高阈值，per-category 与 max-hits 经评测保持 2/6。更换 embedding 模型后应重跑评测再调整。
 
 ## Schema 与索引
-
 `V7__add_retrieval_embeddings.sql` 为 `corpus_sentence` 与 `grounding_material` 各新增一列 `halfvec(512)`，
 并建立 HNSW 余弦索引（`halfvec_cosine_ops`）。schema 仍完全由 Flyway 拥有，应用运行期不建表、不建索引。
 相似度查询直接使用余弦距离运算符 `<=>`，`1 - distance` 即余弦相似度。
@@ -41,6 +41,20 @@ embedding 模型名是独立配置项，维度固定 512；base url、API key �
 
 - `FIXED_ORDER`：确定性排序，`similarity_score` 为 `NULL`；
 - `VECTOR_SIMILARITY`：按余弦相似度排序，`similarity_score` 记录该分数。
+
+## 离线索引构建
+
+`V7__add_retrieval_embeddings.sql` 只建立空列与索引；向量由手动工具填充，不在应用启动、Maven 或 CI
+链路里：
+
+```bash
+tools/retrieval-tooling.sh build          # 只补 embedding IS NULL 的行，可中断续跑
+tools/retrieval-tooling.sh build --refresh  # 换模型后全量覆盖
+tools/retrieval-tooling.sh stats            # 查看行数、向量覆盖率与表/索引容量
+```
+
+工具使用与后端相同的环境变量和固定 512 维；每批默认 10 条、并发 4，429/5xx 指数退避。详细用法、
+实测量级与「重新导入后索引一致」的验证步骤见 [检索离线评测与索引构建](retrieval-evaluation.md)。
 
 ## 查询构造
 
@@ -71,5 +85,6 @@ embedding 模型名是独立配置项，维度固定 512；base url、API key �
 
 ## 向量填充的边界
 
-本票只新增向量列、索引、在线消费逻辑与配置；语料行的向量由 #16 的离线索引流程填充。`embedding IS NULL` 的行会被向量检索跳过，
-因此在一个尚未建立索引的库上，REAL 模式表现为「没有候选」并正常降级，而不是报错。离线索引重建完成后无需改代码即可生效。
+本票只新增向量列、索引、在线消费逻辑与配置；语料行的向量由[离线索引工具](retrieval-evaluation.md)
+填充。`embedding IS NULL` 的行会被向量检索跳过，因此在一个尚未建立索引的库上，REAL 模式表现为
+「没有候选」并正常降级，而不是报错。离线索引重建完成后无需改代码即可生效。

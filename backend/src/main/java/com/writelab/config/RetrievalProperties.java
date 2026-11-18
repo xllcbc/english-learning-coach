@@ -20,7 +20,9 @@ public record RetrievalProperties(
     private static final int DEFAULT_MAX_HITS = 6;
     private static final int DEFAULT_PER_CATEGORY_HITS = 2;
     private static final int DEFAULT_MIN_HITS = 2;
-    private static final double DEFAULT_SIMILARITY_THRESHOLD = 0.3;
+    // Tuned by the offline evaluation (docs/retrieval-evaluation.md); keep in step with
+    // application.yml and .env.example.
+    private static final double DEFAULT_SIMILARITY_THRESHOLD = 0.6;
 
     public RetrievalProperties {
         groundingMaxHits = orDefault(groundingMaxHits, DEFAULT_MAX_HITS);

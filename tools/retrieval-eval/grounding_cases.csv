@@ -1,0 +1,13 @@
+query,categories,expected_contents
+"He go to school every day. 主语是第三人称单数，现在时谓语动词应该加 -s。",GRAMMAR|SENTENCE_STRUCTURE,主谓一致：主语是第三人称单数时，现在时的谓语动词要加 -s。
+"Yesterday I go to the park. 描述过去却用了现在时，时态前后不一致。",GRAMMAR|COHERENCE,时态一致：描述同一时间框架的句子不要随意切换时态。
+"I need advice about my career. advice 是不可数名词，不能加 a 或变复数。",GRAMMAR|VOCABULARY,advice、information、equipment 是不可数名词，不加 a/an，也不变复数。
+"We should make a decision carefully. 这里的动词搭配应该是 make 而不是 do。",VOCABULARY|GRAMMAR,搭配决定地道与否：make a decision，不说 do a decision。
+"The advertisement is very creative. advertise 是动词，名词形式才是 advertisement。",VOCABULARY|GRAMMAR,一词多义先确认词性：advertise 是动词，advertisement 才是名词。
+"Because it was raining. 这个从句不能单独成句，需要主句。",SENTENCE_STRUCTURE|GRAMMAR,because、although 引导的从句不能单独成句。
+"I like reading, it helps me relax. 两个独立分句只用了逗号连接。",SENTENCE_STRUCTURE|PUNCTUATION,两个独立分句不能只用逗号连接，要用句号、分号或并列连词。
+"In this paragraph this refers to two different things. this 的先行词不唯一。",COHERENCE|GRAMMAR,this、it、they 的先行词必须在前文出现且唯一，否则换成具体名词。
+"The paragraph jumps between several unrelated ideas. 一个段落应该围绕一个中心句展开。",COHERENCE|SENTENCE_STRUCTURE,一个段落只围绕一个中心句展开，补充内容紧跟被说明的对象。
+"My friend's names are Tom and Jerry. 复数 friends 不加撇号。",PUNCTUATION|GRAMMAR,撇号只用于所有格和缩写，复数不加撇号。
+"I like apples, bananas and oranges. 英文逗号不能代替连接词或分号。",PUNCTUATION|SENTENCE_STRUCTURE,英文逗号不能代替连接词或分号，中文逗号的功能不等价。
+"i think english is important. 代词 i 永远大写，学科名称一般小写。",PUNCTUATION|GRAMMAR,句首和专有名词大写，代词 i 永远大写，学科名称一般小写。

@@ -40,6 +40,20 @@ cp .env.example .env
 
 后端启动时会自动从工作目录或仓库根目录加载 `.env`（`backend/src/main/resources/application.yml:4-8`），无需手动 export。
 
+### 真实模式的离线索引
+
+配置了非空 `WRITELAB_MODEL_API_KEY` 后，还需要把随包语料填充为 512 维向量，REAL 向量检索才会
+命中。这是**手动**操作，不在应用启动、Maven 或 CI 链路里：
+
+```bash
+tools/retrieval-tooling.sh build          # 只补尚未填充的行；可中断后重跑
+tools/retrieval-tooling.sh stats           # 查看向量覆盖率与数据库容量
+```
+
+语料更新后重新导入会让新增行保持 `NULL`，再跑一次 `build` 即可。更换 embedding 模型时用
+`build --refresh` 全量覆盖。详细说明与实测容量见
+[检索离线评测与索引构建](docs/retrieval-evaluation.md)。
+
 ## 3. 启动数据库
 
 ```bash
