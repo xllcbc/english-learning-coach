@@ -1,6 +1,6 @@
 # Sandcastle × OpenCode v2 本地兼容方案（共识记录）
 
-> 状态：**适配层已在玩具仓库实施，capture / resume / fork 已实测通过，指南已更新（2026-11-18）**；本仓库落地与 smoke issue 待做。
+> 状态：**适配层、指南、§9 harness 与 smoke issue #18 全部完成（2026-11-18）**；下一张真活票待开。
 > 日期：2026-11-17（2026-11-18 补充实测结果）
 > 适用：`@ai-hero/sandcastle@0.14.0` + `opencode 2.3.0`，WSL2 + `bwrap()`。
 > 上游：`mattpocock/sandcastle#1509` 仍 open 且无人处理；本方案**不提交上游 PR**，只做本地适配。
@@ -98,18 +98,23 @@ opencode("opencode-go/deepseek-v4.1-flash", { captureSessions: false })
 
 玩具仓库的根 `package.json` 必须是 `"type": "module"`：`@ai-hero/sandcastle` 是 ESM-only，CJS 下 `require` 会报 `ERR_PACKAGE_PATH_NOT_EXPORTED`。本仓库则把同样的 `package.json` 放进 `.sandcastle/`。
 
-本仓库（WIP 提交后做）：
+本仓库（已完成）：
 
 ```text
-~/code/writeLab/.sandcastle/
-  opencode-v2.ts    # 同一个文件
-  main.mts          # §9.3 版本，改用 opencodeV2()
-  prompt.md         # §9.4 的七条铁律
-  package.json      # {"private": true, "type": "module"}
-  .gitignore        # .env / worktrees/ / logs/
-  .env              # 不提交
-  worktrees/        # 不提交
-  logs/             # 不提交
+~/code/writeLab/
+  .sandcastle/
+    opencode-v2.ts    # 同一个文件
+    main.mts          # §9.3 版本，改用 opencodeV2()
+    prompt.md         # §9.4 的七条铁律
+    package.json      # {"private": true, "type": "module"}
+    tsconfig.json
+    .gitignore        # .env / node_modules/ / worktrees/ / logs/
+    .env              # 不提交
+    worktrees/        # 不提交
+    logs/             # 不提交
+  tools/check-redgreen.sh
+  docs/red/issue-N.md
+  backend/pom.xml     # no-containers profile
 ```
 
 版本锁定：`@ai-hero/sandcastle` 用精确版本 `0.14.0`（不要写 `^0.14.0`）；opencode 记录为 `2.3.0`。适配层是围绕这两个版本的行为写的，升级前先重跑第 5 节。
@@ -215,6 +220,17 @@ fork stdout:    菠萝台风
 
 第一次尝试失败于端口冲突（`Managed service port 49374 ... already in use`），加上 `--standalone` 后通过。
 
+### 5.4 Smoke issue #18（§9 harness）
+
+| 项 | 结果 |
+| --- | --- |
+| issue | #18 `[smoke] Add GET /api/health` |
+| red commit | `f142ddb`（只含测试；真实输出 `expected: 200 but was: 404`） |
+| green commit | `2b96b5f`（controller + `docs/red/issue-18.md`） |
+| 全量测试 | `cd backend && mvn -q -Pno-containers test`：54 tests，0 failures |
+| 红绿门禁 | `bash tools/check-redgreen.sh master agent/issue-18`：通过 |
+| issue | 已评论并关闭；分支 `agent/issue-18` 保留未合并 |
+
 ## 6. 执行顺序
 
 | # | 步骤 | 完成判据 | 依赖 |
@@ -223,11 +239,12 @@ fork stdout:    菠萝台风
 | 2 | 跑第 5.1 节的假 handle 测试 | 全部断言通过 | 1 |
 | 3 | 跑第 5.2 节三次真实运行 | 表格三行都通过 | 2 |
 | 4 | 更新 `docs/sandcastle-guide.md`（见第 7 节） | 指南不再说“等上游适配” | 3；先确认该文件的归属 |
-| 5 | **暂停**，等原会话把 126 个未提交文件提交并推送 | Windows 仓库 `git status` 干净 | 用户/原会话 |
-| 6 | 同步 `~/code/writeLab` 并建 `.sandcastle/` | clone 到 `c487ad2`；`.sandcastle/` 文件就位；`.env` 已填 | 5 |
-| 7 | 建临时 smoke issue 跑通 Java/bwrap/Maven/TDD 流水线 | 留下一份红色记录 + 一个 commit；issue 可关闭 | 6 |
+| 5 | 提交 `.gitattributes`/`.gitignore` + 三份文档，推送 master | Windows 仓库干净；远端有 EOL 策略与文档 | 4 |
+| 6 | 同步 `~/code/writeLab`，补 `no-containers` profile、`check-redgreen.sh`、JDK/Maven mount、`.sandcastle/` | `mvn -Pno-containers test` 通过；`.sandcastle/` 文件就位；`.env` 已填 | 5 |
+| 7 | 建 smoke issue #18 跑通 Java/bwrap/Maven/TDD 流水线 | red `f142ddb` + green `2b96b5f`；54 tests pass；issue 已关 | 6 |
+| 8 | 下一张真活票：`#8` 或 `#16` | 按 §11 开工 | 7 |
 
-步骤 1–4 已于 2026-11-18 完成：适配层、假 handle 测试、三次真实运行、指南更新全部完成。第 5 步是硬闸门：原会话的 WIP 没提交前，不在本仓库开 agent。
+步骤 1–7 已于 2026-11-18 完成。原会话的 126 个“修改”是 CRLF/LF 误判，`.gitattributes` 的 `* text=auto eol=lf` 已消除，不再有 WIP 闸门。
 
 ## 7. 文档改动清单（已完成，2026-11-18）
 
@@ -244,7 +261,7 @@ fork stdout:    菠萝台风
 
 `docs/sandcastle-pr-guide.md` 保持不动；它讲的是“如果将来要提 PR”的规矩，与当前“不提 PR”的决定不冲突。
 
-> 注意：`docs/sandcastle-guide.md` 和 `docs/sandcastle-pr-guide.md` 目前仍是未跟踪文件，属于另一条会话的工作。本次已更新指南，但提交时不要 `git add -A`：只显式加入 `docs/sandcastle-guide.md` 和本文件，避免把原会话的 126 个 WIP 一起卷进去。
+> 三份文档已随 `1a1e5f9` 提交推送；后续的 JDK mount、`cd backend`、`.env` 覆盖、门禁脚本修正分别有独立 commit。
 
 ## 8. 风险与回滚
 
@@ -257,14 +274,15 @@ fork stdout:    菠萝台风
 | 沙箱里的 export/import 撞宿主 opencode 端口 | 已用 `--standalone` 解决；即使将来 bwrap 隔离 network，保留它也无副作用 |
 | JDK/Maven 装在 `~/.local/opt`，bwrap 的私有 `/home` 隐藏 `libjli.so` | 在 `bwrap({ mounts })` 里只读挂载 `~/.local/opt`；见指南 §9.2 |
 | 把 `process.env.OPENCODE_API_KEY ?? ""` 传给 provider，覆盖 `.env` 里的真 key | 用 `.sandcastle/.env` 时不要传 `env`；宿主没 export 时它会覆盖成空字符串 |
-| 原会话继续改同一批文件 | 第 5 步硬闸门；第 4 步先确认文件归属；本方案不碰 126 个 WIP 文件 |
+| worktree 根没有 `pom.xml`，hook 里 `mvn` exit 1 | hook 和 prompt 都写成 `cd backend && mvn ...` |
+| 宿主上 `check-redgreen.sh` 报“没有任何 docs/red 记录” | 脚本从 `$target` 的树里读 `docs/red/...`，不看当前工作区 |
+| CRLF/LF 造成 `git status` 假修改 | `.gitattributes` 固定 `* text=auto eol=lf`；用 `git diff --ignore-cr-at-eol` 复核 |
 | 需要临时回到阉割版 | 把 `main.mts` 换回 `opencode(..., { captureSessions: false })`，保留适配层文件不动 |
 
 ## 9. 未决事项
 
-- 原会话的 126 个未提交文件何时提交并推送。
-- smoke issue 的具体内容（建议：给一个纯函数补一个边界测试 + 一处文档修正；WIP 提交后不再受重叠限制）。
-- smoke 通过后第一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。
+- smoke 分支 `agent/issue-18` 保留未合并；需要时删除或参考。
+- 下一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。
 
 ## 10. 参考
 
