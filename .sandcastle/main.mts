@@ -16,6 +16,11 @@ await run({
         hostPath: "/home/xllcbc/.cache/sandcastle/m2",
         sandboxPath: "/home/xllcbc/.cache/sandcastle/m2",
       },
+      {
+        hostPath: "/home/xllcbc/.local/opt",
+        sandboxPath: "/home/xllcbc/.local/opt",
+        readonly: true,
+      },
     ],
   }),
 
