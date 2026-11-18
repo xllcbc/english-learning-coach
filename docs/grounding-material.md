@@ -45,7 +45,10 @@
 | `WRITELAB_GROUNDING_MAX_HITS` | 6 | 单次讲解最多引用的条目数 |
 | `WRITELAB_GROUNDING_PER_CATEGORY_HITS` | 2 | 每个聚焦类别最多取回的条目数 |
 | `WRITELAB_GROUNDING_MIN_HITS` | 2 | 确定性实现：少于该条数视为没有相关依据 |
-| `WRITELAB_GROUNDING_SIMILARITY_THRESHOLD` | 0.3 | 向量实现：低于该余弦相似度视为没有相关依据 |
+| `WRITELAB_GROUNDING_SIMILARITY_THRESHOLD` | 0.6 | 向量实现：低于该余弦相似度视为没有相关依据 |
+
+阈值与 top-k 由[离线评测](retrieval-evaluation.md)确定：阈值 0.60、per-category 2、max-hits 6。
+0.60 是仍保持标注依据材料 100% 命中的最高阈值；更换 embedding 模型后应重跑评测再调整。
 
 ## 讲解与引用
 
