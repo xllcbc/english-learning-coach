@@ -932,6 +932,7 @@ base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 rg_count=0
+code_count=0
 expected="red"
 
 for sha in $(git rev-list --reverse "$base".."$target"); do
@@ -944,6 +945,10 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
   has_docs=$(printf '%s\n' "$changed" | grep -cE '(^|/)(docs|tools)/|\.md$' || true)
   has_config=$(printf '%s\n' "$changed" | grep -cE '(^|/)(application|bootstrap)[^/]*\.(ya?ml|properties)$|(^|/)src/main/resources/.*\.(ya?ml|properties|json|toml)$|\.(ya?ml|properties|toml)$' || true)
 
+  if [ "$has_test" -gt 0 ] || [ "$has_java_main" -gt 0 ]; then
+    code_count=$((code_count + 1))
+  fi
+
   case "$subject" in
     red:*)
       [ "$expected" = "red" ] || { echo "x $sha 应该是 green 却出现了 red"; fail=1; }
@@ -954,7 +959,7 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
     green:*)
       [ "$expected" = "green" ] || { echo "x $sha 应该是 red 却出现了 green"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; }
-      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; }
+      [ "$has_java_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/java/"; fail=1; }
       expected="red"
       rg_count=$((rg_count + 1)) ;;
     docs:*)
@@ -971,18 +976,22 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
   esac
 done
 
-[ "$rg_count" -ge 2 ] || { echo "x 红绿提交不足两次，实际 $rg_count"; fail=1; }
-[ "$expected" = "red" ] || { echo "x 红绿提交没有成对（最后缺少 green）"; fail=1; }
+if [ "$code_count" -gt 0 ]; then
+  [ "$rg_count" -ge 2 ] || { echo "x 红绿提交不足两次，实际 $rg_count"; fail=1; }
+  [ "$expected" = "red" ] || { echo "x 红绿提交没有成对（最后缺少 green）"; fail=1; }
 
-if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
-  echo "x 没有任何 docs/red 记录"
-  exit 1
+  if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
+    echo "x 没有任何 docs/red 记录"
+    exit 1
+  fi
 fi
 
 exit "$fail"
 ```
 
-`docs:` 用于纯文档/工具 AC（例如评测脚本文档、spec 回填），`config:` 用于纯配置默认值（例如阈值、top-k）。两者都不参与红绿配对；`docs:` 不能改 `src/main`/`src/test`，`config:` 不能改 `src/main/java`/`src/test`。如果配置改动会改变行为，仍走 red/green，而不是用 `config:` 绕过测试。
+`docs:` 用于纯文档/工具 AC（例如评测脚本文档、spec 回填），`config:` 用于纯配置默认值（例如阈值、top-k）。两者都不参与红绿配对；`docs:` 不能改 `src/main`/`src/test`，`config:` 不能改 `src/main/java`/`src/test`。
+
+如果整张票只有 docs/config 提交、没有 Java 代码或测试，门禁**不要求红绿配对，也不要求 `docs/red` 记录**；一旦碰 `src/main/java` 或 `src/test`，就必须红绿配对 + `docs/red`。配置改动如果会改变行为，仍走 red/green，而不是用 `config:` 绕过测试。
 
 落盘后 `chmod +x tools/check-redgreen.sh`，在分支上跑：
 
@@ -1339,6 +1348,7 @@ WORKDIR /home/agent/repo
 | 宿主上 `check-redgreen.sh` 报“没有任何 docs/red 记录” | 旧脚本看当前工作区，master 上没有该文件 | 用 `git ls-tree "$target"` 的版本（8.3） |
 | 纯文档 AC 被门禁判失败 | 用 red/green 强行塞代码 | 用 `docs:` 提交，只改 docs/tools/markdown（8.3 / 9.4） |
 | 纯配置 AC 被门禁判失败 | 用 red/green 强行塞假测试，或把配置混进 green | 用 `config:` 提交，只改 yml/yaml/properties/toml/json（8.3 / 9.4） |
+| 纯 docs/config 票被要求红绿 | 门禁只在有 Java 代码/测试时要求配对 | 不用为纯配置/文档票造红绿或 `docs/red` |
 | 沙箱里测试全红 | Testcontainers 需要 Docker 守护进程 | `-Pno-containers`，并明确告诉 agent 别管容器测试 |
 | 一个 commit 装下 30 个文件 | prompt 没约束提交粒度 | 第 8.1 / 8.3 层 |
 | agent 改了测试让它绿 | 你没禁止，且它只知道"要绿" | prompt 铁律第 5 条 + review agent 第 4 项 |
@@ -1396,7 +1406,7 @@ WORKDIR /home/agent/repo
 [ ] 1. 选一票 ready-for-agent 的 issue，读完全部 AC
 [ ] 2. 把每条 AC 翻译成一个测试方法名（翻译不出来的 AC，先停在 issue 里问）
 [ ] 3. ISSUE=<号> npx tsx .sandcastle/main.mts
-[ ] 4. 看 result.commits：red/green 必须成对；docs: / config: 不计入配对
+[ ] 4. 看 result.commits：有 Java 代码/测试时，red/green 必须成对；纯 docs/config 票可以没有红绿
 [ ] 5. bash tools/check-redgreen.sh master agent/issue-<号>
 [ ] 6. 人审：读 docs/red/issue-<号>.md，确认红色输出是真的
 [ ] 7. 跑 review agent（8.4），看 gaps / violations
