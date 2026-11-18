@@ -31,7 +31,7 @@
 
 1. `bash tools/check-redgreen.sh {{TARGET_BRANCH}}` 必须通过
 2. 在 issue 里评论：逐条 AC + 对应测试方法名 + 红/绿 commit sha
-3. 关 issue
+3. **不要关闭 issue。** 在评论里写明“等待人工合并 `agent/issue-<号>` 后再关闭”。
 
 没有任何可做的了，输出：
 

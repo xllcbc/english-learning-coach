@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "tsx verify-adapter.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

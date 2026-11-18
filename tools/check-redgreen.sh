@@ -9,6 +9,7 @@ base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 count=0
+expected="red"
 
 for sha in $(git rev-list --reverse "$base".."$target"); do
   subject=$(git log -1 --format=%s "$sha")
@@ -19,18 +20,24 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
 
   case "$subject" in
     red:*)
+      [ "$expected" = "red" ] || { echo "x $sha 应该是 green 却出现了 red"; fail=1; }
       [ "$has_main" -eq 0 ] || { echo "x $sha 是 red 提交却改了 src/main/"; fail=1; }
-      [ "$has_test" -gt 0 ] || { echo "x $sha 是 red 提交却没有改 src/test/"; fail=1; } ;;
+      [ "$has_test" -gt 0 ] || { echo "x $sha 是 red 提交却没有改 src/test/"; fail=1; }
+      expected="green" ;;
     green:*)
+      [ "$expected" = "green" ] || { echo "x $sha 应该是 red 却出现了 green"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; }
-      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; } ;;
+      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; }
+      expected="red" ;;
     *)
-      echo "! $sha 没有 red/green 前缀：$subject" ;;
+      echo "! $sha 没有 red/green 前缀：$subject"
+      fail=1 ;;
   esac
   count=$((count + 1))
 done
 
 [ "$count" -ge 2 ] || { echo "x 提交数不足（红绿至少两次），实际 $count"; fail=1; }
+[ "$expected" = "red" ] || { echo "x 提交数不是红绿成对（最后缺少 green）"; fail=1; }
 
 if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
   echo "x 没有任何 docs/red 记录"

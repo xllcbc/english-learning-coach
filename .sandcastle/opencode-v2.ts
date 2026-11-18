@@ -59,9 +59,8 @@ function makeCaptureToHost(storage: OpenCodeStorage, exportDir?: string) {
     sessionId,
     handle,
   }: CaptureArgs): Promise<void> => {
-    await requireOpencodeV2(handle, sandboxCwd);
-
     try {
+      await requireOpencodeV2(handle, sandboxCwd);
       const sandboxPath = sandboxSessionPath(handle, exportDir, sessionId);
       const command = `opencode session export ${shellEscape(sessionId)} --standalone > ${shellEscape(sandboxPath)}`;
       const result = await handle.exec(command, { cwd: sandboxCwd });
