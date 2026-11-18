@@ -79,7 +79,7 @@ tools/retrieval-tooling.sh build --refresh
 ## 评测
 
 ```bash
-# 默认使用当前 .env 的 threshold/per-category/max-hits 作为对照，并扫描 0.20–0.40
+# 默认使用当前 .env 的 threshold/per-category/max-hits 作为对照，并扫描 0.30–0.70
 tools/retrieval-tooling.sh eval
 
 # 指定扫描范围

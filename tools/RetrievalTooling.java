@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
  *       [--refresh] [--limit N] [--batch-size N] [--concurrency N]
  *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java stats
  *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java checksum
- *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java eval [--thresholds 0.2,0.3]
+ *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java eval [--thresholds 0.5,0.6,0.7]
  *       [--per-category 1,2,3] [--max-hits 4,6,8]
  * </pre>
  *
@@ -89,7 +89,7 @@ public final class RetrievalTooling {
                                          [--batch-size N] [--concurrency N]
                   RetrievalTooling stats
                   RetrievalTooling checksum
-                  RetrievalTooling eval [--thresholds 0.2,0.3] [--per-category 1,2,3]
+                  RetrievalTooling eval [--thresholds 0.5,0.6,0.7] [--per-category 1,2,3]
                                         [--max-hits 4,6,8] [--cases tools/retrieval-eval]
                 """);
     }
@@ -301,10 +301,10 @@ public final class RetrievalTooling {
         Path caseDirectory = Path.of(options.getOrDefault("cases", "tools/retrieval-eval"));
         List<CorpusCase> corpusCases = readCorpusCases(caseDirectory.resolve("corpus_cases.csv"));
         List<GroundingCase> groundingCases = readGroundingCases(caseDirectory.resolve("grounding_cases.csv"));
-        List<Double> thresholds = doubles(options.getOrDefault("thresholds", "0.20,0.25,0.30,0.35,0.40"));
+        List<Double> thresholds = doubles(options.getOrDefault("thresholds", "0.30,0.40,0.50,0.55,0.60,0.65,0.70"));
         List<Integer> perCategory = integers(options.getOrDefault("per-category", "1,2,3"));
         List<Integer> maxHits = integers(options.getOrDefault("max-hits", "4,6,8"));
-        double defaultThreshold = doubleEnv("WRITELAB_GROUNDING_SIMILARITY_THRESHOLD", 0.3);
+        double defaultThreshold = doubleEnv("WRITELAB_GROUNDING_SIMILARITY_THRESHOLD", 0.6);
         int defaultPerCategory = intEnv("WRITELAB_GROUNDING_PER_CATEGORY_HITS", 2);
         int defaultMaxHits = intEnv("WRITELAB_GROUNDING_MAX_HITS", 6);
 
