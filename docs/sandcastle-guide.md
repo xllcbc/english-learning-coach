@@ -916,11 +916,11 @@ topUpKeepsACuratedRowThatSharesAWordFormAndSentence
 #!/usr/bin/env bash
 # 检查一条分支上的红绿序列。
 # 用法：bash tools/check-redgreen.sh [base] [target]
-#   base   对比基线，默认 origin/master
+#   base   对比基线，默认 master
 #   target 被检查的分支，默认 HEAD（在沙箱 worktree 里跑时就是 agent 分支）
 set -euo pipefail
 
-base="${1:-origin/master}"
+base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 count=0
@@ -1134,6 +1134,7 @@ import { opencodeV2 } from "./opencode-v2.ts";
 
 const issue = Number(process.env.ISSUE ?? 0);
 if (!issue) throw new Error("用法：ISSUE=14 npx tsx .sandcastle/main.mts");
+const branch = `agent/issue-${issue}`;
 
 await run({
   name: `issue-${issue}`,
@@ -1146,7 +1147,6 @@ await run({
         sandboxPath: "/home/xllcbc/.cache/sandcastle/m2",
       },
       {
-        // JDK / Maven 装在 ~/.local/opt 时，bwrap 的私有 /home 会把它们藏掉
         hostPath: "/home/xllcbc/.local/opt",
         sandboxPath: "/home/xllcbc/.local/opt",
         readonly: true,
@@ -1164,7 +1164,7 @@ await run({
   maxIterations: 1,
 
   // 一票一条分支：可审计、可并行、不碰你的工作区
-  branchStrategy: { type: "branch", branch: `agent/issue-${issue}` },
+  branchStrategy: { type: "branch", branch },
 
   hooks: {
     sandbox: {
@@ -1180,7 +1180,7 @@ await run({
   },
 });
 
-console.log(`跑完先审计：bash tools/check-redgreen.sh master agent/issue-${issue}`);
+console.log(`跑完先审计：bash tools/check-redgreen.sh master ${branch}`);
 ```
 
 > `opencodeV2()` 来自 `.sandcastle/opencode-v2.ts`（见 6.4 与文末附录）。它只支持 opencode v2；`@ai-hero/sandcastle` 固定 `0.14.0`。
@@ -1404,7 +1404,7 @@ const sandboxSessionPath = (
   sessionId: string,
 ) => posix.join(exportDir ?? handle.sandboxTmpdir ?? "/tmp", `${sessionId}.json`);
 
-function hostSessionPath(
+function requireHostSessionPath(
   storage: OpenCodeStorage,
   hostCwd: string,
   sessionId: string,
@@ -1452,7 +1452,7 @@ function makeCaptureToHost(storage: OpenCodeStorage, exportDir?: string) {
         );
       }
 
-      const hostPath = hostSessionPath(storage, hostCwd, sessionId);
+      const hostPath = requireHostSessionPath(storage, hostCwd, sessionId);
       await mkdir(dirname(hostPath), { recursive: true });
       await handle.copyFileOut(sandboxPath, hostPath);
     } catch (error) {
@@ -1473,7 +1473,7 @@ function makeResumeIntoSandbox(storage: OpenCodeStorage, exportDir?: string) {
   }: ResumeArgs): Promise<void> => {
     await requireOpencodeV2(handle, sandboxCwd);
 
-    const hostPath = hostSessionPath(storage, hostCwd, sessionId);
+    const hostPath = requireHostSessionPath(storage, hostCwd, sessionId);
     const sandboxPath = sandboxSessionPath(handle, exportDir, sessionId);
     await handle.exec(`mkdir -p ${shellEscape(posix.dirname(sandboxPath))}`);
     await handle.copyFileIn(hostPath, sandboxPath);
