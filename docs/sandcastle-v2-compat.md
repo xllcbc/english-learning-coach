@@ -103,19 +103,23 @@ opencode("opencode-go/deepseek-v4.1-flash", { captureSessions: false })
 ```text
 ~/code/writeLab/
   .sandcastle/
-    opencode-v2.ts    # 同一个文件
-    main.mts          # §9.3 版本，改用 opencodeV2()
-    prompt.md         # §9.4 的七条铁律
-    package.json      # {"private": true, "type": "module"}
+    opencode-v2.ts          # 同一个文件
+    main.mts                # §9.3 版本，改用 opencodeV2()
+    verify-adapter.test.ts  # 假 handle 测试
+    prompt.md               # §9.4 的七条铁律
+    package.json            # private + type module + devDeps
+    package-lock.json
     tsconfig.json
-    .gitignore        # .env / node_modules/ / worktrees/ / logs/
-    .env              # 不提交
-    worktrees/        # 不提交
-    logs/             # 不提交
+    .gitignore              # .env / node_modules/ / worktrees/ / logs/
+    .env                    # 不提交
+    worktrees/              # 不提交
+    logs/                   # 不提交
   tools/check-redgreen.sh
-  docs/red/issue-N.md
-  backend/pom.xml     # no-containers profile
+  docs/red/.gitkeep         # 第一票生成 issue-N.md
+  backend/pom.xml           # no-containers profile
 ```
+
+首次 clone 后先装依赖：`cd .sandcastle && npm install`；`npm test` 跑假 handle，`npm run typecheck` 检查 TS。
 
 版本锁定：`@ai-hero/sandcastle` 用精确版本 `0.14.0`（不要写 `^0.14.0`）；opencode 记录为 `2.3.0`。适配层是围绕这两个版本的行为写的，升级前先重跑第 5 节。
 
@@ -179,7 +183,7 @@ session 未保存（id=<id>），本次 run 不能 resume；原因：<原始错�
 
 ### 5.1 零成本测试
 
-在玩具仓库写一个假 handle 测试（`node:assert` + `tsx` 即可，不引入测试框架；文件是 `.sandcastle/verify-adapter.test.ts`）：
+假 handle 测试在玩具仓库和本仓库各有一份（`.sandcastle/verify-adapter.test.ts`）；本仓库用 `cd .sandcastle && npm test` 跑：
 
 - 假 `exec` 记录命令，断言 capture 调用的是 `opencode session export`，resume 调用的是 `opencode session import`。
 - 断言 `opencode --version` 返回 `1.x` 时抛错。
@@ -198,6 +202,8 @@ session 未保存（id=<id>），本次 run 不能 resume；原因：<原始错�
 | fork | `result.fork("再复述一次暗号")` | 新 session ID 与父不同；回答包含暗号；父 session 文件仍在 |
 
 脚本里 resume 用 `assert.equal` 断言 session ID 与父相同，fork 用 `assert.notEqual` 断言不同；不是只打印日志。
+
+三次真实运行的 `verify-session.ts` 只留在玩具仓库；本仓库只带零成本的假 handle 测试，避免每次 clone 都误跑真实模型。
 
 ### 5.3 验收清单
 
@@ -229,7 +235,7 @@ fork stdout:    菠萝台风
 | green commit | `2b96b5f`（controller + `docs/red/issue-18.md`） |
 | 全量测试 | `cd backend && mvn -q -Pno-containers test`：54 tests，0 failures |
 | 红绿门禁 | `bash tools/check-redgreen.sh master agent/issue-18`：通过 |
-| issue | 已评论并关闭；分支 `agent/issue-18` 保留未合并 |
+| issue | 已评论并关闭（旧 prompt 的 smoke 例外）；新 prompt 不再关未合并 issue；分支 `agent/issue-18` 保留未合并 |
 
 ## 6. 执行顺序
 
@@ -240,8 +246,8 @@ fork stdout:    菠萝台风
 | 3 | 跑第 5.2 节三次真实运行 | 表格三行都通过 | 2 |
 | 4 | 更新 `docs/sandcastle-guide.md`（见第 7 节） | 指南不再说“等上游适配” | 3；先确认该文件的归属 |
 | 5 | 提交 `.gitattributes`/`.gitignore` + 三份文档，推送 master | Windows 仓库干净；远端有 EOL 策略与文档 | 4 |
-| 6 | 同步 `~/code/writeLab`，补 `no-containers` profile、`check-redgreen.sh`、JDK/Maven mount、`.sandcastle/` | `mvn -Pno-containers test` 通过；`.sandcastle/` 文件就位；`.env` 已填 | 5 |
-| 7 | 建 smoke issue #18 跑通 Java/bwrap/Maven/TDD 流水线 | red `f142ddb` + green `2b96b5f`；54 tests pass；issue 已关 | 6 |
+| 6 | 同步 `~/code/writeLab`，补 `no-containers` profile、`check-redgreen.sh`、JDK/Maven mount、`.sandcastle/` | `mvn -Pno-containers test` 通过；`npm --prefix .sandcastle install && npm test` 通过；`.env` 已填 | 5 |
+| 7 | 建 smoke issue #18 跑通 Java/bwrap/Maven/TDD 流水线 | red `f142ddb` + green `2b96b5f`；54 tests pass；issue 已关（smoke 例外） | 6 |
 | 8 | 下一张真活票：`#8` 或 `#16` | 按 §11 开工 | 7 |
 
 步骤 1–7 已于 2026-11-18 完成。原会话的 126 个“修改”是 CRLF/LF 误判，`.gitattributes` 的 `* text=auto eol=lf` 已消除，不再有 WIP 闸门。
@@ -256,6 +262,9 @@ fork stdout:    菠萝台风
 - §10 排错表：`Unexpected positional argument` 一行改为“v1 命令未被替换”的排查。
 - 附录：放完整 `opencode-v2.ts`，并写“为什么不是 patch-package / fork / PR”。
 - §9.3 的 `main.mts` 改用 `opencodeV2()`。
+- §6.3 增加 `.env` 覆盖警告；§10 增加 JDK mount / `Model unavailable` / `cd backend` / 门禁四行。
+- §8.3 门禁要求 red/green 交替、奇数提交失败、未前缀提交直接失败；§9.4 prompt 不再关 issue。
+- §9.1 补 `npm install`、`verify-adapter.test.ts`、`docs/red/.gitkeep`；附录验证命令改为本仓库 `npm test`，真实 E2E 留在玩具仓库。
 
 首页或 §6.4 加一句链接：本方案的背景与决定见 `docs/sandcastle-v2-compat.md`。
 
@@ -277,11 +286,13 @@ fork stdout:    菠萝台风
 | worktree 根没有 `pom.xml`，hook 里 `mvn` exit 1 | hook 和 prompt 都写成 `cd backend && mvn ...` |
 | 宿主上 `check-redgreen.sh` 报“没有任何 docs/red 记录” | 脚本从 `$target` 的树里读 `docs/red/...`，不看当前工作区 |
 | CRLF/LF 造成 `git status` 假修改 | `.gitattributes` 固定 `* text=auto eol=lf`；用 `git diff --ignore-cr-at-eol` 复核 |
+| 未前缀或奇数提交绕过门禁 | 门禁要求 red/green 交替、奇数提交失败、未前缀提交直接 fail |
+| agent 自己关 issue 但分支未合并 | prompt 已改为不关；人工合并后再关 |
 | 需要临时回到阉割版 | 把 `main.mts` 换回 `opencode(..., { captureSessions: false })`，保留适配层文件不动 |
 
 ## 9. 未决事项
 
-- smoke 分支 `agent/issue-18` 保留未合并；需要时删除或参考。
+- smoke 分支 `agent/issue-18` 保留未合并；`#18` 是旧 prompt 下关闭的 smoke 例外，新 prompt 不再关未合并 issue。
 - 下一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。
 
 ## 10. 参考

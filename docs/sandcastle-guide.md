@@ -924,6 +924,7 @@ base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 count=0
+expected="red"
 
 for sha in $(git rev-list --reverse "$base".."$target"); do
   subject=$(git log -1 --format=%s "$sha")
@@ -934,18 +935,24 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
 
   case "$subject" in
     red:*)
+      [ "$expected" = "red" ] || { echo "x $sha 应该是 green 却出现了 red"; fail=1; }
       [ "$has_main" -eq 0 ] || { echo "x $sha 是 red 提交却改了 src/main/"; fail=1; }
-      [ "$has_test" -gt 0 ] || { echo "x $sha 是 red 提交却没有改 src/test/"; fail=1; } ;;
+      [ "$has_test" -gt 0 ] || { echo "x $sha 是 red 提交却没有改 src/test/"; fail=1; }
+      expected="green" ;;
     green:*)
+      [ "$expected" = "green" ] || { echo "x $sha 应该是 red 却出现了 green"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; }
-      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; } ;;
+      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; }
+      expected="red" ;;
     *)
-      echo "! $sha 没有 red/green 前缀：$subject" ;;
+      echo "! $sha 没有 red/green 前缀：$subject"
+      fail=1 ;;
   esac
   count=$((count + 1))
 done
 
 [ "$count" -ge 2 ] || { echo "x 提交数不足（红绿至少两次），实际 $count"; fail=1; }
+[ "$expected" = "red" ] || { echo "x 提交数不是红绿成对（最后缺少 green）"; fail=1; }
 
 if ! git ls-tree -r --name-only "$target" -- docs/red | grep -qE '^docs/red/issue-.*\.md$'; then
   echo "x 没有任何 docs/red 记录"
@@ -1006,20 +1013,25 @@ bash tools/check-redgreen.sh master agent/issue-14
 
 ```text
 .sandcastle/
-  main.mts        # 入口
-  opencode-v2.ts  # OpenCode v2 会话适配层（见 6.4 / 文末附录）
-  prompt.md       # 七条铁律
-  package.json    # {"private": true, "type": "module"}
-  .gitignore      # .env / worktrees/ / logs/
-  .env            # 凭据（不提交）
-  worktrees/      # 自动生成，不提交
-  logs/           # 自动生成，不提交
+  main.mts                # 入口
+  opencode-v2.ts          # OpenCode v2 会话适配层（见 6.4 / 文末附录）
+  verify-adapter.test.ts  # 假 handle 测试（不调用模型）
+  prompt.md               # 七条铁律
+  package.json            # private + type module + devDeps
+  package-lock.json
+  tsconfig.json
+  .gitignore              # .env / node_modules/ / worktrees/ / logs/
+  .env                    # 凭据（不提交）
+  worktrees/              # 自动生成，不提交
+  logs/                   # 自动生成，不提交
 docs/
   red/
-    issue-14.md   # 红色输出记录（agent 写，你审）
+    .gitkeep              # 占位；第一票生成 issue-<号>.md
 tools/
   check-redgreen.sh
 ```
+
+首次 clone 后先装依赖：`cd .sandcastle && npm install`。之后 `npm test` 跑假 handle 测试，`npm run typecheck` 检查 TS。
 
 ### 9.2 bwrap 跑 Java 的两个现实问题
 
@@ -1221,7 +1233,7 @@ console.log(`跑完先审计：bash tools/check-redgreen.sh master ${branch}`);
 
 1. `bash tools/check-redgreen.sh {{TARGET_BRANCH}}` 必须通过
 2. 在 issue 里评论：逐条 AC + 对应测试方法名 + 红/绿 commit sha
-3. 关 issue
+3. **不要关闭 issue。** 在评论里写明“等待人工合并 `agent/issue-<号>` 后再关闭”。
 
 没有任何可做的了，输出：
 
@@ -1311,7 +1323,7 @@ WORKDIR /home/agent/repo
 | `{{KEY}}` 没被替换 | 用了内联 `prompt` 而不是 `promptFile` | 换 `promptFile` |
 | 找不到 `promptFile` | 相对 `process.cwd()` 解析，不是相对 `cwd` | 在仓库根跑，或写绝对路径 |
 | 整次 run 因为一条命令失败 | `` !`cmd` `` 非 0 退出即 fail | 加 `|| true`，或写进 HTML 注释 |
-| 关掉 issue 但代码没进主分支 | 用了 `branch` 策略且没合并 | `git merge agent/issue-N` 后再关（#14/#15 就是"代码合了、票没关"的反面） |
+| 关掉 issue 但代码没进主分支 | 用了 `branch` 策略且没合并，或 prompt 让 agent 自己关 issue | `git merge agent/issue-N` 后再关；§9.4 的 prompt 已改为“不要关闭 issue” |
 | 把仓库放 `/mnt/c` 后 bwrap 里什么都看不到 | 沙箱内 `/mnt` 被隐藏 | 仓库必须在 ext4（`~/code/...`） |
 | `git status` 慢到 2 秒 | 跨 `/mnt/c` 的 9p 文件系统 | 用 `~/code` 副本，或 Windows 原生操作 |
 | Docker 一开内存就见底 | Docker Desktop VM 常驻 | `.wslconfig` 限内存，或改走 bwrap |
@@ -1439,9 +1451,8 @@ function makeCaptureToHost(storage: OpenCodeStorage, exportDir?: string) {
     sessionId,
     handle,
   }: CaptureArgs): Promise<void> => {
-    await requireOpencodeV2(handle, sandboxCwd);
-
     try {
+      await requireOpencodeV2(handle, sandboxCwd);
       const sandboxPath = sandboxSessionPath(handle, exportDir, sessionId);
       const command = `opencode session export ${shellEscape(sessionId)} --standalone > ${shellEscape(sandboxPath)}`;
       const result = await handle.exec(command, { cwd: sandboxCwd });
@@ -1527,8 +1538,10 @@ export function opencodeV2(
 验证命令：
 
 ```bash
-npx tsx .sandcastle/verify-adapter.test.ts   # 零成本，假 handle
-npx tsx .sandcastle/verify-session.ts        # 3 次真实调用：capture / resume / fork
+cd .sandcastle && npm test    # 零成本，假 handle（仓库内自带）
+
+# 三次真实调用（capture / resume / fork）的 verify-session.ts 在玩具仓库；
+# 需要时从 ~/spike/sandcastle-toy/.sandcastle/ 复制过来跑
 ```
 
 实测证据（2026-11-18，bwrap + `opencode-go/deepseek-v4.1-flash`）：
