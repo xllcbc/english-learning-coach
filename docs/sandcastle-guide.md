@@ -1038,6 +1038,12 @@ sandbox: bwrap({
       hostPath: "/home/xllcbc/.cache/sandcastle/m2",
       sandboxPath: "/home/xllcbc/.cache/sandcastle/m2",
     },
+    {
+      // JDK / Maven 装在 ~/.local/opt 时，bwrap 的私有 /home 会把它们藏掉
+      hostPath: "/home/xllcbc/.local/opt",
+      sandboxPath: "/home/xllcbc/.local/opt",
+      readonly: true,
+    },
   ],
 }),
 hooks: {
@@ -1053,6 +1059,8 @@ hooks: {
   },
 },
 ```
+
+> 如果沙箱里 `java -version` 报 `libjli.so: cannot open shared object file`，就是 bwrap 的私有 `/home` 把 `~/.local/opt/jdk-*` 藏了；上面的 `~/.local/opt` 只读 mount 解决这个问题。`mvn` 脚本同样需要这个 mount。
 
 **问题二：Testcontainers 在沙箱里跑不起来。**
 
@@ -1131,6 +1139,12 @@ await run({
       {
         hostPath: "/home/xllcbc/.cache/sandcastle/m2",
         sandboxPath: "/home/xllcbc/.cache/sandcastle/m2",
+      },
+      {
+        // JDK / Maven 装在 ~/.local/opt 时，bwrap 的私有 /home 会把它们藏掉
+        hostPath: "/home/xllcbc/.local/opt",
+        sandboxPath: "/home/xllcbc/.local/opt",
+        readonly: true,
       },
     ],
   }),
