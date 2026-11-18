@@ -24,7 +24,7 @@ await run({
   }),
 
   promptFile: ".sandcastle/prompt.md",
-  promptArgs: { ISSUE_NUMBER: issue, TARGET_BRANCH: "master" },
+  promptArgs: { ISSUE_NUMBER: issue },
 
   // 一次只做一票
   maxIterations: 1,
