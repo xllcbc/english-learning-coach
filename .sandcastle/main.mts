@@ -24,9 +24,8 @@ await run({
     ],
   }),
 
-  agent: opencodeV2("opencode-go/deepseek-v4.1-flash", {
-    env: { OPENCODE_API_KEY: process.env.OPENCODE_API_KEY ?? "" },
-  }),
+  // 凭据走 .sandcastle/.env；不要再传空的 process.env 覆盖它
+  agent: opencodeV2("opencode-go/deepseek-v4.1-flash"),
 
   promptFile: ".sandcastle/prompt.md",
   promptArgs: { ISSUE_NUMBER: issue },
