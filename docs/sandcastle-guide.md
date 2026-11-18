@@ -934,9 +934,11 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
 
   case "$subject" in
     red:*)
-      [ "$has_main" -eq 0 ] || { echo "x $sha 是 red 提交却改了 src/main/"; fail=1; } ;;
+      [ "$has_main" -eq 0 ] || { echo "x $sha 是 red 提交却改了 src/main/"; fail=1; }
+      [ "$has_test" -gt 0 ] || { echo "x $sha 是 red 提交却没有改 src/test/"; fail=1; } ;;
     green:*)
-      [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; } ;;
+      [ "$has_test" -eq 0 ] || { echo "x $sha 是 green 提交却改了 src/test/"; fail=1; }
+      [ "$has_main" -gt 0 ] || { echo "x $sha 是 green 提交却没有改 src/main/"; fail=1; } ;;
     *)
       echo "! $sha 没有 red/green 前缀：$subject" ;;
   esac
