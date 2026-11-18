@@ -889,6 +889,7 @@ topUpKeepsACuratedRowThatSharesAWordFormAndSentence
 6. `git commit -m "red: <AC 一句话>"` 只包含测试文件
    `git commit -m "green: <AC 一句话>"` 只包含实现文件
    纯文档/工具 AC：只提交 `docs: <AC 一句话>`，只改 docs/、tools/ 或 markdown
+   纯配置 AC：只提交 `config: <AC 一句话>`，只改 yml/yaml/properties/toml/json
 
 禁止：
 - 第 N 条还没有红色记录时，写第 N+1 条的测试
@@ -911,7 +912,7 @@ topUpKeepsACuratedRowThatSharesAWordFormAndSentence
 
 ### 8.3 第三层：commit 协议 + 机器检查（强，推荐）
 
-约定 `red:` / `green:` / `docs:` 前缀，让脚本去查。`tools/check-redgreen.sh`：
+约定 `red:` / `green:` / `docs:` / `config:` 前缀，让脚本去查。`tools/check-redgreen.sh`：
 
 ```bash
 #!/usr/bin/env bash
@@ -920,10 +921,11 @@ topUpKeepsACuratedRowThatSharesAWordFormAndSentence
 #   base   对比基线，默认 master
 #   target 被检查的分支，默认 HEAD（在沙箱 worktree 里跑时就是 agent 分支）
 #
-# 三种提交：
-#   red:   只允许改 src/test/，必须成对出现的第一半
-#   green: 只允许改 src/main/（文档可并入），必须成对出现的第二半
-#   docs:  只允许改 docs/、tools/ 或 markdown；不参与红绿配对
+# 四种提交：
+#   red:    只允许改 src/test/，必须成对出现的第一半
+#   green:  只允许改 src/main/（文档可并入），必须成对出现的第二半
+#   docs:   只允许改 docs/、tools/ 或 markdown；不参与红绿配对
+#   config: 只允许改运行时配置（yml/yaml/properties/toml/json）；不碰 Java 代码与测试
 set -euo pipefail
 
 base="${1:-master}"
@@ -938,7 +940,9 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
 
   has_test=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/test/' || true)
   has_main=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/main/' || true)
+  has_java_main=$(printf '%s\n' "$changed" | grep -cE '(^|/)src/main/java/' || true)
   has_docs=$(printf '%s\n' "$changed" | grep -cE '(^|/)(docs|tools)/|\.md$' || true)
+  has_config=$(printf '%s\n' "$changed" | grep -cE '(^|/)(application|bootstrap)[^/]*\.(ya?ml|properties)$|(^|/)src/main/resources/.*\.(ya?ml|properties|json|toml)$|\.(ya?ml|properties|toml)$' || true)
 
   case "$subject" in
     red:*)
@@ -957,8 +961,12 @@ for sha in $(git rev-list --reverse "$base".."$target"); do
       [ "$has_main" -eq 0 ] || { echo "x $sha 是 docs 提交却改了 src/main/"; fail=1; }
       [ "$has_test" -eq 0 ] || { echo "x $sha 是 docs 提交却改了 src/test/"; fail=1; }
       [ "$has_docs" -gt 0 ] || { echo "x $sha 是 docs 提交却没有改 docs/、tools/ 或 markdown"; fail=1; } ;;
+    config:*)
+      [ "$has_java_main" -eq 0 ] || { echo "x $sha 是 config 提交却改了 src/main/java/"; fail=1; }
+      [ "$has_test" -eq 0 ] || { echo "x $sha 是 config 提交却改了 src/test/"; fail=1; }
+      [ "$has_config" -gt 0 ] || { echo "x $sha 是 config 提交却没有改配置文件"; fail=1; } ;;
     *)
-      echo "! $sha 没有 red/green/docs 前缀：$subject"
+      echo "! $sha 没有 red/green/docs/config 前缀：$subject"
       fail=1 ;;
   esac
 done
@@ -974,7 +982,7 @@ fi
 exit "$fail"
 ```
 
-`docs:` 用于纯文档/工具 AC（例如评测脚本文档、spec 回填）。它不参与红绿配对，但不能改 `src/main`/`src/test`；否则门禁失败。
+`docs:` 用于纯文档/工具 AC（例如评测脚本文档、spec 回填），`config:` 用于纯配置默认值（例如阈值、top-k）。两者都不参与红绿配对；`docs:` 不能改 `src/main`/`src/test`，`config:` 不能改 `src/main/java`/`src/test`。如果配置改动会改变行为，仍走 red/green，而不是用 `config:` 绕过测试。
 
 落盘后 `chmod +x tools/check-redgreen.sh`，在分支上跑：
 
@@ -1239,14 +1247,14 @@ console.log(`跑完先审计：bash tools/check-redgreen.sh master ${branch}`);
 4. **验收标准是唯一的测试清单。** 每条 AC 必须能对应到一个测试方法名。对应不上的，在 issue 里留言说明，不要自己发明行为。
 5. **不许改已有测试的断言来让新代码通过。** 要改，先在 issue 里说清为什么原断言是错的。
 6. **绿色 = `cd backend && mvn -q -Pno-containers test` 通过。** 容器测试（`*IntegrationTest`、`*RetrieverTest`）不归你跑，红了也不许改。
-7. **代码 AC 两个 commit：** `red: <AC 摘要>` 只含测试文件；`green: <AC 摘要>` 只含实现文件。**纯文档/工具 AC 一个 `docs: <AC 摘要>`**，只改 `docs/`、`tools/` 或 markdown，不碰 `src/main`、`src/test`；不要为了凑红绿去写假测试。文档改动并入 `green` 或单独的 `docs:`。
+7. **代码 AC 两个 commit：** `red: <AC 摘要>` 只含测试文件；`green: <AC 摘要>` 只含实现文件。**纯文档/工具 AC 一个 `docs: <AC 摘要>`**，只改 `docs/`、`tools/` 或 markdown，不碰 `src/main`、`src/test`。**纯配置 AC 一个 `config: <AC 摘要>`**，只改 yml/yaml/properties/toml/json 运行时配置，不碰 Java 代码与测试；如果配置改动会改变行为，仍走 red/green。不要为了凑红绿去写假测试。
 
 ## 收尾
 
-全部 AC 都有对应红绿提交（纯文档/工具 AC 有 `docs:` 提交）后：
+全部 AC 都有对应红绿提交（纯文档/工具 AC 有 `docs:`，纯配置 AC 有 `config:`）后：
 
 1. `bash tools/check-redgreen.sh {{TARGET_BRANCH}}` 必须通过
-2. 在 issue 里评论：逐条 AC + 对应测试方法名/文档路径 + commit sha；`docs:` 的 AC 只写文档路径和 sha
+2. 在 issue 里评论：逐条 AC + 对应测试方法名/文档路径 + commit sha；`docs:`/`config:` 的 AC 只写路径和 sha
 3. **不要关闭 issue。** 在评论里写明“等待人工合并 `agent/issue-<号>` 后再关闭”。
 
 没有任何可做的了，输出：
@@ -1330,6 +1338,7 @@ WORKDIR /home/agent/repo
 | 沙箱 hook 里 `mvn` 直接 exit 1 | 在 worktree 根跑 `mvn`，那里没有 `pom.xml` | 命令改成 `cd backend && mvn ...`（9.3） |
 | 宿主上 `check-redgreen.sh` 报“没有任何 docs/red 记录” | 旧脚本看当前工作区，master 上没有该文件 | 用 `git ls-tree "$target"` 的版本（8.3） |
 | 纯文档 AC 被门禁判失败 | 用 red/green 强行塞代码 | 用 `docs:` 提交，只改 docs/tools/markdown（8.3 / 9.4） |
+| 纯配置 AC 被门禁判失败 | 用 red/green 强行塞假测试，或把配置混进 green | 用 `config:` 提交，只改 yml/yaml/properties/toml/json（8.3 / 9.4） |
 | 沙箱里测试全红 | Testcontainers 需要 Docker 守护进程 | `-Pno-containers`，并明确告诉 agent 别管容器测试 |
 | 一个 commit 装下 30 个文件 | prompt 没约束提交粒度 | 第 8.1 / 8.3 层 |
 | agent 改了测试让它绿 | 你没禁止，且它只知道"要绿" | prompt 铁律第 5 条 + review agent 第 4 项 |
@@ -1387,7 +1396,7 @@ WORKDIR /home/agent/repo
 [ ] 1. 选一票 ready-for-agent 的 issue，读完全部 AC
 [ ] 2. 把每条 AC 翻译成一个测试方法名（翻译不出来的 AC，先停在 issue 里问）
 [ ] 3. ISSUE=<号> npx tsx .sandcastle/main.mts
-[ ] 4. 看 result.commits：red/green 必须成对；docs: 不计入配对
+[ ] 4. 看 result.commits：red/green 必须成对；docs: / config: 不计入配对
 [ ] 5. bash tools/check-redgreen.sh master agent/issue-<号>
 [ ] 6. 人审：读 docs/red/issue-<号>.md，确认红色输出是真的
 [ ] 7. 跑 review agent（8.4），看 gaps / violations
