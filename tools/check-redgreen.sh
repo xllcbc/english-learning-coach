@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 检查一条分支上的红绿序列。
 # 用法：bash tools/check-redgreen.sh [base] [target]
-#   base   对比基线，默认 origin/master
+#   base   对比基线，默认 master
 #   target 被检查的分支，默认 HEAD（在沙箱 worktree 里跑时就是 agent 分支）
 set -euo pipefail
 
-base="${1:-origin/master}"
+base="${1:-master}"
 target="${2:-HEAD}"
 fail=0
 count=0

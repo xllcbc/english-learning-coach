@@ -5,6 +5,7 @@ import { opencodeV2 } from "./opencode-v2.ts";
 
 const issue = Number(process.env.ISSUE ?? 0);
 if (!issue) throw new Error("用法：ISSUE=14 npx tsx .sandcastle/main.mts");
+const branch = `agent/issue-${issue}`;
 
 await run({
   name: `issue-${issue}`,
@@ -34,7 +35,7 @@ await run({
   maxIterations: 1,
 
   // 一票一条分支：可审计、可并行、不碰你的工作区
-  branchStrategy: { type: "branch", branch: `agent/issue-${issue}` },
+  branchStrategy: { type: "branch", branch },
 
   hooks: {
     sandbox: {
@@ -50,4 +51,4 @@ await run({
   },
 });
 
-console.log(`跑完先审计：bash tools/check-redgreen.sh master agent/issue-${issue}`);
+console.log(`跑完先审计：bash tools/check-redgreen.sh master ${branch}`);

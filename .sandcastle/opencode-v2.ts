@@ -24,7 +24,7 @@ const sandboxSessionPath = (
   sessionId: string,
 ) => posix.join(exportDir ?? handle.sandboxTmpdir ?? "/tmp", `${sessionId}.json`);
 
-function hostSessionPath(
+function requireHostSessionPath(
   storage: OpenCodeStorage,
   hostCwd: string,
   sessionId: string,
@@ -72,7 +72,7 @@ function makeCaptureToHost(storage: OpenCodeStorage, exportDir?: string) {
         );
       }
 
-      const hostPath = hostSessionPath(storage, hostCwd, sessionId);
+      const hostPath = requireHostSessionPath(storage, hostCwd, sessionId);
       await mkdir(dirname(hostPath), { recursive: true });
       await handle.copyFileOut(sandboxPath, hostPath);
     } catch (error) {
@@ -93,7 +93,7 @@ function makeResumeIntoSandbox(storage: OpenCodeStorage, exportDir?: string) {
   }: ResumeArgs): Promise<void> => {
     await requireOpencodeV2(handle, sandboxCwd);
 
-    const hostPath = hostSessionPath(storage, hostCwd, sessionId);
+    const hostPath = requireHostSessionPath(storage, hostCwd, sessionId);
     const sandboxPath = sandboxSessionPath(handle, exportDir, sessionId);
     await handle.exec(`mkdir -p ${shellEscape(posix.dirname(sandboxPath))}`);
     await handle.copyFileIn(hostPath, sandboxPath);
