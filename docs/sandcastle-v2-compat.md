@@ -1,7 +1,7 @@
 # Sandcastle × OpenCode v2 本地兼容方案（共识记录）
 
-> 状态：**适配层、指南、§9 harness 与 smoke issue #18 全部完成（2026-11-18）**；下一张真活票待开。
-> 日期：2026-11-17（2026-11-18 补充实测结果）
+> 状态：**适配层、指南、§9 harness、smoke #18 与首张真活票 #16 全部完成（2026-11-18）**；RAG 第一版已收尾，下一张是 #8。
+> 日期：2026-11-17（2026-11-18 补充实测结果；2026-11-19 补充 #16 与 RAG 收尾）
 > 适用：`@ai-hero/sandcastle@0.14.0` + `opencode 2.3.0`，WSL2 + `bwrap()`。
 > 上游：`mattpocock/sandcastle#1509` 仍 open 且无人处理；本方案**不提交上游 PR**，只做本地适配。
 
@@ -239,6 +239,18 @@ fork stdout:    菠萝台风
 | 红绿门禁 | `bash tools/check-redgreen.sh master agent/issue-18`：通过 |
 | issue | 已评论并关闭（旧 prompt 的 smoke 例外）；新 prompt 不再关未合并 issue；分支 `agent/issue-18` 保留未合并 |
 
+### 5.5 真活票 #16（RAG-06）
+
+| 项 | 结果 |
+| --- | --- |
+| issue | #16 `RAG-06 大语料建索引 + 离线评测与阈值调优` |
+| 分支 / 合并 | `agent/issue-16`（`5db465f`）→ master `2b43caf` |
+| 主要提交 | `dbfd046` 离线索引、`5b39179` 评测集与脚本、`a8afa11` config 阈值、`5c59b9c` 文档、`c7dd66f` 验收；复核补 `8ac7467`/`83411be` 阈值默认值红绿与 `5db465f` 评测扫描范围 |
+| 全量测试 | `cd backend && mvn -q -Pno-containers clean test`：54 tests，0 failures，exit 0 |
+| 红绿门禁 | `bash tools/check-redgreen.sh master agent/issue-16`：exit 0 |
+| 结果 | 240,843 行全部填充 512 维向量；阈值 0.60 / per-category 2 / max-hits 6；数据库 647 MB；详见 `docs/rag-acceptance.md` |
+| issue | 已逐条回填 AC，合并后关闭 |
+
 ## 6. 执行顺序
 
 | # | 步骤 | 完成判据 | 依赖 |
@@ -250,9 +262,10 @@ fork stdout:    菠萝台风
 | 5 | 提交 `.gitattributes`/`.gitignore` + 三份文档，推送 master | Windows 仓库干净；远端有 EOL 策略与文档 | 4 |
 | 6 | 同步 `~/code/writeLab`，补 `no-containers` profile、`check-redgreen.sh`、JDK/Maven mount、`.sandcastle/` | `mvn -Pno-containers test` 通过；`npm --prefix .sandcastle install && npm test` 通过；`.env` 已填 | 5 |
 | 7 | 建 smoke issue #18 跑通 Java/bwrap/Maven/TDD 流水线 | red `f142ddb` + green `2b96b5f`；54 tests pass；issue 已关（smoke 例外） | 6 |
-| 8 | 下一张真活票：`#8` 或 `#16` | 按 §11 开工 | 7 |
+| 8 | 首张真活票 #16（RAG-06） | 已合并到 master（`2b43caf`） | 7 |
+| 9 | 下一张 #8（响应式整合 + Playwright） | 先定前端/浏览器门禁 | 8 |
 
-步骤 1–7 已于 2026-11-18 完成。原会话的 126 个“修改”是 CRLF/LF 误判，`.gitattributes` 的 `* text=auto eol=lf` 已消除，不再有 WIP 闸门。
+步骤 1–8 已于 2026-11-18 完成；步骤 9 待开。原会话的 126 个“修改”是 CRLF/LF 误判，`.gitattributes` 的 `* text=auto eol=lf` 已消除，不再有 WIP 闸门。
 
 ## 7. 文档改动清单（已完成，2026-11-18）
 
@@ -301,7 +314,9 @@ fork stdout:    菠萝台风
 ## 9. 未决事项
 
 - smoke 分支 `agent/issue-18` 保留未合并；`#18` 是旧 prompt 下关闭的 smoke 例外，新 prompt 不再关未合并 issue。
-- 下一张真活票：`#8` 响应式整合，或 `#16` RAG-06 大语料索引。`#16` 的 AC1/2/6 走 red/green，AC3/5/7 是纯文档/评测/spec 回填用 `docs:`，AC4 是配置默认值回写用 `config:`；若整张票纯 docs/config，则不需要红绿。
+- RAG 第一版已收尾：#11–#16 全部验收关闭，spec #10 关闭；验收记录见 `docs/rag-acceptance.md`。
+- 下一张真活票是 `#8` 响应式整合与浏览器端到端验收。当前 `tools/check-redgreen.sh` 只覆盖 Java 后端，开工前需要先定前端/Playwright 的可重复门禁，或明确改为手工验收。
+- #16 实跑后仍成立的 harness 待办：`main.mts` 的 `MAX_ITERATIONS` / `IDLE_TIMEOUT_SECONDS` 尚未参数化；`prompt.md` 尚未加入「不要运行 docker/psql/Testcontainers、长批处理分批报进度」。
 
 ## 10. 参考
 
