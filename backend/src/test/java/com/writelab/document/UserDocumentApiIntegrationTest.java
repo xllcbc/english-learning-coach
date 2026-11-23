@@ -1,6 +1,5 @@
 package com.writelab.document;
 
-import com.writelab.config.DocumentProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -105,6 +104,10 @@ class UserDocumentApiIntegrationTest {
         DuplicateBody body = objectMapper.readValue(duplicate.body(), DuplicateBody.class);
         assertThat(body.code()).isEqualTo("DUPLICATE_DOCUMENT");
         assertThat(body.documentId()).isEqualTo(documentId);
+        assertThat(body.document()).isNotNull();
+        assertThat(body.document().id()).isEqualTo(documentId);
+        assertThat(body.document().chunkCount()).isEqualTo(ready.chunkCount());
+        assertThat(body.document().status()).isEqualTo("READY");
 
         DocumentBody[] documents = listDocuments();
         assertThat(documents).hasSize(1);
@@ -329,11 +332,10 @@ class UserDocumentApiIntegrationTest {
         @Primary
         FailableUserDocumentProcessor failableUserDocumentProcessor(
                 JdbcClient jdbcClient,
-                DocumentChunker documentChunker,
                 TransactionTemplate transactionTemplate
         ) {
             return new FailableUserDocumentProcessor(
-                    new DefaultUserDocumentProcessor(jdbcClient, documentChunker, transactionTemplate));
+                    new DefaultUserDocumentProcessor(jdbcClient, transactionTemplate));
         }
     }
 
@@ -355,11 +357,11 @@ class UserDocumentApiIntegrationTest {
         }
 
         @Override
-        public void process(UUID documentId, String text, DocumentFormat format) {
+        public void process(UUID documentId, java.util.List<DocumentChunker.Chunk> chunks) {
             if (failNext.compareAndSet(true, false)) {
                 throw new IllegalStateException("模拟用户文档处理失败");
             }
-            delegate.process(documentId, text, format);
+            delegate.process(documentId, chunks);
         }
     }
 
@@ -379,7 +381,7 @@ class UserDocumentApiIntegrationTest {
     ) {
     }
 
-    private record DuplicateBody(String code, String message, UUID documentId) {
+    private record DuplicateBody(String code, String message, UUID documentId, DocumentBody document) {
     }
 
     private record ErrorBody(String code, String message) {

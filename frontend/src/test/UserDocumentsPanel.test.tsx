@@ -103,16 +103,19 @@ describe('UserDocumentsPanel', () => {
   it('polls processing documents until READY and then stops', async () => {
     api.listUserDocuments
       .mockResolvedValueOnce([parsingDocument])
-      .mockResolvedValue([readyDocument]);
+      .mockResolvedValueOnce([readyDocument])
+      .mockResolvedValue([{ ...readyDocument, status: 'FAILED', errorCode: 'PROCESSING_FAILED' }]);
 
     render(<UserDocumentsPanel pollIntervalMs={10} />);
 
     expect(await screen.findByText('解析中')).toBeInTheDocument();
     expect(await screen.findByText('已就绪')).toBeInTheDocument();
 
-    const callCount = api.listUserDocuments.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(api.listUserDocuments).toHaveBeenCalledTimes(callCount);
+
+    // A continued poll would have replaced the terminal READY state with the later FAILED response.
+    expect(screen.getByText('已就绪')).toBeInTheDocument();
+    expect(screen.queryByText('处理失败')).not.toBeInTheDocument();
   });
 
   it('shows a stable failure reason when processing fails', async () => {
