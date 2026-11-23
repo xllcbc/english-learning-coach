@@ -54,7 +54,7 @@ class VectorUserDocumentRetrieverTest {
                 unit(0.0, 1.0));
 
         List<RankedDocumentChunk> chunks = retriever(new FakeEmbeddingClient(Map.of())).retrieve(
-                "query", vector(0, 0.0f));
+                "query", vector(0, 1.0f));
 
         assertThat(chunks).extracting(RankedDocumentChunk::documentChunkId)
                 .containsExactly(firstChunk, secondChunk);
@@ -78,7 +78,7 @@ class VectorUserDocumentRetrieverTest {
         insertChunk(fourth, 1, 0, "Grammar", "Fourth note.", axis(0, 1.0f));
 
         List<RankedDocumentChunk> chunks = retriever(new FakeEmbeddingClient(Map.of())).retrieve(
-                "query", vector(0, 0.0f));
+                "query", vector(0, 1.0f));
 
         assertThat(chunks).hasSize(4);
         assertThat(chunks).filteredOn(chunk -> chunk.documentId().equals(first)).hasSize(2);
@@ -92,7 +92,7 @@ class VectorUserDocumentRetrieverTest {
         insertChunk(second, 1, 0, "Grammar", "Subject-verb agreement.", axis(0, 1.0f));
 
         List<RankedDocumentChunk> chunks = retriever(new FakeEmbeddingClient(Map.of())).retrieve(
-                "query", vector(0, 0.0f));
+                "query", vector(0, 1.0f));
 
         assertThat(chunks).singleElement();
     }
@@ -121,7 +121,7 @@ class VectorUserDocumentRetrieverTest {
         insertChunk(unembedded, 1, 0, "Grammar", "Unembedded note.", null);
 
         List<RankedDocumentChunk> chunks = retriever(new FakeEmbeddingClient(Map.of())).retrieve(
-                "query", vector(0, 0.0f));
+                "query", vector(0, 1.0f));
 
         assertThat(chunks).extracting(RankedDocumentChunk::documentChunkId).containsExactly(readyChunk);
     }
@@ -130,7 +130,7 @@ class VectorUserDocumentRetrieverTest {
     void embedsTheQueryOnceWhenNoVectorIsSupplied() {
         UUID document = insertDocument("grammar.md", "READY", true, 1, MODEL);
         insertChunk(document, 1, 0, "Grammar", "Subject-verb agreement.", axis(0, 1.0f));
-        FakeEmbeddingClient embeddings = new FakeEmbeddingClient(Map.of("a query", vector(0, 0.0f)));
+        FakeEmbeddingClient embeddings = new FakeEmbeddingClient(Map.of("a query", vector(0, 1.0f)));
 
         List<RankedDocumentChunk> chunks = retriever(embeddings).retrieve("a query");
 
@@ -144,7 +144,7 @@ class VectorUserDocumentRetrieverTest {
         insertChunk(document, 1, 0, "Grammar", "Subject-verb agreement.", axis(0, 1.0f));
         FakeEmbeddingClient embeddings = new FakeEmbeddingClient(Map.of());
 
-        List<RankedDocumentChunk> chunks = retriever(embeddings).retrieve("a query", vector(0, 0.0f));
+        List<RankedDocumentChunk> chunks = retriever(embeddings).retrieve("a query", vector(0, 1.0f));
 
         assertThat(chunks).hasSize(1);
         assertThat(embeddings.calls).isEmpty();
