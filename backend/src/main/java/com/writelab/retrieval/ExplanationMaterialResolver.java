@@ -19,34 +19,65 @@ public class ExplanationMaterialResolver {
 
     private final GroundingMaterialResolver groundingMaterialResolver;
     private final UserDocumentRetriever userDocumentRetriever;
+    private final EmbeddingClient embeddingClient;
 
     public ExplanationMaterialResolver(
             GroundingMaterialResolver groundingMaterialResolver,
             UserDocumentRetriever userDocumentRetriever
     ) {
+        this(groundingMaterialResolver, userDocumentRetriever, null);
+    }
+
+    public ExplanationMaterialResolver(
+            GroundingMaterialResolver groundingMaterialResolver,
+            UserDocumentRetriever userDocumentRetriever,
+            EmbeddingClient embeddingClient
+    ) {
         this.groundingMaterialResolver = groundingMaterialResolver;
         this.userDocumentRetriever = userDocumentRetriever;
+        this.embeddingClient = embeddingClient;
     }
 
     public ResolvedMaterials resolve(StructuredFeedback feedback) {
-        GroundingMaterialResolver.GroundingResult grounding = groundingMaterialResolver.resolve(feedback);
-
         String query = FocusedIssueQuery.text(feedback);
+        float[] queryVector = null;
+        boolean queryEmbeddingFailed = false;
+        if (StringUtils.hasText(query) && embeddingClient != null) {
+            // One Teacher Explanation builds one query vector. Both corpora below must reuse it:
+            // independent embedding calls would double the online cost and could rank the same
+            // query text differently.
+            try {
+                queryVector = EmbeddingVectors.requireSingle(embeddingClient.embed(List.of(query)));
+            } catch (RuntimeException exception) {
+                log.warn("共享查询向量构建失败，本次讲解不引用检索材料: cause={}",
+                        exception.getClass().getSimpleName());
+                queryEmbeddingFailed = true;
+            }
+        }
+
+        GroundingMaterialResolver.GroundingResult grounding =
+                groundingMaterialResolver.resolve(feedback, queryVector);
+
         if (!StringUtils.hasText(query)) {
             return new ResolvedMaterials(grounding.materials(), List.of(), grounding.hits());
         }
 
         List<RankedDocumentChunk> rankedDocuments;
         String skipReason = null;
-        try {
-            rankedDocuments = userDocumentRetriever.retrieve(query);
-        } catch (RuntimeException exception) {
-            // The document corpus is an optional grounding source; a failure must not cost the
-            // learner the whole Teacher Explanation or the Grounding Material citations.
-            log.warn("用户文档检索失败，本次讲解不引用文档: cause={}",
-                    exception.getClass().getSimpleName());
+        if (queryEmbeddingFailed) {
             rankedDocuments = List.of();
             skipReason = RetrievalHit.RETRIEVAL_FAILED;
+        } else {
+            try {
+                rankedDocuments = userDocumentRetriever.retrieve(query, queryVector);
+            } catch (RuntimeException exception) {
+                // The document corpus is an optional grounding source; a failure must not cost the
+                // learner the whole Teacher Explanation or the Grounding Material citations.
+                log.warn("用户文档检索失败，本次讲解不引用文档: cause={}",
+                        exception.getClass().getSimpleName());
+                rankedDocuments = List.of();
+                skipReason = RetrievalHit.RETRIEVAL_FAILED;
+            }
         }
 
         List<RetrievalHit> hits = new ArrayList<>(grounding.hits());
@@ -56,6 +87,9 @@ public class ExplanationMaterialResolver {
             return new ResolvedMaterials(grounding.materials(), List.of(), hits);
         }
 
+        String ordering = queryVector == null
+                ? RetrievalHit.TRIGRAM_SIMILARITY
+                : RetrievalHit.VECTOR_SIMILARITY;
         List<DocumentCitation> citations = new ArrayList<>(rankedDocuments.size());
         int reference = grounding.materials().size() + 1;
         for (int index = 0; index < rankedDocuments.size(); index++) {
@@ -63,7 +97,7 @@ public class ExplanationMaterialResolver {
             citations.add(new DocumentCitation(
                     reference, chunk.documentId(), chunk.documentChunkId(), chunk.title(), chunk.content(),
                     false));
-            hits.add(RetrievalHit.userDocument(chunk, index + 1, reference));
+            hits.add(RetrievalHit.userDocument(chunk, index + 1, reference, ordering));
             reference++;
         }
         return new ResolvedMaterials(grounding.materials(), List.copyOf(citations), hits);

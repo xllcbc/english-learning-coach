@@ -1340,6 +1340,35 @@ textarea {
   font-size: 14px;
 }
 
+.document-index-notice {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #ecd39b;
+  border-radius: 12px;
+  background: var(--amber-soft);
+  color: #7a4a05;
+  font-size: 14px;
+}
+
+.document-index-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.document-index-state-ready {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.document-index-state-missing {
+  background: var(--amber-soft);
+  color: #7a4a05;
+}
+
 .document-list {
   display: grid;
   gap: 10px;

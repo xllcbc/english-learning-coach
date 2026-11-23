@@ -13,6 +13,11 @@ public class DocumentProcessingException extends RuntimeException {
         this.code = code;
     }
 
+    public DocumentProcessingException(DocumentErrorCode code, Throwable cause) {
+        super(code.message(), cause);
+        this.code = code;
+    }
+
     public DocumentErrorCode code() {
         return code;
     }

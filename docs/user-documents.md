@@ -32,6 +32,9 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
     "active": true,
     "charCount": 1200,
     "chunkCount": 3,
+    "embeddingIndexed": true,
+    "embeddingModel": "text-embedding-3-small",
+    "chunkerVersion": "document-chunker-v1",
     "errorCode": null,
     "replacementStatus": "NONE",
     "replacementErrorCode": null,
@@ -78,9 +81,14 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 | `UPLOADED` | 已接收，等待后台处理 |
 | `PARSING` | 正在解析文本 |
 | `CHUNKING` | 正在切分 Document Chunk |
-| `EMBEDDING` | 保留给 REAL 模式；Mock 模式直接进入 `READY` |
+| `EMBEDDING` | 正在为 Document Chunk 建立 512 维向量；Mock 模式跳过 |
 | `READY` | 已就绪，可以参与后续检索 |
 | `FAILED` | 处理失败，查看失败原因与错误码 |
+
+列表与单篇接口还会返回 `embeddingIndexed`、`embeddingModel` 和 `chunkerVersion`。只有当前
+embedding 模型完成全部 active generation 分块的向量时，`embeddingIndexed` 才是 `true`。Mock 模式
+上传的文档 `embeddingModel` 为空、`embeddingIndexed=false`；配置 API key 后它们不会被当成已建立
+向量索引的文档。
 
 三种确认方式：
 
@@ -100,7 +108,52 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 
 列表按创建时间倒序返回。前端在文档处理中或 `replacementStatus` 为 `PROCESSING` 时每 1.5 秒轮询一次，进入终态后停止轮询。
 
-## 限额
+## REAL 模式：向量索引、检索与重建
+
+配置 `WRITELAB_MODEL_API_KEY` 后，上传处理在 `CHUNKING` 之后进入 `EMBEDDING`，为当前 generation
+的每个 Document Chunk 建立 512 维向量；全部成功后才进入 `READY`。任一分块失败时：
+
+- 文档进入 `FAILED`，`errorCode=EMBEDDING_FAILED`；
+- 已成功建立的批次会保留，重试只补 `embedding IS NULL` 的分块，不重复请求已完成的批次；
+- 未完整成功前不会写入 `embeddingModel`，因此文档不会被 REAL 检索选中。
+
+REAL 检索与 Mock 使用相同的 User Document 预算：
+
+| 项目 | 值 |
+| --- | --- |
+| 排序 | 512 维 `halfvec` 余弦距离 |
+| 相似度阈值 | `WRITELAB_USER_DOCUMENT_SIMILARITY_THRESHOLD`，默认 0.55 |
+| 每次讲解最多引用 | `WRITELAB_USER_DOCUMENT_MAX_HITS`，默认 4 |
+| 同一文档最多引用 | `WRITELAB_USER_DOCUMENT_PER_DOCUMENT_HITS`，默认 2 |
+| 去重 | 相同 chunk 文本只保留最相似的一条 |
+| 范围 | 只检索 `READY`、`active` 且 `embeddingModel` 等于当前配置的文档 |
+
+Grounding Material 与 User Document 共用同一次查询 embedding；成功路径上一次 Teacher Explanation
+只发生一次查询 embedding 调用。共享查询向量失败、维度不是 512、文档向量查询失败或 embedding
+服务失败时，只跳过用户文档检索并记录 `RETRIEVAL_FAILED`，讲解仍以 `complete` 结束；Grounding
+Material 回退到自己的既有检索路径，不受用户文档失败影响。
+
+### 重建缺失或过期的向量
+
+换 embedding 模型、Mock 时期上传、或上次 indexing 中断后，文档会显示“尚未建立向量索引”。运行
+手动命令重建：
+
+```bash
+# 只处理缺少向量或 embedding model 过期的 READY 文档
+tools/retrieval-tooling.sh documents
+
+# 强制重算所有 READY 文档的 active generation
+tools/retrieval-tooling.sh documents --refresh
+
+# 只处理前 10 篇，调整批量
+tools/retrieval-tooling.sh documents --limit 10 --batch-size 10
+```
+
+命令逐文档补向量，全部完成后写入 `embedding_model`；它不在应用启动、Maven 或 CI 中自动执行，
+也不会自动产生 embedding 费用。`chunker_version` 保留分块当时的实际版本，CLI 不会覆盖它。前端在
+真实模型模式下显示“N 篇文档尚未建立向量索引”，重建完成后该提示消失。chunker 版本变化需要改变
+chunk 边界时，仍应重新上传文档；CLI 只刷新向量。
+
 
 | 项目 | 默认值 | 配置项 |
 | --- | --- | --- |
@@ -128,6 +181,7 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 | `400` | `INVALID_DOCUMENT_UPDATE` | `PATCH` 缺少 `active` |
 | `404` | `DOCUMENT_NOT_FOUND` | 文档不存在 |
 | — | `PROCESSING_FAILED` | 后台处理失败，保存在文档的 `errorCode` 中 |
+| — | `EMBEDDING_FAILED` | 向量生成失败或维度不符合 512，保存在 `errorCode` 中，可重试 |
 | — | `replacementErrorCode` | 替换失败原因；此时 `status` 仍是 `READY` |
 
 `FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。替换失败的文档仍以旧 generation 参与检索，面板显示“替换失败”和重试入口。
@@ -161,4 +215,4 @@ cd ../frontend
 npm test
 ```
 
-需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码、失败状态、停用/启用、删除、重试、同名替换成功/失败与替换中互斥；前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因、重复内容提示、停用/启用、删除确认、重试和替换状态。容器测试需要本机 Docker 正在运行；`-Pno-containers` 只跳过这些容器测试，不会跳过前端组件测试。
+需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码、失败状态、停用/启用、删除、重试、同名替换成功/失败与替换中互斥；`UserDocumentRealRetrievalIntegrationTest` 覆盖 REAL 上传 embedding、`READY` 后引用、共享查询向量只调用一次、`EMBEDDING_FAILED` 重试、未建索引文档被跳过与重建后恢复；`VectorUserDocumentRetrieverTest` 覆盖余弦排序、阈值、top-4、每文档 2 条、去重、维度校验与活跃范围。前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因、重复内容提示、停用/启用、删除确认、重试、替换状态与真实模式下“N 篇文档尚未建立向量索引”提示。容器测试需要本机 Docker 正在运行；`-Pno-containers` 只跳过这些容器测试，不会跳过前端组件测试。

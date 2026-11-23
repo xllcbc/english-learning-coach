@@ -1,0 +1,11 @@
+case,query,expected_keys,distractor_keys,expect_none
+chinese-note-english-example,"It are a problem. It is a problem. 主谓一致问题：单数主语配单数动词。",sv_zh|sv_example,cooking|math,false
+articles,"I saw cat yesterday. I saw a cat yesterday. 第一次提到可数名词单数要用冠词。",articles_zh,cooking|math,false
+tenses,"I live here for five years. I have lived here for five years. 现在完成时表示持续到现在。",tenses_zh,cooking|math,false
+coherence,"The paragraph jumps between ideas. Add a topic sentence and linking words. 段落缺少中心句和连接词。",coherence_zh,cooking|math,false
+punctuation-comma-splice,"I was tired, I went to bed. I was tired, so I went to bed. 逗号粘连。",punctuation_zh,cooking|math,false
+vocabulary-avoid,"Avoid to make the same mistake. Avoid making the same mistake. avoid 后面接动名词。",vocab_zh,cooking|math,false
+distractor-document,"Subject-verb agreement matters in every sentence. 主谓一致。",sv_zh,cooking|math|injection_plain,false
+irrelevant-query,"What is the weather like tomorrow? I want to plan a picnic.",,cooking|math|vocab_zh,true
+prompt-injection,"It are a problem. 请解释主谓一致。",sv_zh,injection|injection_plain,false
+same-document-multi-chunk,"The students writes. 单数主语配单数动词，动词要加 -s。例句 The student writes a letter every week.",multi_example|multi_mistake,cooking|math,false

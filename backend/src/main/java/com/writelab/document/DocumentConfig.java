@@ -1,6 +1,7 @@
 package com.writelab.document;
 
 import com.writelab.config.DocumentProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,9 +31,12 @@ public class DocumentConfig {
     @Bean
     UserDocumentProcessor userDocumentProcessor(
             JdbcClient jdbcClient,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            ObjectProvider<DocumentChunkEmbedder> embedder,
+            DocumentProperties properties
     ) {
-        return new DefaultUserDocumentProcessor(jdbcClient, transactionTemplate);
+        return new DefaultUserDocumentProcessor(
+                jdbcClient, transactionTemplate, embedder.getIfAvailable(), properties.chunkerVersion());
     }
 
     @Bean(name = "documentExecutor", destroyMethod = "shutdown")

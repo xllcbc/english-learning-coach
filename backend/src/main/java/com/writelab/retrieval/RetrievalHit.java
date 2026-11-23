@@ -54,10 +54,11 @@ public record RetrievalHit(
                 similarityScore, null, null, null, orderingOf(similarityScore), skipReason);
     }
 
-    static RetrievalHit userDocument(RankedDocumentChunk chunk, int ranking, int citationReference) {
+    static RetrievalHit userDocument(
+            RankedDocumentChunk chunk, int ranking, int citationReference, String ordering) {
         return new RetrievalHit(USER_DOCUMENT, null, null, null, chunk.documentId(), chunk.documentChunkId(),
                 ranking, chunk.similarityScore(), citationReference, chunk.title(), chunk.content(),
-                TRIGRAM_SIMILARITY, null);
+                ordering, null);
     }
 
     static RetrievalHit userDocumentSkipped(String skipReason) {

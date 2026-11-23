@@ -6,6 +6,8 @@ import com.writelab.ai.RealExplanationModel;
 import com.writelab.ai.SpringAiEmbeddingClient;
 import com.writelab.ai.SpringAiFeedbackClient;
 import com.writelab.dictionary.DictionaryService;
+import com.writelab.document.DocumentChunkEmbedder;
+import com.writelab.document.EmbeddingDocumentChunkEmbedder;
 import com.writelab.explanation.ExplanationModel;
 import com.writelab.explanation.MockExplanationModel;
 import com.writelab.feedback.FeedbackModel;
@@ -21,10 +23,12 @@ import com.writelab.retrieval.KeywordUserDocumentRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
+import com.writelab.retrieval.VectorUserDocumentRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
@@ -104,6 +108,22 @@ public class ModelConfiguration {
         return new SpringAiEmbeddingClient(embeddingModel);
     }
 
+    /**
+     * Upload-side embedding exists only in REAL mode. Mock mode has no bean, so no code path can
+     * construct an embedding client or spend an embedding request while indexing a document.
+     */
+    @Bean
+    @Conditional(RealModelCondition.class)
+    DocumentChunkEmbedder documentChunkEmbedder(
+            JdbcClient jdbcClient,
+            EmbeddingClient embeddingClient,
+            TransactionTemplate transactionTemplate,
+            ModelProperties modelProperties
+    ) {
+        return new EmbeddingDocumentChunkEmbedder(
+                jdbcClient, embeddingClient, transactionTemplate, modelProperties.embeddingName());
+    }
+
     @Bean
     @Conditional(RealModelCondition.class)
     LearningMaterialRetriever vectorLearningMaterialRetriever(
@@ -116,18 +136,34 @@ public class ModelConfiguration {
     }
 
     /**
-     * User Document retrieval is a separate corpus with its own budget. This implementation is the
-     * Mock-mode pg_trgm path; a later embedding ticket replaces it for REAL mode without touching
-     * the grounding seam.
+     * User Document retrieval is a separate corpus with its own budget. The same API-key condition
+     * that selects the Grounding Material implementation selects this one: no key keeps the
+     * deterministic pg_trgm path, a key switches to 512-dimension pgvector cosine retrieval.
      */
     @Bean
-    UserDocumentRetriever userDocumentRetriever(
+    @Conditional(MockModelCondition.class)
+    UserDocumentRetriever keywordUserDocumentRetriever(
             JdbcClient jdbcClient,
             TransactionTemplate transactionTemplate,
             RetrievalProperties retrievalProperties
     ) {
         return new KeywordUserDocumentRetriever(
                 jdbcClient, transactionTemplate, retrievalProperties.userDocumentRetrievalSettings());
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    UserDocumentRetriever vectorUserDocumentRetriever(
+            JdbcClient jdbcClient,
+            EmbeddingClient embeddingClient,
+            RetrievalProperties retrievalProperties,
+            ModelProperties modelProperties
+    ) {
+        return new VectorUserDocumentRetriever(
+                jdbcClient,
+                embeddingClient,
+                retrievalProperties.userDocumentRetrievalSettings(),
+                modelProperties.embeddingName());
     }
 
     @Bean
@@ -143,9 +179,11 @@ public class ModelConfiguration {
     @Bean
     ExplanationMaterialResolver explanationMaterialResolver(
             GroundingMaterialResolver groundingMaterialResolver,
-            UserDocumentRetriever userDocumentRetriever
+            UserDocumentRetriever userDocumentRetriever,
+            ObjectProvider<EmbeddingClient> embeddingClient
     ) {
-        return new ExplanationMaterialResolver(groundingMaterialResolver, userDocumentRetriever);
+        return new ExplanationMaterialResolver(
+                groundingMaterialResolver, userDocumentRetriever, embeddingClient.getIfAvailable());
     }
 
     private static boolean hasApiKey(ConditionContext context) {

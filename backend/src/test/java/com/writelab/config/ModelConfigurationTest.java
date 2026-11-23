@@ -16,6 +16,7 @@ import com.writelab.retrieval.KeywordUserDocumentRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
+import com.writelab.retrieval.VectorUserDocumentRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -56,6 +57,7 @@ class ModelConfigurationTest {
                     assertThat(context).doesNotHaveBean(ChatClient.class);
                     assertThat(context).doesNotHaveBean(EmbeddingModel.class);
                     assertThat(context).doesNotHaveBean(EmbeddingClient.class);
+                    assertThat(context).doesNotHaveBean(com.writelab.document.DocumentChunkEmbedder.class);
                 });
     }
 
@@ -107,6 +109,9 @@ class ModelConfigurationTest {
                     assertThat(context).hasSingleBean(EmbeddingModel.class);
                     assertThat(context).hasSingleBean(CorpusSentenceResolver.class);
                     assertThat(context).hasSingleBean(GroundingMaterialResolver.class);
+                    assertThat(context.getBean(UserDocumentRetriever.class))
+                            .isInstanceOf(VectorUserDocumentRetriever.class);
+                    assertThat(context).hasSingleBean(com.writelab.document.DocumentChunkEmbedder.class);
                 });
     }
 }

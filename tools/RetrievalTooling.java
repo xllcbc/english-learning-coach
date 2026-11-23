@@ -44,6 +44,10 @@ import java.util.regex.Pattern;
  *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java checksum
  *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java eval [--thresholds 0.5,0.6,0.7]
  *       [--per-category 1,2,3] [--max-hits 4,6,8]
+ *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java documents [--refresh] [--limit N]
+ *       [--batch-size N]
+ *   java -cp &lt;postgresql.jar&gt; tools/RetrievalTooling.java eval-documents [--threshold 0.55]
+ *       [--max-hits 4] [--per-document 2] [--cases tools/retrieval-eval]
  * </pre>
  *
  * Configuration comes from the same environment variables the backend uses:
@@ -75,6 +79,8 @@ public final class RetrievalTooling {
             case "stats" -> stats();
             case "checksum" -> checksum(options);
             case "eval" -> evaluate(options);
+            case "documents" -> rebuildDocuments(options);
+            case "eval-documents" -> evaluateDocuments(options);
             default -> {
                 usage();
                 System.exit(2);
@@ -91,6 +97,9 @@ public final class RetrievalTooling {
                   RetrievalTooling checksum
                   RetrievalTooling eval [--thresholds 0.5,0.6,0.7] [--per-category 1,2,3]
                                         [--max-hits 4,6,8] [--cases tools/retrieval-eval]
+                  RetrievalTooling documents [--refresh] [--limit N] [--batch-size N]
+                  RetrievalTooling eval-documents [--threshold 0.55] [--max-hits 4]
+                                        [--per-document 2] [--cases tools/retrieval-eval]
                 """);
     }
 
@@ -530,6 +539,251 @@ public final class RetrievalTooling {
         return rows;
     }
 
+    // ---------------------------------------------------------------- documents
+
+    /**
+     * Manually rebuilds User Document vectors. It is intentionally not called from application
+     * startup: Mock-era documents stay unindexed until the operator runs this command, and a provider
+     * change never silently spends embedding budget.
+     */
+    private static void rebuildDocuments(Map<String, String> options) throws Exception {
+        String model = env("WRITELAB_MODEL_EMBEDDING_NAME", "text-embedding-3-small");
+        boolean refresh = options.containsKey("refresh");
+        long limit = options.containsKey("limit") ? Long.parseLong(options.get("limit")) : Long.MAX_VALUE;
+        int batchSize = Integer.parseInt(
+                options.getOrDefault("batch-size", Integer.toString(DEFAULT_BATCH_SIZE)));
+        if (batchSize < 1 || batchSize > 100) {
+            throw new IllegalArgumentException("--batch-size 必须在 1..100 之间");
+        }
+
+        EmbeddingApi embeddings = EmbeddingApi.fromEnvironment();
+        long processed = 0;
+        long embedded = 0;
+        try (Connection connection = connection()) {
+            List<DocumentRow> documents = readDocumentRows(connection);
+            System.out.printf(Locale.ROOT,
+                    "documents: %d READY documents, model=%s, refresh=%s%n",
+                    documents.size(), model, refresh);
+            for (DocumentRow document : documents) {
+                if (processed >= limit) {
+                    break;
+                }
+                boolean missing = countUnembeddedChunks(connection, document) > 0;
+                boolean staleModel = !model.equals(document.embeddingModel());
+                if (!refresh && !missing && !staleModel) {
+                    continue;
+                }
+                processed++;
+                boolean reembedAll = refresh || staleModel;
+                List<Row> chunks = readDocumentChunks(connection, document, reembedAll);
+                System.out.printf(Locale.ROOT, "%s (%s): %d chunks to embed%n",
+                        document.filename(), document.id(), chunks.size());
+                for (int from = 0; from < chunks.size(); from += batchSize) {
+                    List<Row> batch = List.copyOf(chunks.subList(from, Math.min(chunks.size(), from + batchSize)));
+                    List<String> texts = batch.stream().map(Row::text).toList();
+                    updateRows(connection, Table.documentChunk(), batch, embeddings.embed(texts));
+                    embedded += batch.size();
+                }
+                long remaining = countUnembeddedChunks(connection, document);
+                if (remaining > 0) {
+                    throw new IllegalStateException(document.filename() + " 仍有 " + remaining + " 个分块没有向量");
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        UPDATE user_document
+                        SET embedding_model = ?, updated_at = now()
+                        WHERE id = ?
+                        """)) {
+                    statement.setString(1, model);
+                    statement.setObject(2, java.util.UUID.fromString(document.id()));
+                    statement.executeUpdate();
+                }
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "document vector rebuild finished: %d documents, %d chunks written (model=%s)%n",
+                processed, embedded, model);
+    }
+
+    private static List<DocumentRow> readDocumentRows(Connection connection) throws SQLException {
+        List<DocumentRow> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                        SELECT id, filename, active_generation, embedding_model
+                        FROM user_document
+                        WHERE status = 'READY'
+                        ORDER BY created_at, id
+                        """);
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                rows.add(new DocumentRow(
+                        resultSet.getString("id"),
+                        resultSet.getString("filename"),
+                        resultSet.getInt("active_generation"),
+                        resultSet.getString("embedding_model")));
+            }
+        }
+        return rows;
+    }
+
+    private static long countUnembeddedChunks(Connection connection, DocumentRow document) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                        SELECT count(*) FROM document_chunk
+                        WHERE document_id = ? AND generation = ? AND embedding IS NULL
+                        """)) {
+            statement.setObject(1, java.util.UUID.fromString(document.id()));
+            statement.setInt(2, document.generation());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getLong(1);
+            }
+        }
+    }
+
+    private static List<Row> readDocumentChunks(
+            Connection connection, DocumentRow document, boolean reembedAll) throws SQLException {
+        String sql = "SELECT id, content FROM document_chunk WHERE document_id = ? AND generation = ? "
+                + (reembedAll ? "" : "AND embedding IS NULL ")
+                + "ORDER BY position";
+        List<Row> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setObject(1, java.util.UUID.fromString(document.id()));
+            statement.setInt(2, document.generation());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    rows.add(new Row(resultSet.getString("id"), resultSet.getString("content")));
+                }
+            }
+        }
+        return rows;
+    }
+
+    // ---------------------------------------------------------------- eval-documents
+
+    /**
+     * Offline User Document fixture evaluation. It uses the same relevance rules as the REAL
+     * retriever (cosine threshold, top-4, at most two chunks per document, identical text
+     * deduplicated) but keeps the fixture corpus in memory, so a live pgvector database is not
+     * required. It is a manual tool and is never invoked by Maven, the frontend build or CI.
+     */
+    private static void evaluateDocuments(Map<String, String> options) throws Exception {
+        Path caseDirectory = Path.of(options.getOrDefault("cases", "tools/retrieval-eval"));
+        List<DocumentFixture> fixtures = readDocumentFixtures(
+                caseDirectory.resolve("document_fixtures.csv"));
+        List<DocumentCase> cases = readDocumentCases(
+                caseDirectory.resolve("document_cases.csv"));
+        double threshold = options.containsKey("threshold")
+                ? Double.parseDouble(options.get("threshold"))
+                : doubleEnv("WRITELAB_USER_DOCUMENT_SIMILARITY_THRESHOLD", 0.55);
+        int maxHits = options.containsKey("max-hits")
+                ? Integer.parseInt(options.get("max-hits"))
+                : intEnv("WRITELAB_USER_DOCUMENT_MAX_HITS", 4);
+        int perDocument = options.containsKey("per-document")
+                ? Integer.parseInt(options.get("per-document"))
+                : intEnv("WRITELAB_USER_DOCUMENT_PER_DOCUMENT_HITS", 2);
+
+        EmbeddingApi embeddings = EmbeddingApi.fromEnvironment();
+        LinkedHashSet<String> texts = new LinkedHashSet<>();
+        fixtures.forEach(fixture -> texts.add(fixture.content()));
+        cases.forEach(evalCase -> texts.add(evalCase.query()));
+        Map<String, float[]> vectors = embedTexts(embeddings, new ArrayList<>(texts), DEFAULT_BATCH_SIZE);
+
+        System.out.printf(Locale.ROOT,
+                "documents-eval: cases=%d fixtures=%d threshold=%.2f max-hits=%d per-document=%d%n",
+                cases.size(), fixtures.size(), threshold, maxHits, perDocument);
+        int passed = 0;
+        for (DocumentCase evalCase : cases) {
+            List<RankedDocument> ranked = retrieveDocuments(
+                    fixtures, vectors, vectors.get(evalCase.query()), threshold, maxHits, perDocument);
+            List<String> keys = ranked.stream().map(RankedDocument::key).toList();
+            boolean expected = keys.containsAll(evalCase.expectedKeys());
+            boolean noDistractor = evalCase.distractorKeys().stream().noneMatch(keys::contains);
+            boolean none = !evalCase.expectNone() || ranked.isEmpty();
+            boolean ok = expected && noDistractor && none;
+            if (ok) {
+                passed++;
+            }
+            System.out.printf(Locale.ROOT, "  %-28s %s expected=%s distractor=%s top=%s%n",
+                    evalCase.name(),
+                    ok ? "PASS" : "FAIL",
+                    expected ? "hit" : "MISS",
+                    noDistractor ? "clean" : "LEAK",
+                    keys.isEmpty() ? "<none>" : String.join(" | ", keys));
+        }
+        System.out.printf(Locale.ROOT, "documents-eval result: %d/%d cases passed%n", passed, cases.size());
+        if (passed != cases.size()) {
+            throw new IllegalStateException("用户文档 fixture 评测未全部通过");
+        }
+    }
+
+    private static List<RankedDocument> retrieveDocuments(
+            List<DocumentFixture> fixtures,
+            Map<String, float[]> vectors,
+            float[] queryVector,
+            double threshold,
+            int maxHits,
+            int perDocument
+    ) {
+        Map<String, Candidate> deduplicated = new LinkedHashMap<>();
+        Map<String, Integer> positions = new HashMap<>();
+        for (DocumentFixture fixture : fixtures) {
+            int position = positions.merge(fixture.filename(), 1, Integer::sum) - 1;
+            double similarity = cosine(queryVector, vectors.get(fixture.content()));
+            if (similarity < threshold) {
+                continue;
+            }
+            Candidate candidate = new Candidate(
+                    fixture.key(), fixture.filename(), fixture.headingPath(),
+                    fixture.content(), position, similarity);
+            Candidate existing = deduplicated.get(fixture.content());
+            if (existing == null || candidate.betterThan(existing)) {
+                deduplicated.put(fixture.content(), candidate);
+            }
+        }
+
+        List<Candidate> perDocumentFiltered = new ArrayList<>();
+        deduplicated.values().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        Candidate::filename, LinkedHashMap::new, java.util.stream.Collectors.toList()))
+                .forEach((filename, candidates) -> {
+                    candidates.sort(Candidate.ORDER);
+                    perDocumentFiltered.addAll(candidates.subList(0, Math.min(perDocument, candidates.size())));
+                });
+        return perDocumentFiltered.stream()
+                .sorted(Candidate.ORDER)
+                .limit(maxHits)
+                .map(candidate -> new RankedDocument(
+                        candidate.key(), candidate.filename(), candidate.headingPath(),
+                        candidate.similarity()))
+                .toList();
+    }
+
+    private static Map<String, float[]> embedTexts(
+            EmbeddingApi embeddings, List<String> texts, int batchSize) throws Exception {
+        Map<String, float[]> vectors = new HashMap<>();
+        for (int from = 0; from < texts.size(); from += batchSize) {
+            List<String> batch = texts.subList(from, Math.min(texts.size(), from + batchSize));
+            List<float[]> embedded = embeddings.embed(batch);
+            for (int index = 0; index < batch.size(); index++) {
+                vectors.put(batch.get(index), embedded.get(index));
+            }
+        }
+        return vectors;
+    }
+
+    private static double cosine(float[] left, float[] right) {
+        double dot = 0;
+        double leftNorm = 0;
+        double rightNorm = 0;
+        for (int index = 0; index < left.length; index++) {
+            dot += (double) left[index] * right[index];
+            leftNorm += (double) left[index] * left[index];
+            rightNorm += (double) right[index] * right[index];
+        }
+        if (leftNorm == 0 || rightNorm == 0) {
+            return 0;
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+    }
+
     // ---------------------------------------------------------------- files
 
     private static List<CorpusCase> readCorpusCases(Path path) throws IOException {
@@ -576,6 +830,60 @@ public final class RetrievalTooling {
             cases.add(new GroundingCase(fields.get(0), categories, splitExpected(fields.get(2))));
         }
         return cases;
+    }
+
+    private static List<DocumentFixture> readDocumentFixtures(Path path) throws IOException {
+        List<DocumentFixture> fixtures = new ArrayList<>();
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        for (int lineNumber = 2; lineNumber <= lines.size(); lineNumber++) {
+            String line = lines.get(lineNumber - 1);
+            if (line.isBlank()) {
+                continue;
+            }
+            List<String> fields = csvFields(line);
+            if (fields.size() != 4) {
+                throw new IllegalStateException(path + " 第 " + lineNumber + " 行有 " + fields.size() + " 列");
+            }
+            fixtures.add(new DocumentFixture(
+                    fields.get(0).strip(),
+                    fields.get(1).strip(),
+                    fields.get(2).strip(),
+                    unescape(fields.get(3))));
+        }
+        return fixtures;
+    }
+
+    private static List<DocumentCase> readDocumentCases(Path path) throws IOException {
+        List<DocumentCase> cases = new ArrayList<>();
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        for (int lineNumber = 2; lineNumber <= lines.size(); lineNumber++) {
+            String line = lines.get(lineNumber - 1);
+            if (line.isBlank()) {
+                continue;
+            }
+            List<String> fields = csvFields(line);
+            if (fields.size() != 5) {
+                throw new IllegalStateException(path + " 第 " + lineNumber + " 行有 " + fields.size() + " 列");
+            }
+            cases.add(new DocumentCase(
+                    fields.get(0).strip(),
+                    unescape(fields.get(1).strip()),
+                    splitKeys(fields.get(2)),
+                    splitKeys(fields.get(3)),
+                    Boolean.parseBoolean(fields.get(4).strip())));
+        }
+        return cases;
+    }
+
+    private static List<String> splitKeys(String value) {
+        return Arrays.stream(value.split("\\|"))
+                .map(String::strip)
+                .filter(part -> !part.isEmpty())
+                .toList();
+    }
+
+    private static String unescape(String value) {
+        return value.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r");
     }
 
     private static List<String> splitExpected(String value) {
@@ -733,9 +1041,55 @@ public final class RetrievalTooling {
             return new Table("grounding_material", "content");
         }
 
+        static Table documentChunk() {
+            return new Table("document_chunk", "content");
+        }
+
         String embeddingText(Row row) {
             return row.text();
         }
+    }
+
+    private record DocumentRow(
+            String id,
+            String filename,
+            int generation,
+            String embeddingModel
+    ) {
+    }
+
+    private record DocumentFixture(String key, String filename, String headingPath, String content) {
+    }
+
+    private record DocumentCase(
+            String name,
+            String query,
+            List<String> expectedKeys,
+            List<String> distractorKeys,
+            boolean expectNone
+    ) {
+    }
+
+    private record Candidate(
+            String key,
+            String filename,
+            String headingPath,
+            String content,
+            int position,
+            double similarity
+    ) {
+
+        private static final java.util.Comparator<Candidate> ORDER =
+                java.util.Comparator.comparingDouble(Candidate::similarity).reversed()
+                        .thenComparing(Candidate::filename)
+                        .thenComparingInt(Candidate::position);
+
+        private boolean betterThan(Candidate other) {
+            return ORDER.compare(this, other) < 0;
+        }
+    }
+
+    private record RankedDocument(String key, String filename, String headingPath, double similarity) {
     }
 
     private record Row(String id, String text) {

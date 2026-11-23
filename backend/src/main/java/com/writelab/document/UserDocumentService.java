@@ -1,6 +1,7 @@
 package com.writelab.document;
 
 import com.writelab.config.DocumentProperties;
+import com.writelab.config.ModelProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -43,6 +44,22 @@ public class UserDocumentService {
     private static final Logger log = LoggerFactory.getLogger(UserDocumentService.class);
     private static final long UPLOAD_BUDGET_LOCK = 780_001L;
     private static final int INITIAL_GENERATION = 1;
+    private static final String EMBEDDING_INDEXED = """
+            (d.embedding_model IS NOT NULL
+                AND d.embedding_model = :embeddingModel
+                AND d.chunk_count > 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM document_chunk chunk
+                    WHERE chunk.document_id = d.id
+                        AND chunk.generation = d.active_generation
+                        AND chunk.embedding IS NULL
+                )) AS embedding_indexed""";
+    private static final String SUMMARY_COLUMNS = """
+            d.id, d.filename, d.status, d.active, d.char_count, d.chunk_count,
+            d.embedding_model, d.chunker_version, d.error_code,
+            d.pending_generation, d.pending_error_code,
+            d.created_at, d.updated_at, """ + EMBEDDING_INDEXED;
 
     private final JdbcClient jdbcClient;
     private final DocumentChunker chunker;
@@ -50,6 +67,7 @@ public class UserDocumentService {
     private final ExecutorService executor;
     private final TransactionTemplate transactionTemplate;
     private final UserDocumentProcessor processor;
+    private final String embeddingModel;
 
     public UserDocumentService(
             JdbcClient jdbcClient,
@@ -57,7 +75,8 @@ public class UserDocumentService {
             DocumentProperties properties,
             @Qualifier("documentExecutor") ExecutorService executor,
             TransactionTemplate transactionTemplate,
-            UserDocumentProcessor processor
+            UserDocumentProcessor processor,
+            ModelProperties modelProperties
     ) {
         this.jdbcClient = jdbcClient;
         this.chunker = chunker;
@@ -65,6 +84,7 @@ public class UserDocumentService {
         this.executor = executor;
         this.transactionTemplate = transactionTemplate;
         this.processor = processor;
+        this.embeddingModel = modelProperties.embeddingName();
     }
 
     public DocumentUploadResponse upload(MultipartFile file) {
@@ -144,26 +164,18 @@ public class UserDocumentService {
     }
 
     public List<UserDocumentSummary> list() {
-        return jdbcClient.sql("""
-                        SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, pending_generation, pending_error_code,
-                               created_at, updated_at
-                        FROM user_document
-                        ORDER BY created_at DESC, id DESC
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d ORDER BY d.created_at DESC, d.id DESC")
+                .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)
                 .list();
     }
 
     public UserDocumentSummary find(UUID documentId) {
-        return jdbcClient.sql("""
-                        SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, pending_generation, pending_error_code,
-                               created_at, updated_at
-                        FROM user_document
-                        WHERE id = :id
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d WHERE d.id = :id")
                 .param("id", documentId)
+                .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)
                 .optional()
                 .orElseThrow(() -> new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND));
@@ -345,6 +357,7 @@ public class UserDocumentService {
                                 UPDATE user_document
                                 SET status = :status,
                                     chunk_count = 0,
+                                    embedding_model = NULL,
                                     error_code = :errorCode,
                                     updated_at = :updatedAt
                                 WHERE id = :id
@@ -501,16 +514,12 @@ public class UserDocumentService {
     }
 
     private Optional<UserDocumentSummary> findByHash(String contentHash) {
-        return jdbcClient.sql("""
-                        SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, pending_generation, pending_error_code,
-                               created_at, updated_at
-                        FROM user_document
-                        WHERE content_hash = :hash OR pending_content_hash = :hash
-                        ORDER BY created_at DESC, id DESC
-                        LIMIT 1
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d"
+                        + " WHERE d.content_hash = :hash OR d.pending_content_hash = :hash"
+                        + " ORDER BY d.created_at DESC, d.id DESC LIMIT 1")
                 .param("hash", contentHash)
+                .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)
                 .optional();
     }
@@ -584,6 +593,9 @@ public class UserDocumentService {
                 resultSet.getBoolean("active"),
                 resultSet.getInt("char_count"),
                 resultSet.getInt("chunk_count"),
+                resultSet.getBoolean("embedding_indexed"),
+                resultSet.getString("embedding_model"),
+                resultSet.getString("chunker_version"),
                 resultSet.getString("error_code"),
                 replacementStatus,
                 pendingError,

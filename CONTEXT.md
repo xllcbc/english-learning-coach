@@ -72,6 +72,10 @@ _避免_：依据材料、引用句
 重新上传内容变化的同名文档时，在同一篇 User Document 内建立新 generation，全部就绪后再切换并删除旧 generation 的过程；它不同于上传一篇新文档。
 _避免_：更新、覆盖、新版本
 
+**Vector Index（向量索引）**：
+User Document 当前 active generation 的每个 Document Chunk 都已用当前 embedding 模型写入 512 维向量的状态；缺少向量或向量过期的文档不参与真实检索。
+_避免_：索引状态、embedding 状态
+
 **Retrieval Hit（检索命中记录）**：
 一次应用侧检索针对某份练习记录留下的溯源记录，包含命中种类、被引用记录、名次以及跳过或降级原因；它不同于 Tool Invocation——后者记录模型调用应用工具，前者记录应用为模型准备材料，两者不得混用。
 _避免_：命中日志、检索日志、工具调用记录

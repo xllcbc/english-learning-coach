@@ -65,6 +65,19 @@ tools/retrieval-tooling.sh stats            # 查看行数、向量覆盖率与�
   低于 `grounding-similarity-threshold` 的条目被丢弃。全部低于阈值时返回空列表，讲解不引用任何依据，也不填充占位内容。
 - 两类查询都只读取语料表，在线请求不写入语料表；只有 `retrieval_hit` 会增长。
 
+## 用户文档向量检索
+
+User Document 与 Grounding Material 使用同一次查询向量，但检索实现与预算独立：
+
+- 上传时完成 512 维 embedding，全部 chunk 成功后才进入 `READY`；
+- `VectorUserDocumentRetriever` 用 `halfvec` 余弦距离，阈值默认 0.55、最多 4 条、同一文档最多 2 条、
+  相同 chunk 文本去重，只查 `READY`、`active`、当前 `embedding_model` 的文档；
+- 共享查询向量只构建一次，Grounding Material 与 User Document 共用；
+- 文档向量缺失或过期时由 `tools/retrieval-tooling.sh documents` 手动重建，不自动运行。
+
+详细操作与 fixture 评测见 [User Document 操作文档](user-documents.md) 与
+[检索离线评测](retrieval-evaluation.md)。
+
 ## 降级
 
 检索异常对学习者不可见，功能自动退回今天的表现：

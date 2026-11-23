@@ -51,7 +51,7 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
         Map<String, List<RankedCorpusSentence>> candidates = new LinkedHashMap<>();
         int index = 0;
         for (Map.Entry<String, String> query : queries.entrySet()) {
-            String vector = toVectorLiteral(vectors.get(index++));
+            String vector = EmbeddingVectors.toLiteral(vectors.get(index++));
             List<RankedCorpusSentence> rows = jdbcClient.sql("""
                             SELECT id, word_form, sentence, source, license,
                                    1 - (embedding <=> CAST(:query AS halfvec)) AS similarity
@@ -81,12 +81,20 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
     @Override
     public List<RankedGroundingMaterial> groundingMaterials(
             Collection<IssueCategory> categories, String queryText) {
+        return groundingMaterials(categories, queryText, null);
+    }
+
+    @Override
+    public List<RankedGroundingMaterial> groundingMaterials(
+            Collection<IssueCategory> categories, String queryText, float[] queryVector) {
         if (categories.isEmpty()) {
             return List.of();
         }
         List<String> names = categories.stream().map(IssueCategory::name).distinct().toList();
         String query = StringUtils.hasText(queryText) ? queryText : String.join(" ", names);
-        float[] vector = embedAll(List.of(query)).getFirst();
+        float[] vector = queryVector == null
+                ? embedAll(List.of(query)).getFirst()
+                : EmbeddingVectors.requireDimensions(queryVector);
 
         return jdbcClient.sql("""
                         WITH scored AS (
@@ -111,7 +119,7 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
                         ORDER BY similarity DESC, id
                         LIMIT :maxHits
                         """)
-                .param("query", toVectorLiteral(vector))
+                .param("query", EmbeddingVectors.toLiteral(vector))
                 .param("categories", names)
                 .param("perCategoryHits", groundingSettings.perCategoryHits())
                 .param("threshold", groundingSettings.similarityThreshold())
@@ -133,26 +141,8 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
             throw new IllegalStateException("embedding 返回的向量数量与输入不一致");
         }
         for (float[] vector : vectors) {
-            if (vector == null || vector.length != EmbeddingClient.VECTOR_DIMENSIONS) {
-                throw new IllegalStateException("embedding 返回的向量维度不是 " + EmbeddingClient.VECTOR_DIMENSIONS);
-            }
-            for (float value : vector) {
-                if (!Float.isFinite(value)) {
-                    throw new IllegalStateException("embedding 返回了非有限数值");
-                }
-            }
+            EmbeddingVectors.requireDimensions(vector);
         }
         return vectors;
-    }
-
-    static String toVectorLiteral(float[] vector) {
-        StringBuilder literal = new StringBuilder(vector.length * 8).append('[');
-        for (int index = 0; index < vector.length; index++) {
-            if (index > 0) {
-                literal.append(',');
-            }
-            literal.append(vector[index]);
-        }
-        return literal.append(']').toString();
     }
 }

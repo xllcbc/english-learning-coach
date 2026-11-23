@@ -6,6 +6,8 @@
 #   tools/retrieval-tooling.sh stats
 #   tools/retrieval-tooling.sh checksum
 #   tools/retrieval-tooling.sh eval [--thresholds 0.2,0.3] [--per-category 1,2,3]
+#   tools/retrieval-tooling.sh documents [--refresh] [--limit N]
+#   tools/retrieval-tooling.sh eval-documents [--threshold 0.55] [--max-hits 4]
 #
 # The PostgreSQL JDBC driver is only needed on this script's classpath. Override discovery with
 # WRITELAB_PG_JDBC_JAR=/path/to/postgresql.jar when the driver lives elsewhere.
