@@ -11,15 +11,4 @@ public record ExplanationRequest(
         List<GroundingMaterial> groundingMaterials,
         List<DocumentCitation> documentCitations
 ) {
-
-    /**
-     * Keeps the Grounding Material-only construction used by existing callers and tests.
-     */
-    public ExplanationRequest(
-            String writingText,
-            StructuredFeedback feedback,
-            List<GroundingMaterial> groundingMaterials
-    ) {
-        this(writingText, feedback, groundingMaterials, List.of());
-    }
 }

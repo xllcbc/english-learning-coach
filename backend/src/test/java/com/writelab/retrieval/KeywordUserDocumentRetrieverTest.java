@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -32,6 +33,9 @@ class KeywordUserDocumentRetrieverTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     private final AtomicInteger hashSequence = new AtomicInteger();
 
@@ -120,7 +124,7 @@ class KeywordUserDocumentRetrieverTest {
 
     private KeywordUserDocumentRetriever retriever() {
         return new KeywordUserDocumentRetriever(
-                jdbcClient, new UserDocumentRetrievalSettings(4, 2, 0.55));
+                jdbcClient, transactionTemplate, new UserDocumentRetrievalSettings(4, 2, 0.55));
     }
 
     private UUID insertDocument(String filename, String status, boolean active, int activeGeneration) {

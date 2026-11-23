@@ -22,6 +22,10 @@ ALTER TABLE retrieval_hit
     ADD COLUMN citation_title TEXT,
     ADD COLUMN citation_text TEXT;
 
+CREATE UNIQUE INDEX uq_retrieval_hit_practice_citation_reference
+    ON retrieval_hit (practice_attempt_id, citation_reference)
+    WHERE citation_reference IS NOT NULL;
+
 -- Mock-mode ranking uses character trigram similarity, which is neither a fixed order nor a vector
 -- cosine score. Keep the two existing values so Grounding Material rows replay unchanged.
 ALTER TABLE retrieval_hit

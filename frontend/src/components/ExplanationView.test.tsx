@@ -85,9 +85,8 @@ describe('ExplanationView', () => {
     const references = screen.getAllByText(/^依据\d+$/).map((element) => element.textContent);
     expect(references).toEqual(['依据1', '依据2']);
     expect(screen.getByText('我的文档')).toBeInTheDocument();
-    expect(
-      screen.getByText('grammar.md · Grammar > Subject-verb agreement'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('grammar.md')).toBeInTheDocument();
+    expect(screen.getByText('Grammar > Subject-verb agreement')).toBeInTheDocument();
     expect(screen.getByText('I have a problem with this sentence.')).toBeInTheDocument();
     expect(screen.queryByText('文档已删除')).not.toBeInTheDocument();
   });
@@ -115,9 +114,8 @@ describe('ExplanationView', () => {
     );
 
     expect(screen.getByText('文档已删除')).toBeInTheDocument();
-    expect(
-      screen.getByText('grammar.md · Grammar > Subject-verb agreement'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('grammar.md')).toBeInTheDocument();
+    expect(screen.getByText('Grammar > Subject-verb agreement')).toBeInTheDocument();
     expect(screen.getByText('I have a problem with this sentence.')).toBeInTheDocument();
   });
 

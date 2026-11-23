@@ -26,7 +26,7 @@ class ExplanationPromptTest {
 
         String prompt = ExplanationPrompt.user(request);
 
-        assertThat(prompt).contains("可引用的依据材料（引用时标注 [依据N]，N 为下面的编号）：");
+        assertThat(prompt).contains("可引用的依据（规则或我的文档，引用时标注 [依据N]，N 为下面的编号）：");
         assertThat(prompt).contains("[依据1]（规则 · GRAMMAR）主谓一致：第三人称单数动词加 -s。");
         assertThat(prompt).contains("[依据2]（规则 · COHERENCE）一个段落只围绕一个中心句。");
         assertThat(prompt).contains("WriteLab 自建依据材料 / CC BY 4.0");

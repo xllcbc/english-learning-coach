@@ -22,6 +22,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +36,8 @@ class ModelConfigurationTest {
             .withBean(DictionaryService.class, () -> mock(DictionaryService.class))
             .withBean(LookupWordTool.class, () -> new LookupWordTool(mock(DictionaryService.class)))
             .withBean(JdbcClient.class, () -> mock(JdbcClient.class))
+            .withBean(TransactionTemplate.class,
+                    () -> new TransactionTemplate(mock(PlatformTransactionManager.class)))
             .withBean(ObjectMapper.class, ObjectMapper::new);
 
     @Test

@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -537,10 +538,12 @@ class UserDocumentExplanationIntegrationTest {
         @Primary
         FailableUserDocumentRetriever failableUserDocumentRetriever(
                 JdbcClient jdbcClient,
+                TransactionTemplate transactionTemplate,
                 RetrievalProperties retrievalProperties
         ) {
             return new FailableUserDocumentRetriever(new KeywordUserDocumentRetriever(
                     jdbcClient,
+                    transactionTemplate,
                     new UserDocumentRetrievalSettings(
                             retrievalProperties.userDocumentMaxHits(),
                             retrievalProperties.userDocumentPerDocumentHits(),

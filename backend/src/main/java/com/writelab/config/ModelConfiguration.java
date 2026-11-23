@@ -32,6 +32,7 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -122,10 +123,11 @@ public class ModelConfiguration {
     @Bean
     UserDocumentRetriever userDocumentRetriever(
             JdbcClient jdbcClient,
+            TransactionTemplate transactionTemplate,
             RetrievalProperties retrievalProperties
     ) {
         return new KeywordUserDocumentRetriever(
-                jdbcClient, retrievalProperties.userDocumentRetrievalSettings());
+                jdbcClient, transactionTemplate, retrievalProperties.userDocumentRetrievalSettings());
     }
 
     @Bean

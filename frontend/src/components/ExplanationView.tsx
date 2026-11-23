@@ -120,7 +120,7 @@ export function ExplanationView({
                           <span className="grounding-deleted">文档已删除</span>
                         )}
                       </p>
-                      <p className="grounding-title">{citation.document.title}</p>
+                      <DocumentTitle title={citation.document.title} />
                       <p className="grounding-content">{citation.document.content}</p>
                     </li>
                   ),
@@ -131,5 +131,24 @@ export function ExplanationView({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The persisted citation title combines the document name and heading path as
+ * "name · path". Rendering them on separate lines makes both visible without
+ * re-joining the live document tables during replay.
+ */
+function DocumentTitle({ title }: { title: string }) {
+  const separator = ' · ';
+  const separatorIndex = title.indexOf(separator);
+  if (separatorIndex < 0) {
+    return <p className="grounding-title">{title}</p>;
+  }
+  return (
+    <>
+      <p className="grounding-title">{title.slice(0, separatorIndex)}</p>
+      <p className="grounding-path">{title.slice(separatorIndex + separator.length)}</p>
+    </>
   );
 }

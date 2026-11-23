@@ -965,6 +965,13 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.grounding-path {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .grounding-deleted {
   padding: 3px 9px;
   border-radius: 999px;
