@@ -30,6 +30,9 @@ const parsingDocument: UserDocumentSummary = {
   active: true,
   charCount: 1200,
   chunkCount: 0,
+  embeddingIndexed: false,
+  embeddingModel: null,
+  chunkerVersion: 'document-chunker-v1',
   errorCode: null,
   replacementStatus: 'NONE',
   replacementErrorCode: null,
@@ -41,6 +44,8 @@ const readyDocument: UserDocumentSummary = {
   ...parsingDocument,
   status: 'READY',
   chunkCount: 3,
+  embeddingIndexed: true,
+  embeddingModel: 'text-embedding-3-small',
   updatedAt: '2026-11-23T08:00:02Z',
 };
 
@@ -335,5 +340,58 @@ describe('UserDocumentsPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: '上传文档' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('网络断开，请重试。');
+  });
+
+  it('warns how many ready documents still need a vector index in real mode and clears it after a rebuild', async () => {
+    const unindexedDocument: UserDocumentSummary = {
+      ...readyDocument,
+      embeddingIndexed: false,
+      embeddingModel: null,
+    };
+    api.listUserDocuments
+      .mockResolvedValueOnce([unindexedDocument])
+      .mockResolvedValue([readyDocument]);
+    api.uploadUserDocument.mockResolvedValue({ id: 'doc-1', status: 'READY' });
+
+    render(<UserDocumentsPanel realMode />);
+
+    expect(await screen.findByText('1 篇文档尚未建立向量索引')).toBeInTheDocument();
+    expect(screen.getByText('尚未建立向量索引')).toBeInTheDocument();
+
+    const file = new File(['# Grammar'], 'grammar.md', { type: 'text/markdown' });
+    await userEvent.upload(screen.getByLabelText('选择 TXT 或 Markdown 文件'), file);
+    await userEvent.click(screen.getByRole('button', { name: '上传文档' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('1 篇文档尚未建立向量索引')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('已建立向量索引')).toBeInTheDocument();
+  });
+
+  it('does not warn about vector indexes in mock mode', async () => {
+    const unindexedDocument: UserDocumentSummary = {
+      ...readyDocument,
+      embeddingIndexed: false,
+      embeddingModel: null,
+    };
+    api.listUserDocuments.mockResolvedValue([unindexedDocument]);
+
+    render(<UserDocumentsPanel />);
+
+    expect(await screen.findByText('grammar.md')).toBeInTheDocument();
+    expect(screen.queryByText('尚未建立向量索引')).not.toBeInTheDocument();
+    expect(screen.queryByText(/篇文档尚未建立向量索引/)).not.toBeInTheDocument();
+  });
+
+  it('explains an embedding failure with a retry entry', async () => {
+    api.listUserDocuments.mockResolvedValue([
+      { ...failedDocument, errorCode: 'EMBEDDING_FAILED' },
+    ]);
+
+    render(<UserDocumentsPanel />);
+
+    expect(await screen.findByText('失败原因：文档向量生成失败，请稍后重试。')).toBeInTheDocument();
+    expect(screen.getByText('错误码：EMBEDDING_FAILED')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
   });
 });

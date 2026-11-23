@@ -9,6 +9,10 @@
    余弦索引生效。
 2. `eval`：用 [`tools/retrieval-eval/`](../tools/retrieval-eval/) 里的小标注集跑检索，
    报告例句命中率、例句包含目标词形的比例、依据材料命中情况，并扫描阈值与 top-k。
+3. `documents`：为缺少向量、embedding model 过期或 chunker 版本变化的 User Document 手动重建
+   `document_chunk.embedding`，并把当前模型与 chunker 版本写回文档。
+4. `eval-documents`：用同一目录下的 User Document fixture 跑内存检索，验证 expected chunk 进入
+   top-4、干扰文档零误引、无关查询零返回。
 
 `stats` 与 `checksum` 只读，用来记录容量和验证重建前后的索引行为。
 
@@ -161,7 +165,71 @@ tools/retrieval-tooling.sh eval \
 校验和本身会因供应商批量请求的浮点噪声变化，因此「一致」按**索引覆盖的稳定 id 与检索名次**判断，
 不按逐位浮点相等判断。
 
-## Vocabulary Suggestion 的中文解释与真实例句
+## User Document 向量重建
+
+`documents` 是手动命令，不在应用启动、Maven、前端构建或 CI 中执行：
+
+```bash
+# 只补缺失向量、embedding model 过期或 chunker 版本变化的 READY 文档
+tools/retrieval-tooling.sh documents
+
+# 换模型后强制重算所有 READY 文档的 active generation
+tools/retrieval-tooling.sh documents --refresh
+
+# 限制文档数、调整批量
+tools/retrieval-tooling.sh documents --limit 10 --batch-size 10
+```
+
+行为：
+
+- 只处理 `READY` 文档的 `active_generation`，不会碰到待切换的 replacement generation；
+- 默认只请求 `embedding IS NULL` 的 chunk；模型或 chunker 版本变化、`--refresh` 时重算全部
+  active chunk；
+- 每批在一个短事务里更新，单批失败不会留下半批向量；全部完成后才写入 `embedding_model` 与
+  `chunker_version`；
+- 不自动运行，也不自动产生 embedding 费用。Mock 时期上传的文档在运行前 `embedding_model` 为
+  `NULL`，不会被 REAL 检索误用；运行后前端“N 篇文档尚未建立向量索引”提示消失。
+
+## User Document fixture 评测
+
+标注集在 [`tools/retrieval-eval/document_fixtures.csv`](../tools/retrieval-eval/document_fixtures.csv)
+与 [`document_cases.csv`](../tools/retrieval-eval/document_cases.csv)。fixture 语料在内存中构造，
+不需要 PostgreSQL；评测使用与 REAL retriever 相同的规则（余弦阈值 0.55、top-4、每文档最多 2 条、
+相同 chunk 文本去重），但需要真实 embedding 供应商。它同样**不接入 Maven、前端构建或 CI**。
+
+```bash
+tools/retrieval-tooling.sh eval-documents
+```
+
+10 个案例覆盖：中文笔记 + 英文例句、冠词、时态、连贯性、标点、词汇搭配、干扰文档、无关查询、
+注入文档、同一文档多 chunk。判定标准：每个 expected key 必须进入 top-4；distractor 不能出现；
+`expect_none` 查询必须返回空列表。
+
+### 本次评测结果
+
+环境：2026-11-23，`text-embedding-v3`，512 维，阈值 0.55、top-4、每文档 2 条；fixture 14 条、
+案例 10 个。
+
+| 案例 | 结果 | top-4（key） |
+| --- | --- | --- |
+| chinese-note-english-example | 通过 | multi_rule, sv_zh, sv_example, articles_zh |
+| articles | 通过 | articles_zh, multi_rule, sv_zh, sv_example |
+| tenses | 通过 | tenses_zh, sv_zh |
+| coherence | 通过 | coherence_zh, punctuation_zh, multi_mistake |
+| punctuation-comma-splice | 通过 | punctuation_zh, tenses_zh |
+| vocabulary-avoid | 通过 | vocab_zh, sv_zh, multi_rule, punctuation_zh |
+| distractor-document | 通过 | sv_zh, multi_rule, sv_example, multi_example |
+| irrelevant-query | 通过 | `<none>` |
+| prompt-injection | 通过 | multi_rule, sv_zh, sv_example, articles_zh |
+| same-document-multi-chunk | 通过 | multi_example, multi_mistake, sv_zh, sv_example |
+
+汇总：**10/10 通过**；expected chunk 全部进入 top-4；干扰文档零误引；无关查询零返回；注入文档
+没有被引用，讲解指令仍由 system prompt 固定。同一文档多 chunk 的案例中，`multi.md` 的两个 chunk
+进入 top-4，第三个被每文档上限排除，验证了 2 条上限。
+
+fixture 只证明“真实 embedding 下这组小样本的排序符合预期”，不证明模型不会执行注入内容；注入
+防护仍由 `ExplanationPrompt` 的分隔符与 system prompt 声明承担，并由后端单元测试覆盖。
+
 
 本评测只覆盖「检索是否返回真实、含目标词形、且与查询相近的句子」，**不**评估模型中文解释与替换后
 例句的语义连贯性；没有证据表明需要改变 Vocabulary Suggestion 的语义，也没有把候选例句前移进提示词。

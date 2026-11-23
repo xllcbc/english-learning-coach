@@ -487,7 +487,7 @@ export default function App() {
           onRetry={loadSavedVocabulary}
           onDelete={handleDeleteSavedVocabulary}
         />
-        <UserDocumentsPanel />
+        <UserDocumentsPanel realMode={!isMock} />
       </div>
     </div>
   );

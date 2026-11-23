@@ -12,17 +12,40 @@ import java.util.UUID;
 
 /**
  * Finalizes a generation whose Document Chunks were stored by the upload request. An active
- * generation exposes {@code PARSING} and {@code CHUNKING}; a pending replacement keeps the document
- * {@code READY} and only switches the active pointer after every chunk is available.
+ * generation exposes {@code PARSING}, {@code CHUNKING} and (in REAL mode) {@code EMBEDDING}; a
+ * pending replacement keeps the document {@code READY} and only switches the active pointer after
+ * every chunk is available and embedded. Mock mode has no embedder and goes straight to
+ * {@code READY}.
  */
 public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
 
     private final JdbcClient jdbcClient;
     private final TransactionTemplate transactionTemplate;
+    private final DocumentChunkEmbedder embedder;
+    private final String chunkerVersion;
 
     public DefaultUserDocumentProcessor(JdbcClient jdbcClient, TransactionTemplate transactionTemplate) {
+        this(jdbcClient, transactionTemplate, null, null);
+    }
+
+    public DefaultUserDocumentProcessor(
+            JdbcClient jdbcClient,
+            TransactionTemplate transactionTemplate,
+            DocumentChunkEmbedder embedder
+    ) {
+        this(jdbcClient, transactionTemplate, embedder, null);
+    }
+
+    public DefaultUserDocumentProcessor(
+            JdbcClient jdbcClient,
+            TransactionTemplate transactionTemplate,
+            DocumentChunkEmbedder embedder,
+            String chunkerVersion
+    ) {
         this.jdbcClient = jdbcClient;
         this.transactionTemplate = transactionTemplate;
+        this.embedder = embedder;
+        this.chunkerVersion = chunkerVersion;
     }
 
     @Override
@@ -33,7 +56,8 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
         }
 
         if (state.pendingGeneration() != null && state.pendingGeneration() == generation) {
-            finalizeReplacement(documentId, generation);
+            String embeddingModel = embedIfConfigured(documentId, generation);
+            finalizeReplacement(documentId, generation, embeddingModel);
             return;
         }
         if (state.activeGeneration() != generation) {
@@ -42,6 +66,7 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
 
         markStatus(documentId, DocumentStatus.PARSING);
         markStatus(documentId, DocumentStatus.CHUNKING);
+        String embeddingModel = embedIfConfigured(documentId, generation);
 
         transactionTemplate.executeWithoutResult(status -> {
             State current = loadStateForUpdate(documentId).orElse(null);
@@ -55,18 +80,24 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
             if (chunkCount == 0) {
                 throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
             }
+            requireEveryChunkEmbedded(documentId, generation);
 
             jdbcClient.sql("""
                             UPDATE user_document
                             SET status = :status,
                                 chunk_count = :chunkCount,
                                 error_code = NULL,
+                                embedding_model = NULLIF(CAST(:embeddingModel AS VARCHAR), ''),
+                                chunker_version = COALESCE(
+                                    NULLIF(CAST(:chunkerVersion AS VARCHAR), ''), chunker_version),
                                 active_generation = :generation,
                                 updated_at = :updatedAt
                             WHERE id = :id
                             """)
                     .param("status", DocumentStatus.READY.name())
                     .param("chunkCount", chunkCount)
+                    .param("embeddingModel", embeddingModel == null ? "" : embeddingModel)
+                    .param("chunkerVersion", chunkerVersion == null ? "" : chunkerVersion)
                     .param("generation", generation)
                     .param("updatedAt", Timestamp.from(Instant.now()))
                     .param("id", documentId)
@@ -78,7 +109,7 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
      * Atomically switches to the pending generation and then deletes the previous generation.
      * Until this transaction commits, retrieval still sees the old active generation.
      */
-    private void finalizeReplacement(UUID documentId, int generation) {
+    private void finalizeReplacement(UUID documentId, int generation, String embeddingModel) {
         transactionTemplate.executeWithoutResult(status -> {
             Optional<PendingMetadata> pending = loadPendingForUpdate(documentId);
             if (pending.isEmpty() || pending.get().generation() != generation) {
@@ -89,12 +120,16 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
             if (chunkCount == 0) {
                 throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
             }
+            requireEveryChunkEmbedded(documentId, generation);
 
             jdbcClient.sql("""
                             UPDATE user_document
                             SET status = :status,
                                 chunk_count = :chunkCount,
                                 error_code = NULL,
+                                embedding_model = NULLIF(CAST(:embeddingModel AS VARCHAR), ''),
+                                chunker_version = COALESCE(
+                                    NULLIF(CAST(:chunkerVersion AS VARCHAR), ''), chunker_version),
                                 active_generation = :generation,
                                 content_hash = :contentHash,
                                 char_count = :charCount,
@@ -107,6 +142,8 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
                             """)
                     .param("status", DocumentStatus.READY.name())
                     .param("chunkCount", chunkCount)
+                    .param("embeddingModel", embeddingModel == null ? "" : embeddingModel)
+                    .param("chunkerVersion", chunkerVersion == null ? "" : chunkerVersion)
                     .param("generation", generation)
                     .param("contentHash", pending.get().contentHash())
                     .param("charCount", pending.get().charCount())
@@ -169,6 +206,40 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
                 .param("generation", generation)
                 .query(Integer.class)
                 .single();
+    }
+
+    /**
+     * A REAL document becomes {@code READY} only when every chunk of the generation has a vector.
+     * Mock mode has no embedder and therefore no such requirement.
+     */
+    private void requireEveryChunkEmbedded(UUID documentId, int generation) {
+        if (embedder == null) {
+            return;
+        }
+        int unembedded = jdbcClient.sql("""
+                        SELECT count(*)
+                        FROM document_chunk
+                        WHERE document_id = :documentId
+                            AND generation = :generation
+                            AND embedding IS NULL
+                        """)
+                .param("documentId", documentId)
+                .param("generation", generation)
+                .query(Integer.class)
+                .single();
+        if (unembedded > 0) {
+            throw new DocumentProcessingException(DocumentErrorCode.EMBEDDING_FAILED);
+        }
+    }
+
+    private String embedIfConfigured(UUID documentId, int generation) {
+        if (embedder == null) {
+            return null;
+        }
+        // Exposes EMBEDDING for an initial upload; a replacement keeps status READY and the old
+        // generation searchable until the new one is complete.
+        markStatus(documentId, DocumentStatus.EMBEDDING);
+        return embedder.embed(documentId, generation);
     }
 
     /**

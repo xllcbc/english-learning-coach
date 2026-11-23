@@ -29,6 +29,7 @@ const STATUS_LABELS: Record<UserDocumentStatus, string> = {
 
 const FAILURE_MESSAGES: Record<string, string> = {
   PROCESSING_FAILED: '文档处理失败，请稍后重试。',
+  EMBEDDING_FAILED: '文档向量生成失败，请稍后重试。',
   EMPTY_DOCUMENT: '文档内容为空或只有空白字符。',
   INVALID_ENCODING: '文档不是有效的 UTF-8 文本。',
   BINARY_DOCUMENT: '文档看起来是二进制内容，无法作为文本处理。',
@@ -37,13 +38,14 @@ const FAILURE_MESSAGES: Record<string, string> = {
 
 interface UserDocumentsPanelProps {
   pollIntervalMs?: number;
+  realMode?: boolean;
 }
 
 function failureMessage(errorCode: string | null): string {
   return FAILURE_MESSAGES[errorCode ?? ''] ?? '文档处理失败，请稍后重试。';
 }
 
-export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanelProps) {
+export function UserDocumentsPanel({ pollIntervalMs = 1500, realMode = false }: UserDocumentsPanelProps) {
   const [documents, setDocuments] = useState<UserDocumentSummary[]>([]);
   const [listStatus, setListStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [listError, setListError] = useState<string | null>(null);
@@ -75,6 +77,11 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
       PROCESSING_STATUSES.has(document.status)
       || document.replacementStatus === 'PROCESSING',
   );
+  const missingVectorIndexCount = realMode
+    ? documents.filter(
+        (document) => document.status === 'READY' && !document.embeddingIndexed,
+      ).length
+    : 0;
 
   useEffect(() => {
     if (!hasProcessingDocument) {
@@ -200,6 +207,13 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
         <p className="document-upload-hint">请勿上传敏感信息</p>
       </form>
 
+      {missingVectorIndexCount > 0 && (
+        <div className="document-index-notice" role="status">
+          <strong>{missingVectorIndexCount} 篇文档尚未建立向量索引</strong>
+          <span>重建索引后，它们才会参与真实模型的教师讲解检索。</span>
+        </div>
+      )}
+
       {notice && (
         <div className="document-notice" role="status">
           {notice}
@@ -258,6 +272,17 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
               </div>
               <p className="document-meta">
                 {document.chunkCount} 个分块
+                {realMode && document.status === 'READY' && (
+                  <span
+                    className={
+                      document.embeddingIndexed
+                        ? 'document-index-state document-index-state-ready'
+                        : 'document-index-state document-index-state-missing'
+                    }
+                  >
+                    {document.embeddingIndexed ? '已建立向量索引' : '尚未建立向量索引'}
+                  </span>
+                )}
                 {!document.active && <span className="document-inactive">已停用</span>}
               </p>
               <div className="document-actions">

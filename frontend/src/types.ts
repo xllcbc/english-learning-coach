@@ -118,6 +118,9 @@ export interface UserDocumentSummary {
   active: boolean;
   charCount: number;
   chunkCount: number;
+  embeddingIndexed: boolean;
+  embeddingModel: string | null;
+  chunkerVersion: string;
   errorCode: string | null;
   replacementStatus: UserDocumentReplacementStatus;
   replacementErrorCode: string | null;

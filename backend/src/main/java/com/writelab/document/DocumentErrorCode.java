@@ -19,7 +19,8 @@ public enum DocumentErrorCode {
     DOCUMENT_RETRY_UNAVAILABLE(HttpStatus.CONFLICT, "该文档缺少可重试的已解析内容，请删除后重新上传。"),
     INVALID_DOCUMENT_UPDATE(HttpStatus.BAD_REQUEST, "请求参数不合法。"),
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "找不到对应的用户文档。"),
-    PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文档处理失败，请稍后重试。");
+    PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文档处理失败，请稍后重试。"),
+    EMBEDDING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文档向量生成失败，请稍后重试。");
 
     private final HttpStatus status;
     private final String message;

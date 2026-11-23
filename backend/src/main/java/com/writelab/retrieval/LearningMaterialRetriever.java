@@ -32,4 +32,17 @@ public interface LearningMaterialRetriever {
      *         the relevance threshold, which means the explanation must not cite anything
      */
     List<RankedGroundingMaterial> groundingMaterials(Collection<IssueCategory> categories, String queryText);
+
+    /**
+     * The shared-query-vector variant used by the explanation orchestrator. The deterministic
+     * implementation ignores the vector; the semantic implementation ranks with it instead of
+     * embedding the query text a second time.
+     *
+     * @param queryVector the vector already built from {@code queryText}, or {@code null} when the
+     *                    caller has no embedding client (Mock mode)
+     */
+    default List<RankedGroundingMaterial> groundingMaterials(
+            Collection<IssueCategory> categories, String queryText, float[] queryVector) {
+        return groundingMaterials(categories, queryText);
+    }
 }
