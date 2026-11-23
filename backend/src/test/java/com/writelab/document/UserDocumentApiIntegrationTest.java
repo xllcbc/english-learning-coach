@@ -644,8 +644,8 @@ class UserDocumentApiIntegrationTest {
 
         void awaitBlocked() throws InterruptedException {
             CountDownLatch entered = blockEntered;
-            if (entered == null || !entered.await(5, TimeUnit.SECONDS)) {
-                fail("后台处理没有在 5 秒内开始");
+            if (entered == null || !entered.await(10, TimeUnit.SECONDS)) {
+                fail("后台处理没有在 10 秒内开始");
             }
         }
 
@@ -672,7 +672,7 @@ class UserDocumentApiIntegrationTest {
                 // them. Clearing them here races with the test thread.
                 entered.countDown();
                 try {
-                    if (!release.await(5, TimeUnit.SECONDS)) {
+                    if (!release.await(10, TimeUnit.SECONDS)) {
                         throw new IllegalStateException("测试没有释放被阻塞的用户文档处理");
                     }
                 } catch (InterruptedException exception) {

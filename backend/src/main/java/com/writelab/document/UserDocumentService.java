@@ -303,7 +303,14 @@ public class UserDocumentService {
                     : DocumentErrorCode.PROCESSING_FAILED;
             log.warn("User Document processing failed: documentId={}, errorCode={}",
                     documentId, code.name());
-            markFailed(documentId, generation, code);
+            try {
+                markFailed(documentId, generation, code);
+            } catch (RuntimeException markFailure) {
+                // A shutdown or a transient database failure must not take down the executor thread;
+                // the stored generation can still be resumed through retry.
+                log.warn("User Document failure state could not be recorded: documentId={}",
+                        documentId, markFailure);
+            }
         }
     }
 
