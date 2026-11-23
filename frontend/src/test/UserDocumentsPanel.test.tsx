@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,6 +31,8 @@ const parsingDocument: UserDocumentSummary = {
   charCount: 1200,
   chunkCount: 0,
   errorCode: null,
+  replacementStatus: 'NONE',
+  replacementErrorCode: null,
   createdAt: '2026-11-23T08:00:00Z',
   updatedAt: '2026-11-23T08:00:00Z',
 };
@@ -161,6 +163,56 @@ describe('UserDocumentsPanel', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('停用失败，请稍后重试。');
     expect(within(list).getByRole('button', { name: '停用' })).toBeInTheDocument();
+  });
+
+  it('shows a replacement in progress and polls until it finishes', async () => {
+    const replacingDocument: UserDocumentSummary = {
+      ...readyDocument,
+      replacementStatus: 'PROCESSING',
+    };
+    api.listUserDocuments
+      .mockResolvedValueOnce([replacingDocument])
+      .mockResolvedValue([readyDocument]);
+
+    render(<UserDocumentsPanel pollIntervalMs={10} />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    expect(within(list).getByText('更新中')).toBeInTheDocument();
+    expect(within(list).getByText('3 个分块')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(within(list).queryByText('更新中')).not.toBeInTheDocument();
+    });
+    expect(within(list).getByText('已就绪')).toBeInTheDocument();
+  });
+
+  it('shows the old content, a replacement failure reason, and retries it', async () => {
+    const failedReplacement: UserDocumentSummary = {
+      ...readyDocument,
+      replacementStatus: 'FAILED',
+      replacementErrorCode: 'PROCESSING_FAILED',
+    };
+    api.listUserDocuments
+      .mockResolvedValueOnce([failedReplacement])
+      .mockResolvedValue([readyDocument]);
+    api.retryUserDocument.mockResolvedValue({
+      ...readyDocument,
+      replacementStatus: 'PROCESSING',
+    });
+
+    render(<UserDocumentsPanel pollIntervalMs={10} />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    expect(within(list).getByText('更新失败')).toBeInTheDocument();
+    expect(within(list).getByText('更新失败原因：文档处理失败，请稍后重试。')).toBeInTheDocument();
+    expect(within(list).getByText('3 个分块')).toBeInTheDocument();
+
+    await userEvent.click(within(list).getByRole('button', { name: '重试' }));
+
+    expect(api.retryUserDocument).toHaveBeenCalledWith('doc-1');
+    await waitFor(() => {
+      expect(within(list).queryByText('更新失败')).not.toBeInTheDocument();
+    });
   });
 
   it('retries a failed document and polls it back to ready', async () => {

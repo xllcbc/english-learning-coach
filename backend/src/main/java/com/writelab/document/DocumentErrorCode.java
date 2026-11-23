@@ -16,6 +16,7 @@ public enum DocumentErrorCode {
     INVALID_ENCODING(HttpStatus.UNPROCESSABLE_ENTITY, "文档不是有效的 UTF-8 文本。"),
     BINARY_DOCUMENT(HttpStatus.UNPROCESSABLE_ENTITY, "文档看起来是二进制内容，无法作为文本处理。"),
     DUPLICATE_DOCUMENT(HttpStatus.CONFLICT, "相同内容的文档已经存在。"),
+    DOCUMENT_PROCESSING(HttpStatus.CONFLICT, "文档正在处理中，请稍后再试。"),
     INVALID_DOCUMENT_UPDATE(HttpStatus.BAD_REQUEST, "请求参数不合法。"),
     DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "找不到对应的用户文档。"),
     PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "文档处理失败，请稍后重试。");

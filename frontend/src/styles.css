@@ -1350,7 +1350,8 @@ textarea {
 .document-status-uploaded,
 .document-status-parsing,
 .document-status-chunking,
-.document-status-embedding {
+.document-status-embedding,
+.document-status-updating {
   background: var(--amber-soft);
   color: #7a4a05;
 }

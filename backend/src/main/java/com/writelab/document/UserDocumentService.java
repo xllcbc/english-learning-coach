@@ -17,10 +17,13 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -29,6 +32,10 @@ import java.util.concurrent.ExecutorService;
  * Accepts User Document uploads, enforces the size/count/chunk limits, deduplicates by content hash,
  * and schedules background indexing. Only parsed text chunks are stored; the original file is never
  * persisted and the file name is display-only.
+ *
+ * <p>An upload whose file name already exists replaces that same User Document in place. The new
+ * content is stored under a pending generation and the active generation keeps serving retrieval
+ * until the background run succeeds and atomically switches the pointer.
  */
 @Service
 public class UserDocumentService {
@@ -101,29 +108,31 @@ public class UserDocumentService {
             throw new DuplicateDocumentException(existing.get());
         }
 
-        UUID documentId = UUID.randomUUID();
+        UUID newDocumentId = UUID.randomUUID();
         Instant now = Instant.now();
         int charCount = text.codePointCount(0, text.length());
+        UploadTarget target;
         try {
-            transactionTemplate.executeWithoutResult(status -> {
+            target = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 lockUploadBudget();
-                long documentCount = countDocuments();
-                if (documentCount >= properties.maxDocuments()) {
+                Optional<UserDocumentSummary> duplicate = findByHash(contentHash);
+                if (duplicate.isPresent()) {
+                    throw new DuplicateDocumentException(duplicate.get());
+                }
+
+                Optional<DocumentRow> sameName = findByNameForUpdate(filename);
+                if (sameName.isPresent()) {
+                    return stageReplacement(sameName.get(), contentHash, charCount, chunks, now);
+                }
+
+                if (countDocuments() >= properties.maxDocuments()) {
                     throw new UserDocumentException(DocumentErrorCode.DOCUMENT_LIMIT_REACHED);
                 }
-                long chunkTotal = totalChunks();
-                if (chunkTotal + chunks.size() > properties.maxChunks()) {
-                    throw new UserDocumentException(DocumentErrorCode.CHUNK_LIMIT_REACHED);
-                }
-                insertDocument(
-                        documentId,
-                        filename,
-                        contentHash,
-                        charCount,
-                        chunks.size(),
-                        now);
-                insertChunks(documentId, INITIAL_GENERATION, chunks);
-            });
+                ensureChunkBudget(0, chunks.size());
+                insertDocument(newDocumentId, filename, contentHash, charCount, chunks.size(), now);
+                insertChunks(newDocumentId, INITIAL_GENERATION, chunks);
+                return new UploadTarget(newDocumentId, INITIAL_GENERATION, DocumentStatus.UPLOADED);
+            }));
         } catch (DataIntegrityViolationException exception) {
             Optional<UserDocumentSummary> raceWinner = findByHash(contentHash);
             if (raceWinner.isPresent()) {
@@ -132,15 +141,17 @@ public class UserDocumentService {
             throw exception;
         }
 
-        log.info("User Document accepted: documentId={}, status={}", documentId, DocumentStatus.UPLOADED);
-        executor.execute(() -> processAsync(documentId, INITIAL_GENERATION));
-        return new DocumentUploadResponse(documentId, DocumentStatus.UPLOADED);
+        log.info("User Document accepted: documentId={}, generation={}, status={}",
+                target.documentId(), target.generation(), target.status());
+        executor.execute(() -> processAsync(target.documentId(), target.generation()));
+        return new DocumentUploadResponse(target.documentId(), target.status());
     }
 
     public List<UserDocumentSummary> list() {
         return jdbcClient.sql("""
                         SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, created_at, updated_at
+                               error_code, pending_generation, pending_error_code,
+                               created_at, updated_at
                         FROM user_document
                         ORDER BY created_at DESC, id DESC
                         """)
@@ -151,7 +162,8 @@ public class UserDocumentService {
     public UserDocumentSummary find(UUID documentId) {
         return jdbcClient.sql("""
                         SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, created_at, updated_at
+                               error_code, pending_generation, pending_error_code,
+                               created_at, updated_at
                         FROM user_document
                         WHERE id = :id
                         """)
@@ -197,6 +209,96 @@ public class UserDocumentService {
         return find(documentId);
     }
 
+    /**
+     * Retries a failed generation. Initial failures retry the active generation; failed in-place
+     * replacements retry the pending generation. The chunks are already stored, so success cannot
+     * duplicate a document or its Document Chunks. A concurrent retry observes the reset state and
+     * is a no-op.
+     */
+    public UserDocumentSummary retry(UUID documentId) {
+        Integer generation = transactionTemplate.execute(status -> {
+            DocumentRow row = findRowForUpdate(documentId)
+                    .orElseThrow(() -> new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND));
+
+            if (row.pendingGeneration() != null && row.pendingErrorCode() != null) {
+                int updated = jdbcClient.sql("""
+                                UPDATE user_document
+                                SET pending_error_code = NULL, updated_at = :updatedAt
+                                WHERE id = :id
+                                  AND pending_generation = :generation
+                                  AND pending_error_code IS NOT NULL
+                                """)
+                        .param("updatedAt", Timestamp.from(Instant.now()))
+                        .param("id", documentId)
+                        .param("generation", row.pendingGeneration())
+                        .update();
+                return updated == 0 ? null : row.pendingGeneration();
+            }
+
+            if (row.status() == DocumentStatus.FAILED) {
+                int updated = jdbcClient.sql("""
+                                UPDATE user_document
+                                SET status = :status,
+                                    chunk_count = 0,
+                                    error_code = NULL,
+                                    updated_at = :updatedAt
+                                WHERE id = :id AND status = :failedStatus
+                                """)
+                        .param("status", DocumentStatus.UPLOADED.name())
+                        .param("updatedAt", Timestamp.from(Instant.now()))
+                        .param("id", documentId)
+                        .param("failedStatus", DocumentStatus.FAILED.name())
+                        .update();
+                return updated == 0 ? null : row.activeGeneration();
+            }
+
+            return null;
+        });
+
+        if (generation != null) {
+            executor.execute(() -> processAsync(documentId, generation));
+        }
+        return find(documentId);
+    }
+
+    private UploadTarget stageReplacement(
+            DocumentRow existing,
+            String contentHash,
+            int charCount,
+            List<DocumentChunker.Chunk> chunks,
+            Instant now
+    ) {
+        if (existing.pendingGeneration() != null) {
+            if (existing.pendingErrorCode() == null) {
+                throw new UserDocumentException(DocumentErrorCode.DOCUMENT_PROCESSING);
+            }
+            deleteChunks(existing.id(), existing.pendingGeneration());
+            ensureChunkBudget(existing.chunkCount(), chunks.size());
+            int generation = existing.pendingGeneration();
+            insertChunks(existing.id(), generation, chunks);
+            markPending(existing.id(), generation, contentHash, charCount, now);
+            return new UploadTarget(existing.id(), generation, existing.status());
+        }
+
+        if (existing.status() == DocumentStatus.READY) {
+            ensureChunkBudget(existing.chunkCount(), chunks.size());
+            int generation = existing.activeGeneration() + 1;
+            insertChunks(existing.id(), generation, chunks);
+            markPending(existing.id(), generation, contentHash, charCount, now);
+            return new UploadTarget(existing.id(), generation, existing.status());
+        }
+
+        if (existing.status() == DocumentStatus.FAILED) {
+            ensureChunkBudget(existing.chunkCount(), chunks.size());
+            deleteAllChunks(existing.id());
+            resetDocument(existing.id(), contentHash, charCount, now);
+            insertChunks(existing.id(), INITIAL_GENERATION, chunks);
+            return new UploadTarget(existing.id(), INITIAL_GENERATION, DocumentStatus.UPLOADED);
+        }
+
+        throw new UserDocumentException(DocumentErrorCode.DOCUMENT_PROCESSING);
+    }
+
     private void processAsync(UUID documentId, int generation) {
         try {
             processor.process(documentId, generation);
@@ -212,77 +314,122 @@ public class UserDocumentService {
     }
 
     /**
-     * Marks the generation {@code FAILED} but keeps its Document Chunks. Retrying only has to
-     * finish the stored generation; the parsed text is never available again as a file.
+     * Marks the generation failed but keeps its Document Chunks. An initial failure marks the whole
+     * document {@code FAILED}; a replacement failure only records the pending error, leaving the
+     * active generation and its status untouched.
      */
     private void markFailed(UUID documentId, int generation, DocumentErrorCode code) {
         transactionTemplate.executeWithoutResult(status -> {
-            Integer activeGeneration = activeGeneration(documentId);
-            if (activeGeneration == null || activeGeneration != generation) {
+            DocumentRow row = findRowForUpdate(documentId).orElse(null);
+            if (row == null) {
                 return;
             }
-            jdbcClient.sql("""
-                            UPDATE user_document
-                            SET status = :status,
-                                chunk_count = 0,
-                                error_code = :errorCode,
-                                updated_at = :updatedAt
-                            WHERE id = :id
-                            """)
-                    .param("status", DocumentStatus.FAILED.name())
-                    .param("errorCode", code.name())
-                    .param("updatedAt", Timestamp.from(Instant.now()))
-                    .param("id", documentId)
-                    .update();
-        });
-    }
 
-    /**
-     * Retries a FAILED generation. The chunks are already stored, so success cannot duplicate a
-     * document or its Document Chunks. A concurrent retry observes the reset status and is a no-op.
-     */
-    public UserDocumentSummary retry(UUID documentId) {
-        Integer generation = transactionTemplate.execute(status -> {
-            Integer activeGeneration = activeGenerationForUpdate(documentId);
-            if (activeGeneration == null) {
-                throw new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND);
+            if (row.pendingGeneration() != null && row.pendingGeneration() == generation) {
+                jdbcClient.sql("""
+                                UPDATE user_document
+                                SET pending_error_code = :errorCode, updated_at = :updatedAt
+                                WHERE id = :id AND pending_generation = :generation
+                                """)
+                        .param("errorCode", code.name())
+                        .param("updatedAt", Timestamp.from(Instant.now()))
+                        .param("id", documentId)
+                        .param("generation", generation)
+                        .update();
+                return;
             }
-            int updated = jdbcClient.sql("""
-                            UPDATE user_document
-                            SET status = :status,
-                                chunk_count = 0,
-                                error_code = NULL,
-                                updated_at = :updatedAt
-                            WHERE id = :id AND status = :failedStatus
-                            """)
-                    .param("status", DocumentStatus.UPLOADED.name())
-                    .param("updatedAt", Timestamp.from(Instant.now()))
-                    .param("id", documentId)
-                    .param("failedStatus", DocumentStatus.FAILED.name())
-                    .update();
-            return updated == 0 ? null : activeGeneration;
+
+            if (row.activeGeneration() == generation && row.status() != DocumentStatus.READY) {
+                jdbcClient.sql("""
+                                UPDATE user_document
+                                SET status = :status,
+                                    chunk_count = 0,
+                                    error_code = :errorCode,
+                                    updated_at = :updatedAt
+                                WHERE id = :id
+                                """)
+                        .param("status", DocumentStatus.FAILED.name())
+                        .param("errorCode", code.name())
+                        .param("updatedAt", Timestamp.from(Instant.now()))
+                        .param("id", documentId)
+                        .update();
+            }
         });
+    }
 
-        if (generation != null) {
-            executor.execute(() -> processAsync(documentId, generation));
+    private void markPending(
+            UUID documentId,
+            int generation,
+            String contentHash,
+            int charCount,
+            Instant now
+    ) {
+        jdbcClient.sql("""
+                        UPDATE user_document
+                        SET pending_generation = :generation,
+                            pending_content_hash = :contentHash,
+                            pending_char_count = :charCount,
+                            pending_error_code = NULL,
+                            updated_at = :updatedAt
+                        WHERE id = :id
+                        """)
+                .param("generation", generation)
+                .param("contentHash", contentHash)
+                .param("charCount", charCount)
+                .param("updatedAt", Timestamp.from(now))
+                .param("id", documentId)
+                .update();
+    }
+
+    private void resetDocument(UUID documentId, String contentHash, int charCount, Instant now) {
+        jdbcClient.sql("""
+                        UPDATE user_document
+                        SET content_hash = :contentHash,
+                            status = :status,
+                            error_code = NULL,
+                            char_count = :charCount,
+                            chunk_count = 0,
+                            embedding_model = NULL,
+                            chunker_version = :chunkerVersion,
+                            active_generation = :generation,
+                            pending_generation = NULL,
+                            pending_content_hash = NULL,
+                            pending_char_count = NULL,
+                            pending_error_code = NULL,
+                            updated_at = :updatedAt
+                        WHERE id = :id
+                        """)
+                .param("contentHash", contentHash)
+                .param("status", DocumentStatus.UPLOADED.name())
+                .param("charCount", charCount)
+                .param("chunkerVersion", chunker.version())
+                .param("generation", INITIAL_GENERATION)
+                .param("updatedAt", Timestamp.from(now))
+                .param("id", documentId)
+                .update();
+    }
+
+    private void ensureChunkBudget(long replacedChunkCount, int newChunkCount) {
+        long chunkTotal = totalChunks();
+        if (chunkTotal - replacedChunkCount + newChunkCount > properties.maxChunks()) {
+            throw new UserDocumentException(DocumentErrorCode.CHUNK_LIMIT_REACHED);
         }
-        return find(documentId);
     }
 
-    private Integer activeGeneration(UUID documentId) {
-        return jdbcClient.sql("SELECT active_generation FROM user_document WHERE id = :id")
-                .param("id", documentId)
-                .query(Integer.class)
-                .optional()
-                .orElse(null);
+    private void deleteChunks(UUID documentId, int generation) {
+        jdbcClient.sql("""
+                        DELETE FROM document_chunk
+                        WHERE document_id = :documentId AND generation = :generation
+                        """)
+                .param("documentId", documentId)
+                .param("generation", generation)
+                .update();
     }
 
-    private Integer activeGenerationForUpdate(UUID documentId) {
-        return jdbcClient.sql("SELECT active_generation FROM user_document WHERE id = :id FOR UPDATE")
-                .param("id", documentId)
-                .query(Integer.class)
-                .optional()
-                .orElse(null);
+    private void deleteAllChunks(UUID documentId) {
+        jdbcClient.sql("DELETE FROM document_chunk WHERE document_id = :documentId")
+                .param("documentId", documentId)
+                .update();
     }
 
     private void insertChunks(UUID documentId, int generation, List<DocumentChunker.Chunk> chunks) {
@@ -324,7 +471,7 @@ public class UserDocumentService {
                             created_at, updated_at
                         ) VALUES (
                             :id, :filename, :contentHash, :status, TRUE, :charCount, :chunkCount,
-                            NULL, :chunkerVersion, NULL, 1,
+                            NULL, :chunkerVersion, NULL, :generation,
                             :createdAt, :updatedAt
                         )
                         """)
@@ -335,14 +482,15 @@ public class UserDocumentService {
                 .param("charCount", charCount)
                 .param("chunkCount", chunkCount)
                 .param("chunkerVersion", chunker.version())
+                .param("generation", INITIAL_GENERATION)
                 .param("createdAt", Timestamp.from(now))
                 .param("updatedAt", Timestamp.from(now))
                 .update();
     }
 
     /**
-     * Serializes uploads so the document-count and chunk-budget checks and the insert see one
-     * consistent budget, even before the background processor writes any Document Chunks.
+     * Serializes uploads so the duplicate, same-name, document-count and chunk-budget checks and
+     * the writes see one consistent state.
      */
     private void lockUploadBudget() {
         jdbcClient.sql("SELECT pg_advisory_xact_lock(:key)")
@@ -354,12 +502,43 @@ public class UserDocumentService {
     private Optional<UserDocumentSummary> findByHash(String contentHash) {
         return jdbcClient.sql("""
                         SELECT id, filename, status, active, char_count, chunk_count,
-                               error_code, created_at, updated_at
+                               error_code, pending_generation, pending_error_code,
+                               created_at, updated_at
                         FROM user_document
-                        WHERE content_hash = :hash
+                        WHERE content_hash = :hash OR pending_content_hash = :hash
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
                         """)
                 .param("hash", contentHash)
                 .query(UserDocumentService::toSummary)
+                .optional();
+    }
+
+    private Optional<DocumentRow> findByNameForUpdate(String filename) {
+        return jdbcClient.sql("""
+                        SELECT id, status, active_generation, pending_generation,
+                               pending_error_code, chunk_count
+                        FROM user_document
+                        WHERE filename = :filename
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT 1
+                        FOR UPDATE
+                        """)
+                .param("filename", filename)
+                .query(UserDocumentService::toRow)
+                .optional();
+    }
+
+    private Optional<DocumentRow> findRowForUpdate(UUID documentId) {
+        return jdbcClient.sql("""
+                        SELECT id, status, active_generation, pending_generation,
+                               pending_error_code, chunk_count
+                        FROM user_document
+                        WHERE id = :id
+                        FOR UPDATE
+                        """)
+                .param("id", documentId)
+                .query(UserDocumentService::toRow)
                 .optional();
     }
 
@@ -375,8 +554,13 @@ public class UserDocumentService {
                 .single();
     }
 
-    private static UserDocumentSummary toSummary(java.sql.ResultSet resultSet, int rowNumber)
-            throws java.sql.SQLException {
+    private static UserDocumentSummary toSummary(ResultSet resultSet, int rowNumber)
+            throws SQLException {
+        Integer pendingGeneration = resultSet.getObject("pending_generation", Integer.class);
+        String pendingError = resultSet.getString("pending_error_code");
+        ReplacementStatus replacementStatus = pendingGeneration == null
+                ? ReplacementStatus.NONE
+                : pendingError == null ? ReplacementStatus.PROCESSING : ReplacementStatus.FAILED;
         return new UserDocumentSummary(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("filename"),
@@ -385,8 +569,20 @@ public class UserDocumentService {
                 resultSet.getInt("char_count"),
                 resultSet.getInt("chunk_count"),
                 resultSet.getString("error_code"),
+                replacementStatus,
+                pendingError,
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant());
+    }
+
+    private static DocumentRow toRow(ResultSet resultSet, int rowNumber) throws SQLException {
+        return new DocumentRow(
+                resultSet.getObject("id", UUID.class),
+                DocumentStatus.valueOf(resultSet.getString("status")),
+                resultSet.getInt("active_generation"),
+                resultSet.getObject("pending_generation", Integer.class),
+                resultSet.getString("pending_error_code"),
+                resultSet.getInt("chunk_count"));
     }
 
     private static String displayFilename(String originalFilename) {
@@ -436,5 +632,18 @@ public class UserDocumentService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 不可用", exception);
         }
+    }
+
+    private record UploadTarget(UUID documentId, int generation, DocumentStatus status) {
+    }
+
+    private record DocumentRow(
+            UUID id,
+            DocumentStatus status,
+            int activeGeneration,
+            Integer pendingGeneration,
+            String pendingErrorCode,
+            int chunkCount
+    ) {
     }
 }

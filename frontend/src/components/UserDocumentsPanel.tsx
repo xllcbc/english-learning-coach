@@ -70,8 +70,10 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     void loadDocuments();
   }, [loadDocuments]);
 
-  const hasProcessingDocument = documents.some((document) =>
-    PROCESSING_STATUSES.has(document.status),
+  const hasProcessingDocument = documents.some(
+    (document) =>
+      PROCESSING_STATUSES.has(document.status)
+      || document.replacementStatus === 'PROCESSING',
   );
 
   useEffect(() => {
@@ -250,6 +252,12 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                 <span className={`document-status document-status-${document.status.toLowerCase()}`}>
                   {STATUS_LABELS[document.status]}
                 </span>
+                {document.replacementStatus === 'PROCESSING' && (
+                  <span className="document-status document-status-updating">更新中</span>
+                )}
+                {document.replacementStatus === 'FAILED' && (
+                  <span className="document-status document-status-failed">更新失败</span>
+                )}
               </div>
               <p className="document-meta">
                 {document.chunkCount} 个分块
@@ -266,7 +274,8 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                     {document.active ? '停用' : '启用'}
                   </button>
                 )}
-                {document.status === 'FAILED' && (
+                {(document.status === 'FAILED'
+                  || document.replacementStatus === 'FAILED') && (
                   <button
                     type="button"
                     className="text-button"
@@ -289,6 +298,13 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                 <div className="document-failure" role="note">
                   <p>失败原因：{failureMessage(document.errorCode)}</p>
                   <p>错误码：{document.errorCode ?? 'PROCESSING_FAILED'}</p>
+                </div>
+              )}
+              {document.replacementStatus === 'FAILED' && (
+                <div className="document-failure" role="note">
+                  <p>更新失败原因：{failureMessage(document.replacementErrorCode)}</p>
+                  <p>错误码：{document.replacementErrorCode ?? 'PROCESSING_FAILED'}</p>
+                  <p>旧内容仍然可用，可以重试更新。</p>
                 </div>
               )}
             </li>

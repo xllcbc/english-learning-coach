@@ -14,6 +14,8 @@ public record UserDocumentSummary(
         int charCount,
         int chunkCount,
         String errorCode,
+        ReplacementStatus replacementStatus,
+        String replacementErrorCode,
         Instant createdAt,
         Instant updatedAt
 ) {

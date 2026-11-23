@@ -100,6 +100,8 @@ export type UserDocumentStatus =
   | 'READY'
   | 'FAILED';
 
+export type UserDocumentReplacementStatus = 'NONE' | 'PROCESSING' | 'FAILED';
+
 export interface UserDocumentSummary {
   id: string;
   filename: string;
@@ -108,6 +110,8 @@ export interface UserDocumentSummary {
   charCount: number;
   chunkCount: number;
   errorCode: string | null;
+  replacementStatus: UserDocumentReplacementStatus;
+  replacementErrorCode: string | null;
   createdAt: string;
   updatedAt: string;
 }

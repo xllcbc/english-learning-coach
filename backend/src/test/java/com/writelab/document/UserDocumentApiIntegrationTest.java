@@ -26,7 +26,10 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -173,6 +176,99 @@ class UserDocumentApiIntegrationTest {
     }
 
     @Test
+    void replacesChangedContentUnderTheSameDocumentAfterTheNewGenerationIsReady() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        DocumentBody before = awaitTerminal(documentId);
+        assertThat(before.status()).isEqualTo("READY");
+        assertThat(before.replacementStatus()).isEqualTo("NONE");
+
+        failableProcessor.blockNext();
+        HttpResponse<String> replacement = upload("grammar.md", replacementDocument());
+
+        assertThat(replacement.statusCode()).isEqualTo(202);
+        assertThat(objectMapper.readValue(replacement.body(), UploadBody.class).id())
+                .isEqualTo(documentId);
+
+        failableProcessor.awaitBlocked();
+        DocumentBody during = getDocument(documentId);
+        assertThat(during.status()).isEqualTo("READY");
+        assertThat(during.replacementStatus()).isEqualTo("PROCESSING");
+        assertThat(during.charCount()).isEqualTo(before.charCount());
+        assertThat(during.chunkCount()).isEqualTo(before.chunkCount());
+        assertThat(listDocuments()).singleElement()
+                .satisfies(document -> assertThat(document.id()).isEqualTo(documentId));
+
+        failableProcessor.releaseBlocked();
+        DocumentBody after = awaitDocument(documentId, document ->
+                document.status().equals("READY")
+                        && document.replacementStatus().equals("NONE"));
+
+        assertThat(after.charCount()).isNotEqualTo(before.charCount());
+        assertThat(after.chunkCount()).isPositive();
+        assertThat(after.replacementErrorCode()).isNull();
+        assertThat(countChunks(documentId)).isEqualTo(after.chunkCount());
+        assertThat(listDocuments()).singleElement()
+                .satisfies(document -> assertThat(document.id()).isEqualTo(documentId));
+    }
+
+    @Test
+    void keepsTheOldGenerationWhenReplacementFailsThenRetriesThePendingGeneration() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        DocumentBody before = awaitTerminal(documentId);
+
+        failableProcessor.failNext();
+        HttpResponse<String> replacement = upload("grammar.md", replacementDocument());
+
+        assertThat(replacement.statusCode()).isEqualTo(202);
+        DocumentBody failed = awaitDocument(documentId, document ->
+                document.replacementStatus().equals("FAILED"));
+
+        assertThat(failed.status()).isEqualTo("READY");
+        assertThat(failed.errorCode()).isNull();
+        assertThat(failed.replacementErrorCode()).isEqualTo("PROCESSING_FAILED");
+        assertThat(failed.charCount()).isEqualTo(before.charCount());
+        assertThat(failed.chunkCount()).isEqualTo(before.chunkCount());
+        assertThat(countChunks(documentId)).isGreaterThanOrEqualTo(before.chunkCount());
+
+        HttpResponse<String> retry = post("/api/documents/" + documentId + "/retry");
+
+        assertThat(retry.statusCode()).isEqualTo(202);
+        DocumentBody after = awaitDocument(documentId, document ->
+                document.status().equals("READY")
+                        && document.replacementStatus().equals("NONE"));
+
+        assertThat(after.charCount()).isNotEqualTo(before.charCount());
+        assertThat(after.chunkCount()).isPositive();
+        assertThat(after.replacementErrorCode()).isNull();
+        assertThat(countChunks(documentId)).isEqualTo(after.chunkCount());
+        assertThat(listDocuments()).hasSize(1);
+    }
+
+    @Test
+    void reuploadingTheSameNameWhileAReplacementIsRunningIsRejected() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        awaitTerminal(documentId);
+
+        failableProcessor.blockNext();
+        upload("grammar.md", replacementDocument());
+        failableProcessor.awaitBlocked();
+
+        byte[] differentAgain = (new String(replacementDocument(), StandardCharsets.UTF_8)
+                + "\n\n## Extra\n\nA paragraph that only exists in the second replacement.\n")
+                .getBytes(StandardCharsets.UTF_8);
+        HttpResponse<String> second = upload("grammar.md", differentAgain);
+
+        assertThat(second.statusCode()).isEqualTo(409);
+        assertThat(errorCode(second.body())).isEqualTo("DOCUMENT_PROCESSING");
+
+        failableProcessor.releaseBlocked();
+        awaitDocument(documentId, document -> document.replacementStatus().equals("NONE"));
+    }
+
+    @Test
     void deletesTheDocumentAndItsChunks() throws Exception {
         UUID documentId = objectMapper.readValue(
                 upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
@@ -217,11 +313,13 @@ class UserDocumentApiIntegrationTest {
         assertThat(body.document().id()).isEqualTo(documentId);
         assertThat(body.document().chunkCount()).isEqualTo(ready.chunkCount());
         assertThat(body.document().status()).isEqualTo("READY");
+        assertThat(body.document().replacementStatus()).isEqualTo("NONE");
 
         DocumentBody[] documents = listDocuments();
         assertThat(documents).hasSize(1);
         assertThat(documents[0].id()).isEqualTo(documentId);
         assertThat(documents[0].chunkCount()).isEqualTo(ready.chunkCount());
+        assertThat(documents[0].replacementStatus()).isEqualTo("NONE");
     }
 
     @Test
@@ -349,18 +447,24 @@ class UserDocumentApiIntegrationTest {
     }
 
     private DocumentBody awaitTerminal(UUID documentId) throws Exception {
+        return awaitDocument(documentId, document ->
+                document.status().equals("READY") || document.status().equals("FAILED"));
+    }
+
+    private DocumentBody awaitDocument(UUID documentId, Predicate<DocumentBody> predicate)
+            throws Exception {
         Instant deadline = Instant.now().plusSeconds(10);
         while (Instant.now().isBefore(deadline)) {
             HttpResponse<String> response = get("/api/documents/" + documentId);
             if (response.statusCode() == 200) {
                 DocumentBody document = objectMapper.readValue(response.body(), DocumentBody.class);
-                if (document.status().equals("READY") || document.status().equals("FAILED")) {
+                if (predicate.test(document)) {
                     return document;
                 }
             }
             Thread.sleep(25);
         }
-        fail("用户文档在 10 秒内没有进入终态: " + documentId);
+        fail("用户文档没有在 10 秒内进入预期状态: " + documentId);
         return null;
     }
 
@@ -487,6 +591,8 @@ class UserDocumentApiIntegrationTest {
 
         private final UserDocumentProcessor delegate;
         private final AtomicBoolean failNext = new AtomicBoolean(false);
+        private volatile CountDownLatch blockEntered;
+        private volatile CountDownLatch blockRelease;
 
         FailableUserDocumentProcessor(UserDocumentProcessor delegate) {
             this.delegate = delegate;
@@ -496,12 +602,49 @@ class UserDocumentApiIntegrationTest {
             failNext.set(true);
         }
 
+        void blockNext() {
+            blockEntered = new CountDownLatch(1);
+            blockRelease = new CountDownLatch(1);
+        }
+
+        void awaitBlocked() throws InterruptedException {
+            CountDownLatch entered = blockEntered;
+            if (entered == null || !entered.await(5, TimeUnit.SECONDS)) {
+                fail("后台处理没有在 5 秒内开始");
+            }
+        }
+
+        void releaseBlocked() {
+            CountDownLatch release = blockRelease;
+            if (release != null) {
+                release.countDown();
+            }
+        }
+
         void reset() {
             failNext.set(false);
+            releaseBlocked();
+            blockEntered = null;
+            blockRelease = null;
         }
 
         @Override
         public void process(UUID documentId, int generation) {
+            CountDownLatch entered = blockEntered;
+            CountDownLatch release = blockRelease;
+            if (entered != null && release != null) {
+                blockEntered = null;
+                blockRelease = null;
+                entered.countDown();
+                try {
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("测试没有释放被阻塞的用户文档处理");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+            }
             if (failNext.compareAndSet(true, false)) {
                 throw new IllegalStateException("模拟用户文档处理失败");
             }
@@ -525,6 +668,14 @@ class UserDocumentApiIntegrationTest {
             Instant createdAt,
             Instant updatedAt
     ) {
+    }
+
+    private static byte[] replacementDocument() {
+        String first = ("Adverbs describe how an action happens and often end in -ly. ").repeat(30);
+        String second = ("A comma separates an introductory phrase from the main clause. ").repeat(30);
+        String third = ("Use the present perfect for an action that started in the past. ").repeat(30);
+        return ("# Grammar\n\n## Adverbs\n\n" + first + "\n\n## Commas\n\n" + second
+                + "\n\n## Tense\n\n" + third + "\n").getBytes(StandardCharsets.UTF_8);
     }
 
     private record DuplicateBody(String code, String message, UUID documentId, DocumentBody document) {
