@@ -61,3 +61,25 @@ Error: Failed to resolve import "../components/UserDocumentsPanel" from "src/tes
  Test Files  1 failed | 1 passed (2)
       Tests  2 passed (2)
 ```
+
+## 代码评审修复：去重响应、原子限额、分块只做一次、轮询断言
+
+对应测试变更：
+
+- `UserDocumentApiIntegrationTest.returnsTheExistingDocumentForIdenticalContentWithoutAddingChunks`
+  断言 `409` 响应同时带回已有文档的完整元数据（`document` 字段）。
+- `UserDocumentsPanel.test.tsx` 的轮询测试改为观察 UI：READY 后若继续轮询，会显示后续返回的
+  FAILED 状态；不再断言依赖被调用的次数。
+
+### 真实输出（红色）
+
+```text
+[ERROR] UserDocumentApiIntegrationTest.java:[338,21] constructor DefaultUserDocumentProcessor in class
+com.writelab.document.DefaultUserDocumentProcessor cannot be applied to given types;
+[ERROR] UserDocumentApiIntegrationTest.java:[342,18] FailableUserDocumentProcessor is not abstract and
+does not override abstract method process(java.util.UUID,java.lang.String,com.writelab.document.DocumentFormat)
+in com.writelab.document.UserDocumentProcessor
+[ERROR] UserDocumentApiIntegrationTest.java:[359,9] method does not override or implement a method
+from a supertype
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.14.1:testCompile
+```
