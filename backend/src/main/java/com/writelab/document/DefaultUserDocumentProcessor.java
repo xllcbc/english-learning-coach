@@ -9,34 +9,27 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Chunks the parsed text and replaces the current generation's Document Chunks atomically. Status
- * updates expose {@code PARSING} and {@code CHUNKING}; the service catches failures and marks the
- * document {@code FAILED}.
+ * Persists the Document Chunks approved by the upload request. Status updates expose
+ * {@code PARSING} and {@code CHUNKING}; the service catches failures and marks the document
+ * {@code FAILED}.
  */
 public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
 
     private static final int ACTIVE_GENERATION = 1;
 
     private final JdbcClient jdbcClient;
-    private final DocumentChunker chunker;
     private final TransactionTemplate transactionTemplate;
 
-    public DefaultUserDocumentProcessor(
-            JdbcClient jdbcClient,
-            DocumentChunker chunker,
-            TransactionTemplate transactionTemplate
-    ) {
+    public DefaultUserDocumentProcessor(JdbcClient jdbcClient, TransactionTemplate transactionTemplate) {
         this.jdbcClient = jdbcClient;
-        this.chunker = chunker;
         this.transactionTemplate = transactionTemplate;
     }
 
     @Override
-    public void process(UUID documentId, String text, DocumentFormat format) {
+    public void process(UUID documentId, List<DocumentChunker.Chunk> chunks) {
         markStatus(documentId, DocumentStatus.PARSING);
         markStatus(documentId, DocumentStatus.CHUNKING);
 
-        List<DocumentChunker.Chunk> chunks = chunker.chunk(text, format).chunks();
         if (chunks.isEmpty()) {
             throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
         }

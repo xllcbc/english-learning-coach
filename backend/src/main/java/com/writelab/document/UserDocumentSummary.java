@@ -9,7 +9,7 @@ import java.util.UUID;
 public record UserDocumentSummary(
         UUID id,
         String filename,
-        String status,
+        DocumentStatus status,
         boolean active,
         int charCount,
         int chunkCount,

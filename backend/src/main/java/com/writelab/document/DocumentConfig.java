@@ -30,10 +30,9 @@ public class DocumentConfig {
     @Bean
     UserDocumentProcessor userDocumentProcessor(
             JdbcClient jdbcClient,
-            DocumentChunker documentChunker,
             TransactionTemplate transactionTemplate
     ) {
-        return new DefaultUserDocumentProcessor(jdbcClient, documentChunker, transactionTemplate);
+        return new DefaultUserDocumentProcessor(jdbcClient, transactionTemplate);
     }
 
     @Bean(name = "documentExecutor", destroyMethod = "shutdown")

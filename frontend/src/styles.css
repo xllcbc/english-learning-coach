@@ -1347,7 +1347,6 @@ textarea {
   white-space: nowrap;
 }
 
-.document-status-processing,
 .document-status-uploaded,
 .document-status-parsing,
 .document-status-chunking,

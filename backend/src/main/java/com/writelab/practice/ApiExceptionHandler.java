@@ -39,7 +39,8 @@ public class ApiExceptionHandler {
                 .body(new DuplicateDocumentResponse(
                         DocumentErrorCode.DUPLICATE_DOCUMENT.name(),
                         DocumentErrorCode.DUPLICATE_DOCUMENT.message(),
-                        exception.existingDocumentId()));
+                        exception.existingDocumentId(),
+                        exception.existingDocument()));
     }
 
     @ExceptionHandler(UserDocumentException.class)

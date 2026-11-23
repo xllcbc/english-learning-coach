@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 public class UserDocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(UserDocumentService.class);
+    private static final long UPLOAD_BUDGET_LOCK = 780_001L;
 
     private final JdbcClient jdbcClient;
     private final DocumentChunker chunker;
@@ -94,32 +95,35 @@ public class UserDocumentService {
         }
 
         String contentHash = sha256(text);
-        Optional<UUID> existing = findIdByHash(contentHash);
+        Optional<UserDocumentSummary> existing = findByHash(contentHash);
         if (existing.isPresent()) {
             throw new DuplicateDocumentException(existing.get());
-        }
-
-        long documentCount = countDocuments();
-        if (documentCount >= properties.maxDocuments()) {
-            throw new UserDocumentException(DocumentErrorCode.DOCUMENT_LIMIT_REACHED);
-        }
-        long chunkTotal = totalChunks();
-        if (chunkTotal + chunks.size() > properties.maxChunks()) {
-            throw new UserDocumentException(DocumentErrorCode.CHUNK_LIMIT_REACHED);
         }
 
         UUID documentId = UUID.randomUUID();
         Instant now = Instant.now();
         int charCount = text.codePointCount(0, text.length());
         try {
-            transactionTemplate.executeWithoutResult(status -> insertDocument(
-                    documentId,
-                    filename,
-                    contentHash,
-                    charCount,
-                    now));
+            transactionTemplate.executeWithoutResult(status -> {
+                lockUploadBudget();
+                long documentCount = countDocuments();
+                if (documentCount >= properties.maxDocuments()) {
+                    throw new UserDocumentException(DocumentErrorCode.DOCUMENT_LIMIT_REACHED);
+                }
+                long chunkTotal = totalChunks();
+                if (chunkTotal + chunks.size() > properties.maxChunks()) {
+                    throw new UserDocumentException(DocumentErrorCode.CHUNK_LIMIT_REACHED);
+                }
+                insertDocument(
+                        documentId,
+                        filename,
+                        contentHash,
+                        charCount,
+                        chunks.size(),
+                        now);
+            });
         } catch (DataIntegrityViolationException exception) {
-            Optional<UUID> raceWinner = findIdByHash(contentHash);
+            Optional<UserDocumentSummary> raceWinner = findByHash(contentHash);
             if (raceWinner.isPresent()) {
                 throw new DuplicateDocumentException(raceWinner.get());
             }
@@ -127,8 +131,8 @@ public class UserDocumentService {
         }
 
         log.info("User Document accepted: documentId={}, status={}", documentId, DocumentStatus.UPLOADED);
-        executor.execute(() -> processAsync(documentId, text, format));
-        return new DocumentUploadResponse(documentId, DocumentStatus.UPLOADED.name());
+        executor.execute(() -> processAsync(documentId, chunks));
+        return new DocumentUploadResponse(documentId, DocumentStatus.UPLOADED);
     }
 
     public List<UserDocumentSummary> list() {
@@ -155,9 +159,9 @@ public class UserDocumentService {
                 .orElseThrow(() -> new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND));
     }
 
-    private void processAsync(UUID documentId, String text, DocumentFormat format) {
+    private void processAsync(UUID documentId, List<DocumentChunker.Chunk> chunks) {
         try {
-            processor.process(documentId, text, format);
+            processor.process(documentId, chunks);
             log.info("User Document ready: documentId={}, status={}", documentId, DocumentStatus.READY);
         } catch (RuntimeException exception) {
             DocumentErrorCode code = exception instanceof DocumentProcessingException processing
@@ -198,6 +202,7 @@ public class UserDocumentService {
             String filename,
             String contentHash,
             int charCount,
+            int chunkCount,
             Instant now
     ) {
         jdbcClient.sql("""
@@ -206,7 +211,7 @@ public class UserDocumentService {
                             embedding_model, chunker_version, error_code, active_generation,
                             created_at, updated_at
                         ) VALUES (
-                            :id, :filename, :contentHash, :status, TRUE, :charCount, 0,
+                            :id, :filename, :contentHash, :status, TRUE, :charCount, :chunkCount,
                             NULL, :chunkerVersion, NULL, 1,
                             :createdAt, :updatedAt
                         )
@@ -216,16 +221,33 @@ public class UserDocumentService {
                 .param("contentHash", contentHash)
                 .param("status", DocumentStatus.UPLOADED.name())
                 .param("charCount", charCount)
+                .param("chunkCount", chunkCount)
                 .param("chunkerVersion", chunker.version())
                 .param("createdAt", Timestamp.from(now))
                 .param("updatedAt", Timestamp.from(now))
                 .update();
     }
 
-    private Optional<UUID> findIdByHash(String contentHash) {
-        return jdbcClient.sql("SELECT id FROM user_document WHERE content_hash = :hash")
+    /**
+     * Serializes uploads so the document-count and chunk-budget checks and the insert see one
+     * consistent budget, even before the background processor writes any Document Chunks.
+     */
+    private void lockUploadBudget() {
+        jdbcClient.sql("SELECT pg_advisory_xact_lock(:key)")
+                .param("key", UPLOAD_BUDGET_LOCK)
+                .query((resultSet, rowNumber) -> Boolean.TRUE)
+                .single();
+    }
+
+    private Optional<UserDocumentSummary> findByHash(String contentHash) {
+        return jdbcClient.sql("""
+                        SELECT id, filename, status, active, char_count, chunk_count,
+                               error_code, created_at, updated_at
+                        FROM user_document
+                        WHERE content_hash = :hash
+                        """)
                 .param("hash", contentHash)
-                .query(UUID.class)
+                .query(UserDocumentService::toSummary)
                 .optional();
     }
 
@@ -246,7 +268,7 @@ public class UserDocumentService {
         return new UserDocumentSummary(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getString("filename"),
-                resultSet.getString("status"),
+                DocumentStatus.valueOf(resultSet.getString("status")),
                 resultSet.getBoolean("active"),
                 resultSet.getInt("char_count"),
                 resultSet.getInt("chunk_count"),
