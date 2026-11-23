@@ -279,8 +279,13 @@ public class PracticeService {
                             hit.wordForm(),
                             hit.corpusSentenceId(),
                             hit.groundingMaterialId(),
+                            hit.documentId(),
+                            hit.documentChunkId(),
                             hit.ranking(),
                             hit.similarityScore(),
+                            hit.citationReference(),
+                            hit.citationTitle(),
+                            hit.citationText(),
                             hit.ordering(),
                             hit.skipReason()
                     );

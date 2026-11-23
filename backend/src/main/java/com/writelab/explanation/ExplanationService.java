@@ -3,8 +3,9 @@ package com.writelab.explanation;
 import com.writelab.feedback.StructuredFeedback;
 import com.writelab.practice.ApiError;
 import com.writelab.practice.PracticeNotFoundException;
+import com.writelab.retrieval.DocumentCitation;
+import com.writelab.retrieval.ExplanationMaterialResolver;
 import com.writelab.retrieval.GroundingMaterial;
-import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.RetrievalHit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +40,7 @@ public class ExplanationService {
     private final ExplanationModel explanationModel;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
-    private final GroundingMaterialResolver groundingMaterialResolver;
+    private final ExplanationMaterialResolver explanationMaterialResolver;
     private final TransactionTemplate transactionTemplate;
 
     public ExplanationService(
@@ -48,7 +49,7 @@ public class ExplanationService {
             ExplanationModel explanationModel,
             ObjectMapper objectMapper,
             @Qualifier("explanationExecutor") ExecutorService executor,
-            GroundingMaterialResolver groundingMaterialResolver,
+            ExplanationMaterialResolver explanationMaterialResolver,
             TransactionTemplate transactionTemplate
     ) {
         this.jdbcClient = jdbcClient;
@@ -56,7 +57,7 @@ public class ExplanationService {
         this.explanationModel = explanationModel;
         this.objectMapper = objectMapper;
         this.executor = executor;
-        this.groundingMaterialResolver = groundingMaterialResolver;
+        this.explanationMaterialResolver = explanationMaterialResolver;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -110,11 +111,15 @@ public class ExplanationService {
         StructuredFeedback feedback = objectMapper.readValue(source.structuredResponse(), StructuredFeedback.class);
 
         // Retrieval runs on the explanation executor, before the model call and outside any transaction.
-        GroundingMaterialResolver.GroundingResult grounding = groundingMaterialResolver.resolve(feedback);
+        ExplanationMaterialResolver.ResolvedMaterials materials = explanationMaterialResolver.resolve(feedback);
 
         StringBuilder explanation = new StringBuilder();
         explanationModel.streamExplanation(
-                new ExplanationRequest(source.writingText(), feedback, grounding.materials()),
+                new ExplanationRequest(
+                        source.writingText(),
+                        feedback,
+                        materials.groundingMaterials(),
+                        materials.documentCitations()),
                 chunk -> {
                     explanation.append(chunk);
                     send(emitter, "delta", new DeltaEvent(chunk));
@@ -126,8 +131,11 @@ public class ExplanationService {
             throw new ExplanationGenerationException("教师讲解内容为空");
         }
 
-        save(practiceId, fullExplanation, grounding.hits());
-        send(emitter, "complete", new CompleteEvent(fullExplanation, citations(grounding.materials())));
+        save(practiceId, fullExplanation, materials.hits());
+        send(emitter, "complete", new CompleteEvent(
+                fullExplanation,
+                citations(materials.groundingMaterials()),
+                materials.documentCitations()));
     }
 
     private void replay(UUID practiceId, String savedExplanation, SseEmitter emitter) {
@@ -136,7 +144,8 @@ public class ExplanationService {
         }
         // Replay reads back the Retrieval Hits written when the explanation was generated, so reopening
         // the page neither retrieves again nor cites something different.
-        send(emitter, "complete", new CompleteEvent(savedExplanation, savedCitations(practiceId)));
+        send(emitter, "complete", new CompleteEvent(
+                savedExplanation, savedCitations(practiceId), savedDocumentCitations(practiceId)));
     }
 
     private void save(UUID practiceId, String explanation, List<RetrievalHit> hits) {
@@ -151,8 +160,10 @@ public class ExplanationService {
 
     private void saveRetrievalHits(UUID practiceId, List<RetrievalHit> hits) {
         // Regenerating an explanation rewrites its own provenance instead of stacking a second set.
+        // Corpus Sentence hits belong to the feedback path and are deliberately untouched.
         jdbcTemplate.update(
-                "DELETE FROM retrieval_hit WHERE practice_attempt_id = ? AND kind = 'GROUNDING_MATERIAL'",
+                "DELETE FROM retrieval_hit WHERE practice_attempt_id = ? "
+                        + "AND kind IN ('GROUNDING_MATERIAL', 'USER_DOCUMENT')",
                 practiceId);
 
         for (int position = 0; position < hits.size(); position++) {
@@ -160,13 +171,15 @@ public class ExplanationService {
             jdbcTemplate.update("""
                             INSERT INTO retrieval_hit (
                                 id, practice_attempt_id, position, kind, word_form,
-                                corpus_sentence_id, grounding_material_id, ranking, similarity_score,
-                                ordering, skip_reason
-                            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+                                corpus_sentence_id, grounding_material_id, document_id,
+                                document_chunk_id, ranking, similarity_score, citation_reference,
+                                citation_title, citation_text, ordering, skip_reason
+                            ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     UUID.randomUUID(), practiceId, position, hit.kind(),
-                    hit.groundingMaterialId(), hit.ranking(), hit.similarityScore(),
-                    hit.ordering(), hit.skipReason());
+                    hit.groundingMaterialId(), hit.documentId(), hit.documentChunkId(), hit.ranking(),
+                    hit.similarityScore(), hit.citationReference(), hit.citationTitle(),
+                    hit.citationText(), hit.ordering(), hit.skipReason());
         }
     }
 
@@ -187,6 +200,34 @@ public class ExplanationService {
                         resultSet.getString("content"),
                         resultSet.getString("source"),
                         resultSet.getString("license")))
+                .list();
+    }
+
+    /**
+     * Replays the citation snapshot written at generation time. A null document id means the User
+     * Document was deleted after generation; the title and excerpt still come from the hit.
+     */
+    private List<DocumentCitation> savedDocumentCitations(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT citation_reference, document_id, document_chunk_id,
+                               citation_title, citation_text
+                        FROM retrieval_hit
+                        WHERE practice_attempt_id = :id
+                            AND kind = 'USER_DOCUMENT'
+                            AND citation_reference IS NOT NULL
+                        ORDER BY citation_reference
+                        """)
+                .param("id", practiceId)
+                .query((resultSet, rowNum) -> {
+                    UUID documentId = resultSet.getObject("document_id", UUID.class);
+                    return new DocumentCitation(
+                            resultSet.getInt("citation_reference"),
+                            documentId,
+                            resultSet.getObject("document_chunk_id", UUID.class),
+                            resultSet.getString("citation_title"),
+                            resultSet.getString("citation_text"),
+                            documentId == null);
+                })
                 .list();
     }
 
@@ -227,7 +268,11 @@ public class ExplanationService {
     private record DeltaEvent(String text) {
     }
 
-    private record CompleteEvent(String explanation, List<GroundingCitation> groundingMaterials) {
+    private record CompleteEvent(
+            String explanation,
+            List<GroundingCitation> groundingMaterials,
+            List<DocumentCitation> documentCitations
+    ) {
     }
 
     /**

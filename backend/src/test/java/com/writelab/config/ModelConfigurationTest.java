@@ -9,9 +9,12 @@ import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
 import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.EmbeddingClient;
+import com.writelab.retrieval.ExplanationMaterialResolver;
 import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
+import com.writelab.retrieval.KeywordUserDocumentRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.junit.jupiter.api.Test;
@@ -42,6 +45,10 @@ class ModelConfigurationTest {
                             .isInstanceOf(KeywordLearningMaterialRetriever.class);
                     assertThat(context).hasSingleBean(CorpusSentenceResolver.class);
                     assertThat(context).hasSingleBean(GroundingMaterialResolver.class);
+                    assertThat(context).hasSingleBean(UserDocumentRetriever.class);
+                    assertThat(context.getBean(UserDocumentRetriever.class))
+                            .isInstanceOf(KeywordUserDocumentRetriever.class);
+                    assertThat(context).hasSingleBean(ExplanationMaterialResolver.class);
                     assertThat(context).doesNotHaveBean(ChatClient.class);
                     assertThat(context).doesNotHaveBean(EmbeddingModel.class);
                     assertThat(context).doesNotHaveBean(EmbeddingClient.class);

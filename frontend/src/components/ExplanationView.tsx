@@ -1,24 +1,42 @@
-import type { ExplanationStatus, GroundingCitation } from '../types';
+import type { DocumentCitation, ExplanationStatus, GroundingCitation } from '../types';
 import { categoryLabels } from '../labels';
 
 interface ExplanationViewProps {
   status: ExplanationStatus;
   text: string;
   groundingMaterials: GroundingCitation[];
+  documentCitations: DocumentCitation[];
   error: string | null;
   replay: boolean;
   onGenerate: () => void;
 }
 
+type CitationItem =
+  | { kind: 'grounding'; reference: number; material: GroundingCitation }
+  | { kind: 'document'; reference: number; document: DocumentCitation };
+
 export function ExplanationView({
   status,
   text,
   groundingMaterials,
+  documentCitations,
   error,
   replay,
   onGenerate,
 }: ExplanationViewProps) {
   const isStreaming = status === 'streaming';
+  const citations: CitationItem[] = [
+    ...groundingMaterials.map((material): CitationItem => ({
+      kind: 'grounding',
+      reference: material.reference,
+      material,
+    })),
+    ...documentCitations.map((document): CitationItem => ({
+      kind: 'document',
+      reference: document.reference,
+      document,
+    })),
+  ].sort((left, right) => left.reference - right.reference);
 
   return (
     <section className="explanation-card" aria-labelledby="explanation-title">
@@ -72,24 +90,41 @@ export function ExplanationView({
           >
             {text || '正在准备教师讲解…'}
           </div>
-          {status === 'complete' && groundingMaterials.length > 0 && (
+          {status === 'complete' && citations.length > 0 && (
             <div className="grounding-list" aria-labelledby="grounding-title">
               <h4 id="grounding-title">
-                本次依据 <span className="section-hint">Grounding Material</span>
+                本次依据 <span className="section-hint">规则与我的文档</span>
               </h4>
               <ul>
-                {groundingMaterials.map((material) => (
-                  <li key={material.reference} className="grounding-item">
-                    <p className="grounding-heading">
-                      <span className="grounding-reference">依据{material.reference}</span>
-                      <span className="grounding-category">{categoryLabels[material.category]}</span>
-                    </p>
-                    <p className="grounding-content">{material.content}</p>
-                    <p className="grounding-source">
-                      {material.source} · {material.license}
-                    </p>
-                  </li>
-                ))}
+                {citations.map((citation) =>
+                  citation.kind === 'grounding' ? (
+                    <li key={`grounding-${citation.reference}`} className="grounding-item">
+                      <p className="grounding-heading">
+                        <span className="grounding-reference">依据{citation.reference}</span>
+                        <span className="grounding-category">
+                          {categoryLabels[citation.material.category]}
+                        </span>
+                        <span className="grounding-kind">规则</span>
+                      </p>
+                      <p className="grounding-content">{citation.material.content}</p>
+                      <p className="grounding-source">
+                        {citation.material.source} · {citation.material.license}
+                      </p>
+                    </li>
+                  ) : (
+                    <li key={`document-${citation.reference}`} className="grounding-item">
+                      <p className="grounding-heading">
+                        <span className="grounding-reference">依据{citation.reference}</span>
+                        <span className="grounding-kind">我的文档</span>
+                        {citation.document.deleted && (
+                          <span className="grounding-deleted">文档已删除</span>
+                        )}
+                      </p>
+                      <p className="grounding-title">{citation.document.title}</p>
+                      <p className="grounding-content">{citation.document.content}</p>
+                    </li>
+                  ),
+                )}
               </ul>
             </div>
           )}

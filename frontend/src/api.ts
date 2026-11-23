@@ -1,6 +1,7 @@
 import type {
   ApiError,
   DictionaryEntry,
+  DocumentCitation,
   GroundingCitation,
   PracticeResponse,
   PracticeSummary,
@@ -159,7 +160,11 @@ export function getModelMode(): Promise<ModelModeInfo> {
 export interface ExplanationStreamHandlers {
   onStart?: (replay: boolean) => void;
   onDelta: (text: string) => void;
-  onComplete: (explanation: string, groundingMaterials: GroundingCitation[]) => void;
+  onComplete: (
+    explanation: string,
+    groundingMaterials: GroundingCitation[],
+    documentCitations: DocumentCitation[],
+  ) => void;
   onError: (message: string) => void;
 }
 
@@ -219,9 +224,14 @@ export async function streamExplanation(
       const payload = JSON.parse(data) as {
         explanation: string;
         groundingMaterials?: GroundingCitation[];
+        documentCitations?: DocumentCitation[];
       };
       completed = true;
-      handlers.onComplete(payload.explanation, payload.groundingMaterials ?? []);
+      handlers.onComplete(
+        payload.explanation,
+        payload.groundingMaterials ?? [],
+        payload.documentCitations ?? [],
+      );
     } else if (name === 'error') {
       const payload = JSON.parse(data) as ApiError;
       errored = true;

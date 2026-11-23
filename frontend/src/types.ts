@@ -55,6 +55,15 @@ export interface GroundingCitation {
   license: string;
 }
 
+export interface DocumentCitation {
+  reference: number;
+  documentId: string | null;
+  documentChunkId: string | null;
+  title: string;
+  content: string;
+  deleted: boolean;
+}
+
 export type ToolInvocationStatus = 'SUCCESS' | 'NOT_FOUND' | 'BLOCKED' | 'FAILED';
 
 

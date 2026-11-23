@@ -48,6 +48,12 @@ writelab:
     # relevant material. Tuned by the offline evaluation (docs/retrieval-evaluation.md): 0.60 keeps
     # every labelled material while cutting the average returned list from 4.0 to 2.6 notes.
     grounding-similarity-threshold: ${WRITELAB_GROUNDING_SIMILARITY_THRESHOLD:0.6}
+    # User Document citations in one Teacher Explanation. Mock mode ranks chunks by pg_trgm
+    # character-trigram similarity; the default threshold is tuned for Chinese notes with short
+    # English examples.
+    user-document-max-hits: ${WRITELAB_USER_DOCUMENT_MAX_HITS:4}
+    user-document-per-document-hits: ${WRITELAB_USER_DOCUMENT_PER_DOCUMENT_HITS:2}
+    user-document-similarity-threshold: ${WRITELAB_USER_DOCUMENT_SIMILARITY_THRESHOLD:0.55}
   documents:
     max-file-bytes: ${WRITELAB_DOCUMENT_MAX_FILE_BYTES:2097152}
     max-documents: ${WRITELAB_DOCUMENT_MAX_DOCUMENTS:50}
