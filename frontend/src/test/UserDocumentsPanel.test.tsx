@@ -163,6 +163,39 @@ describe('UserDocumentsPanel', () => {
     expect(within(list).getByRole('button', { name: '停用' })).toBeInTheDocument();
   });
 
+  it('retries a failed document and polls it back to ready', async () => {
+    api.listUserDocuments
+      .mockResolvedValueOnce([failedDocument])
+      .mockResolvedValue([readyDocument]);
+    api.retryUserDocument.mockResolvedValue({
+      ...failedDocument,
+      status: 'UPLOADED',
+      errorCode: null,
+    });
+
+    render(<UserDocumentsPanel pollIntervalMs={10} />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '重试' }));
+
+    expect(api.retryUserDocument).toHaveBeenCalledWith('doc-2');
+    expect(await screen.findByText('已就绪')).toBeInTheDocument();
+    expect(screen.queryByText('处理失败')).not.toBeInTheDocument();
+  });
+
+  it('keeps the failure state and shows an error when retry fails', async () => {
+    api.listUserDocuments.mockResolvedValue([failedDocument]);
+    api.retryUserDocument.mockRejectedValue(new Error('重试失败，请稍后重试。'));
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '重试' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('重试失败，请稍后重试。');
+    expect(within(list).getByText('处理失败')).toBeInTheDocument();
+  });
+
   it('asks for confirmation before deleting and removes the document afterwards', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     api.listUserDocuments.mockResolvedValue([readyDocument]);

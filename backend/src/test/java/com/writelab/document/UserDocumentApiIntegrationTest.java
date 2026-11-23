@@ -135,6 +135,44 @@ class UserDocumentApiIntegrationTest {
     }
 
     @Test
+    void retriesAFailedDocumentIdempotentlyWithoutDuplicatingChunks() throws Exception {
+        failableProcessor.failNext();
+        UUID documentId = objectMapper.readValue(
+                upload("broken.md", markdownDocument()).body(), UploadBody.class).id();
+        DocumentBody failed = awaitTerminal(documentId);
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(failed.errorCode()).isEqualTo("PROCESSING_FAILED");
+        assertThat(failed.chunkCount()).isZero();
+
+        HttpResponse<String> firstRetry = post("/api/documents/" + documentId + "/retry");
+
+        assertThat(firstRetry.statusCode()).isEqualTo(202);
+        DocumentBody ready = awaitTerminal(documentId);
+        assertThat(ready.status()).isEqualTo("READY");
+        assertThat(ready.errorCode()).isNull();
+        assertThat(ready.chunkCount()).isPositive();
+        long storedChunks = countChunks(documentId);
+        assertThat(storedChunks).isEqualTo(ready.chunkCount());
+
+        HttpResponse<String> secondRetry = post("/api/documents/" + documentId + "/retry");
+
+        assertThat(secondRetry.statusCode()).isEqualTo(202);
+        DocumentBody unchanged = getDocument(documentId);
+        assertThat(unchanged.status()).isEqualTo("READY");
+        assertThat(unchanged.chunkCount()).isEqualTo(ready.chunkCount());
+        assertThat(countChunks(documentId)).isEqualTo(storedChunks);
+        assertThat(listDocuments()).hasSize(1);
+    }
+
+    @Test
+    void returnsStable404WhenRetryingAnUnknownDocument() throws Exception {
+        HttpResponse<String> response = post("/api/documents/" + UUID.randomUUID() + "/retry");
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(errorCode(response.body())).isEqualTo("DOCUMENT_NOT_FOUND");
+    }
+
+    @Test
     void deletesTheDocumentAndItsChunks() throws Exception {
         UUID documentId = objectMapper.readValue(
                 upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
@@ -346,6 +384,13 @@ class UserDocumentApiIntegrationTest {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> post(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri(path))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> delete(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri(path))
                 .DELETE()
@@ -456,11 +501,11 @@ class UserDocumentApiIntegrationTest {
         }
 
         @Override
-        public void process(UUID documentId, java.util.List<DocumentChunker.Chunk> chunks) {
+        public void process(UUID documentId, int generation) {
             if (failNext.compareAndSet(true, false)) {
                 throw new IllegalStateException("模拟用户文档处理失败");
             }
-            delegate.process(documentId, chunks);
+            delegate.process(documentId, generation);
         }
     }
 

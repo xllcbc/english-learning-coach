@@ -35,6 +35,7 @@ public class UserDocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(UserDocumentService.class);
     private static final long UPLOAD_BUDGET_LOCK = 780_001L;
+    private static final int INITIAL_GENERATION = 1;
 
     private final JdbcClient jdbcClient;
     private final DocumentChunker chunker;
@@ -121,6 +122,7 @@ public class UserDocumentService {
                         charCount,
                         chunks.size(),
                         now);
+                insertChunks(documentId, INITIAL_GENERATION, chunks);
             });
         } catch (DataIntegrityViolationException exception) {
             Optional<UserDocumentSummary> raceWinner = findByHash(contentHash);
@@ -131,7 +133,7 @@ public class UserDocumentService {
         }
 
         log.info("User Document accepted: documentId={}, status={}", documentId, DocumentStatus.UPLOADED);
-        executor.execute(() -> processAsync(documentId, chunks));
+        executor.execute(() -> processAsync(documentId, INITIAL_GENERATION));
         return new DocumentUploadResponse(documentId, DocumentStatus.UPLOADED);
     }
 
@@ -195,9 +197,9 @@ public class UserDocumentService {
         return find(documentId);
     }
 
-    private void processAsync(UUID documentId, List<DocumentChunker.Chunk> chunks) {
+    private void processAsync(UUID documentId, int generation) {
         try {
-            processor.process(documentId, chunks);
+            processor.process(documentId, generation);
             log.info("User Document ready: documentId={}, status={}", documentId, DocumentStatus.READY);
         } catch (RuntimeException exception) {
             DocumentErrorCode code = exception instanceof DocumentProcessingException processing
@@ -205,18 +207,20 @@ public class UserDocumentService {
                     : DocumentErrorCode.PROCESSING_FAILED;
             log.warn("User Document processing failed: documentId={}, errorCode={}",
                     documentId, code.name());
-            markFailed(documentId, code);
+            markFailed(documentId, generation, code);
         }
     }
 
-    private void markFailed(UUID documentId, DocumentErrorCode code) {
+    /**
+     * Marks the generation {@code FAILED} but keeps its Document Chunks. Retrying only has to
+     * finish the stored generation; the parsed text is never available again as a file.
+     */
+    private void markFailed(UUID documentId, int generation, DocumentErrorCode code) {
         transactionTemplate.executeWithoutResult(status -> {
-            jdbcClient.sql("""
-                            DELETE FROM document_chunk
-                            WHERE document_id = :documentId
-                            """)
-                    .param("documentId", documentId)
-                    .update();
+            Integer activeGeneration = activeGeneration(documentId);
+            if (activeGeneration == null || activeGeneration != generation) {
+                return;
+            }
             jdbcClient.sql("""
                             UPDATE user_document
                             SET status = :status,
@@ -231,6 +235,78 @@ public class UserDocumentService {
                     .param("id", documentId)
                     .update();
         });
+    }
+
+    /**
+     * Retries a FAILED generation. The chunks are already stored, so success cannot duplicate a
+     * document or its Document Chunks. A concurrent retry observes the reset status and is a no-op.
+     */
+    public UserDocumentSummary retry(UUID documentId) {
+        Integer generation = transactionTemplate.execute(status -> {
+            Integer activeGeneration = activeGenerationForUpdate(documentId);
+            if (activeGeneration == null) {
+                throw new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND);
+            }
+            int updated = jdbcClient.sql("""
+                            UPDATE user_document
+                            SET status = :status,
+                                chunk_count = 0,
+                                error_code = NULL,
+                                updated_at = :updatedAt
+                            WHERE id = :id AND status = :failedStatus
+                            """)
+                    .param("status", DocumentStatus.UPLOADED.name())
+                    .param("updatedAt", Timestamp.from(Instant.now()))
+                    .param("id", documentId)
+                    .param("failedStatus", DocumentStatus.FAILED.name())
+                    .update();
+            return updated == 0 ? null : activeGeneration;
+        });
+
+        if (generation != null) {
+            executor.execute(() -> processAsync(documentId, generation));
+        }
+        return find(documentId);
+    }
+
+    private Integer activeGeneration(UUID documentId) {
+        return jdbcClient.sql("SELECT active_generation FROM user_document WHERE id = :id")
+                .param("id", documentId)
+                .query(Integer.class)
+                .optional()
+                .orElse(null);
+    }
+
+    private Integer activeGenerationForUpdate(UUID documentId) {
+        return jdbcClient.sql("SELECT active_generation FROM user_document WHERE id = :id FOR UPDATE")
+                .param("id", documentId)
+                .query(Integer.class)
+                .optional()
+                .orElse(null);
+    }
+
+    private void insertChunks(UUID documentId, int generation, List<DocumentChunker.Chunk> chunks) {
+        for (int position = 0; position < chunks.size(); position++) {
+            DocumentChunker.Chunk chunk = chunks.get(position);
+            jdbcClient.sql("""
+                            INSERT INTO document_chunk (
+                                id, document_id, generation, position, heading_path,
+                                content, start_offset, end_offset, embedding
+                            ) VALUES (
+                                :id, :documentId, :generation, :position, :headingPath,
+                                :content, :startOffset, :endOffset, NULL
+                            )
+                            """)
+                    .param("id", UUID.randomUUID())
+                    .param("documentId", documentId)
+                    .param("generation", generation)
+                    .param("position", position)
+                    .param("headingPath", chunk.headingPath())
+                    .param("content", chunk.content())
+                    .param("startOffset", chunk.startOffset())
+                    .param("endOffset", chunk.endOffset())
+                    .update();
+        }
     }
 
     private void insertDocument(

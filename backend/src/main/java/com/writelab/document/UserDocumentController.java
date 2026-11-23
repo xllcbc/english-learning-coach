@@ -42,6 +42,12 @@ public class UserDocumentController {
         return userDocumentService.find(id);
     }
 
+    @PostMapping("/{id}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public UserDocumentSummary retry(@PathVariable UUID id) {
+        return userDocumentService.retry(id);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id) {

@@ -5,17 +5,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 /**
- * Persists the Document Chunks approved by the upload request. Status updates expose
- * {@code PARSING} and {@code CHUNKING}; the service catches failures and marks the document
- * {@code FAILED}.
+ * Finalizes a generation whose Document Chunks were stored by the upload request. Status updates
+ * expose {@code PARSING} and {@code CHUNKING}; the service catches failures, marks the document
+ * {@code FAILED} and keeps the chunks so retry can finish the same generation.
  */
 public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
-
-    private static final int ACTIVE_GENERATION = 1;
 
     private final JdbcClient jdbcClient;
     private final TransactionTemplate transactionTemplate;
@@ -26,45 +23,19 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
     }
 
     @Override
-    public void process(UUID documentId, List<DocumentChunker.Chunk> chunks) {
+    public void process(UUID documentId, int generation) {
+        if (!isActiveGeneration(documentId, generation)) {
+            return;
+        }
         markStatus(documentId, DocumentStatus.PARSING);
         markStatus(documentId, DocumentStatus.CHUNKING);
 
-        if (chunks.isEmpty()) {
+        int chunkCount = countChunks(documentId, generation);
+        if (chunkCount == 0) {
             throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
         }
 
         transactionTemplate.executeWithoutResult(status -> {
-            jdbcClient.sql("""
-                            DELETE FROM document_chunk
-                            WHERE document_id = :documentId AND generation = :generation
-                            """)
-                    .param("documentId", documentId)
-                    .param("generation", ACTIVE_GENERATION)
-                    .update();
-
-            for (int position = 0; position < chunks.size(); position++) {
-                DocumentChunker.Chunk chunk = chunks.get(position);
-                jdbcClient.sql("""
-                                INSERT INTO document_chunk (
-                                    id, document_id, generation, position, heading_path,
-                                    content, start_offset, end_offset, embedding
-                                ) VALUES (
-                                    :id, :documentId, :generation, :position, :headingPath,
-                                    :content, :startOffset, :endOffset, NULL
-                                )
-                                """)
-                        .param("id", UUID.randomUUID())
-                        .param("documentId", documentId)
-                        .param("generation", ACTIVE_GENERATION)
-                        .param("position", position)
-                        .param("headingPath", chunk.headingPath())
-                        .param("content", chunk.content())
-                        .param("startOffset", chunk.startOffset())
-                        .param("endOffset", chunk.endOffset())
-                        .update();
-            }
-
             jdbcClient.sql("""
                             UPDATE user_document
                             SET status = :status,
@@ -75,12 +46,37 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
                             WHERE id = :id
                             """)
                     .param("status", DocumentStatus.READY.name())
-                    .param("chunkCount", chunks.size())
-                    .param("generation", ACTIVE_GENERATION)
+                    .param("chunkCount", chunkCount)
+                    .param("generation", generation)
                     .param("updatedAt", Timestamp.from(Instant.now()))
                     .param("id", documentId)
                     .update();
         });
+    }
+
+    private boolean isActiveGeneration(UUID documentId, int generation) {
+        Integer activeGeneration = jdbcClient.sql("""
+                        SELECT active_generation
+                        FROM user_document
+                        WHERE id = :id
+                        """)
+                .param("id", documentId)
+                .query(Integer.class)
+                .optional()
+                .orElse(null);
+        return activeGeneration != null && activeGeneration == generation;
+    }
+
+    private int countChunks(UUID documentId, int generation) {
+        return jdbcClient.sql("""
+                        SELECT count(*)
+                        FROM document_chunk
+                        WHERE document_id = :documentId AND generation = :generation
+                        """)
+                .param("documentId", documentId)
+                .param("generation", generation)
+                .query(Integer.class)
+                .single();
     }
 
     private void markStatus(UUID documentId, DocumentStatus status) {

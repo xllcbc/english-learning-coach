@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import {
   deleteUserDocument,
   listUserDocuments,
+  retryUserDocument,
   setUserDocumentActive,
   toErrorMessage,
   uploadUserDocument,
@@ -92,6 +93,23 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
       setDocuments((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
+
+  async function handleRetry(document: UserDocumentSummary) {
+    setBusyDocumentId(document.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const updated = await retryUserDocument(document.id);
+      setDocuments((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      await loadDocuments();
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -246,6 +264,16 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                     onClick={() => void handleToggleActive(document)}
                   >
                     {document.active ? '停用' : '启用'}
+                  </button>
+                )}
+                {document.status === 'FAILED' && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busyDocumentId === document.id}
+                    onClick={() => void handleRetry(document)}
+                  >
+                    重试
                   </button>
                 )}
                 <button
