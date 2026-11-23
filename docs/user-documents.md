@@ -1,6 +1,6 @@
-# 操作文档：User Document 上传与就绪
+# 操作文档：User Document 上传、就绪与生命周期
 
-“我的文档”面板让学习者上传自己的 `.md` / `.txt` 学习材料。文档会在后台解析、分块，进入 `READY` 后才算可用。本票只覆盖上传到就绪；停用、删除、重试见 #21，教师讲解引用见 #22，向量索引见 #23。
+“我的文档”面板让学习者上传自己的 `.md` / `.txt` 学习材料。文档会在后台解析、分块，进入 `READY` 后才算可用；之后可以停用/启用、删除、重试失败任务，或用修改后的同名文档原地替换旧内容。教师讲解引用见 #22，向量索引见 #23。
 
 ## 上传方式
 
@@ -33,11 +33,40 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
     "charCount": 1200,
     "chunkCount": 3,
     "errorCode": null,
+    "replacementStatus": "NONE",
+    "replacementErrorCode": null,
     "createdAt": "2026-11-23T08:00:00Z",
     "updatedAt": "2026-11-23T08:00:02Z"
   }
 }
 ```
+
+## 启用、停用、删除与重试
+
+```bash
+# 停用 / 启用：只改变 active，不重新分块，也不删除内容
+curl -X PATCH http://localhost:8080/api/documents/<document-id> \
+  -H 'Content-Type: application/json' -d '{"active": false}'
+
+# 删除：文档与其 Document Chunk 一起消失，历史引用快照不受影响
+curl -X DELETE http://localhost:8080/api/documents/<document-id>
+
+# 重试 FAILED 文档：幂等，不会新增文档或 chunk
+curl -X POST http://localhost:8080/api/documents/<document-id>/retry
+```
+
+`PATCH` 返回更新后的完整文档元数据；`DELETE` 返回 `204 No Content`；`retry` 返回 `202 Accepted` 与当前文档元数据。重复停用/启用或重复重试都是幂等的。面板在停用后显示“已停用”，失败文档显示“重试”。
+
+## 同名替换
+
+修改后重新上传同名文件时，系统复用同一个 User Document（`id` 不变），不会新增同名文档：
+
+1. 新内容写入一个新的 `generation` 的 Document Chunk；
+2. 此时旧内容仍是 `active_generation`，文档保持 `READY`，`replacementStatus` 为 `PROCESSING`；
+3. 全部 chunk 就绪后，在一个事务里切换 `active_generation`、更新内容哈希与字符数，再删除旧 generation；
+4. 任一步失败时，旧内容继续可用，`status` 仍为 `READY`，`replacementStatus` 变为 `FAILED`，`replacementErrorCode` 给出原因；点击“重试”只处理待切换的 generation。
+
+完全相同内容重复上传仍然返回 `409 DUPLICATE_DOCUMENT`，不会触发新的 generation。原内容也会保留其内容哈希，因此重复上传旧内容不会被误判为新文档。
 
 ## 如何确认文档已就绪
 
@@ -68,7 +97,7 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
    curl http://localhost:8080/api/documents
    ```
 
-列表按创建时间倒序返回。前端在处理中每 1.5 秒轮询一次，进入 `READY` 或 `FAILED` 后停止轮询。
+列表按创建时间倒序返回。前端在文档处理中或 `replacementStatus` 为 `PROCESSING` 时每 1.5 秒轮询一次，进入终态后停止轮询。
 
 ## 限额
 
@@ -94,10 +123,13 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
 | `422` | `INVALID_ENCODING` | 不是有效 UTF-8 |
 | `422` | `BINARY_DOCUMENT` | 看起来是二进制内容 |
 | `409` | `DUPLICATE_DOCUMENT` | 相同内容已存在，响应带 `documentId` |
+| `409` | `DOCUMENT_PROCESSING` | 同名文档正在处理或替换中，暂不能再次替换 |
+| `400` | `INVALID_DOCUMENT_UPDATE` | `PATCH` 缺少 `active` |
 | `404` | `DOCUMENT_NOT_FOUND` | 文档不存在 |
 | — | `PROCESSING_FAILED` | 后台处理失败，保存在文档的 `errorCode` 中 |
+| — | `replacementErrorCode` | 替换失败原因；此时 `status` 仍是 `READY` |
 
-`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。
+`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。替换失败的文档仍以旧 generation 参与检索，面板显示“更新失败”和重试入口。
 
 ## 分块规则
 
@@ -128,4 +160,4 @@ cd ../frontend
 npm test
 ```
 
-需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码和失败状态；前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因和重复内容提示。容器测试需要本机 Docker 正在运行；`-Pno-containers` 只跳过这些容器测试，不会跳过前端组件测试。
+需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码、失败状态、停用/启用、删除、重试、同名替换成功/失败与替换中互斥；前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因、重复内容提示、停用/启用、删除确认、重试和替换状态。容器测试需要本机 Docker 正在运行；`-Pno-containers` 只跳过这些容器测试，不会跳过前端组件测试。
