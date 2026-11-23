@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +35,7 @@ public class GroundingMaterialResolver {
         List<RankedGroundingMaterial> rankedMaterials;
         String skipReason = null;
         try {
-            rankedMaterials = retriever.groundingMaterials(categories, focusedQuery(feedback));
+            rankedMaterials = retriever.groundingMaterials(categories, FocusedIssueQuery.text(feedback));
         } catch (RuntimeException exception) {
             log.warn("依据材料检索失败，本次讲解不引用依据: categories={}, cause={}",
                     categories, exception.getClass().getSimpleName());
@@ -58,17 +57,6 @@ public class GroundingMaterialResolver {
                     ranked.material().id(), index + 1, ranked.similarityScore(), null));
         }
         return new GroundingResult(materials, hits);
-    }
-
-    /**
-     * The focused Learning Issues are the semantic query for the vector implementation. The
-     * deterministic implementation ignores it, so this text never reaches a prompt or a log.
-     */
-    private static String focusedQuery(StructuredFeedback feedback) {
-        return feedback.focusedIssues().stream()
-                .map(issue -> String.join("\n",
-                        issue.originalSentence(), issue.suggestion(), issue.explanation()))
-                .collect(Collectors.joining("\n"));
     }
 
     private static List<IssueCategory> focusedCategories(StructuredFeedback feedback) {

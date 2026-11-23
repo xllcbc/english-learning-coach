@@ -12,8 +12,13 @@ public record RetrievalHitEntity(
         String wordForm,
         UUID corpusSentenceId,
         UUID groundingMaterialId,
+        UUID documentId,
+        UUID documentChunkId,
         Integer ranking,
         Double similarityScore,
+        Integer citationReference,
+        String citationTitle,
+        String citationText,
         String ordering,
         String skipReason
 ) {

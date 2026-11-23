@@ -576,7 +576,19 @@ class ExplanationApiIntegrationTest {
     private record DeltaBody(String text) {
     }
 
-    private record CompleteBody(String explanation, List<GroundingBody> groundingMaterials) {
+    private record CompleteBody(
+            String explanation,
+            List<GroundingBody> groundingMaterials,
+            List<DocumentCitationBody> documentCitations
+    ) {
+    }
+
+    private record DocumentCitationBody(
+            int reference,
+            String title,
+            String content,
+            boolean deleted
+    ) {
     }
 
     private record GroundingBody(

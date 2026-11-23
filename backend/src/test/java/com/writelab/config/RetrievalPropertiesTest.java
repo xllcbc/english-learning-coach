@@ -17,6 +17,18 @@ class RetrievalPropertiesTest {
                 .groundingSimilarityThreshold()).isEqualTo(0.6));
     }
 
+    @Test
+    void defaultsTheUserDocumentBudgetIndependentlyFromGroundingMaterial() {
+        runner.run(context -> {
+            RetrievalProperties properties = context.getBean(RetrievalProperties.class);
+            assertThat(properties.userDocumentMaxHits()).isEqualTo(4);
+            assertThat(properties.userDocumentPerDocumentHits()).isEqualTo(2);
+            assertThat(properties.userDocumentSimilarityThreshold()).isEqualTo(0.55);
+            assertThat(properties.groundingMaxHits()).isEqualTo(6);
+            assertThat(properties.groundingSimilarityThreshold()).isEqualTo(0.6);
+        });
+    }
+
     @EnableConfigurationProperties(RetrievalProperties.class)
     static class EnableRetrievalProperties {
     }

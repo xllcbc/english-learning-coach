@@ -3,6 +3,7 @@ package com.writelab.explanation;
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueSeverity;
 import com.writelab.feedback.LearningIssue;
+import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.GroundingMaterial;
 
 import java.util.LinkedHashMap;
@@ -42,7 +43,11 @@ public class MockExplanationModel implements ExplanationModel {
             text.append("原句：").append(issue.originalSentence()).append("\n");
             text.append("改为：").append(issue.suggestion()).append("\n");
             text.append("讲解：").append(issue.explanation())
-                    .append(citation(references.get(issue.category()))).append("\n\n");
+                    .append(citation(references.get(issue.category())));
+            if (index == 0) {
+                text.append(documentCitations(request.documentCitations()));
+            }
+            text.append("\n\n");
         }
 
         text.append("下一步练习建议：先挑出最严重的问题，用 10 分钟重写相关句子；")
@@ -65,6 +70,21 @@ public class MockExplanationModel implements ExplanationModel {
 
     private static String citation(Integer reference) {
         return reference == null ? "" : " [依据" + reference + "]";
+    }
+
+    /**
+     * Cites every retrieved document once, on the first focused issue. Document references continue
+     * the Grounding Material numbering, so the markers stay in list order.
+     */
+    private static String documentCitations(List<DocumentCitation> documents) {
+        if (documents.isEmpty()) {
+            return "";
+        }
+        StringBuilder citations = new StringBuilder(" 参考我的文档");
+        for (DocumentCitation document : documents) {
+            citations.append(" [依据").append(document.reference()).append(']');
+        }
+        return citations.toString();
     }
 
     private static String categoryLabel(IssueCategory category) {

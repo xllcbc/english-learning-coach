@@ -6,6 +6,7 @@ import com.writelab.feedback.IssueSeverity;
 import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.Scores;
 import com.writelab.feedback.StructuredFeedback;
+import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.GroundingMaterial;
 import java.util.List;
 import java.util.UUID;
@@ -68,6 +69,21 @@ class MockExplanationModelTest {
         assertThat(explanation).contains("暂时没有发现明显的语言问题").doesNotContain("依据");
     }
 
+    @Test
+    void citesRetrievedUserDocumentReferencesInUnifiedOrder() {
+        ExplanationRequest request = request(
+                List.of(issue(IssueCategory.GRAMMAR, IssueSeverity.MAJOR, "主谓一致需要变化。")),
+                List.of(material(IssueCategory.GRAMMAR, "主谓一致：第三人称单数动词加 -s。")),
+                List.of(
+                        document(2, "grammar.md · Grammar > Agreement"),
+                        document(3, "notes.md · Tenses")));
+
+        String explanation = stream(request);
+
+        assertThat(explanation).contains("[依据1]");
+        assertThat(explanation).contains("参考我的文档 [依据2] [依据3]");
+    }
+
     private String stream(ExplanationRequest request) {
         StringBuilder text = new StringBuilder();
         model.streamExplanation(request, text::append);
@@ -83,6 +99,14 @@ class MockExplanationModelTest {
     }
 
     private static ExplanationRequest request(List<LearningIssue> issues, GroundingMaterial... materials) {
+        return request(issues, List.of(materials), List.of());
+    }
+
+    private static ExplanationRequest request(
+            List<LearningIssue> issues,
+            List<GroundingMaterial> materials,
+            List<DocumentCitation> documents
+    ) {
         StructuredFeedback feedback = new StructuredFeedback(
                 "Corrected text.",
                 "More natural text.",
@@ -91,6 +115,11 @@ class MockExplanationModelTest {
                 List.of("结构清楚"),
                 issues,
                 List.of());
-        return new ExplanationRequest("My writing.", feedback, List.of(materials));
+        return new ExplanationRequest("My writing.", feedback, materials, documents);
+    }
+
+    private static DocumentCitation document(int reference, String title) {
+        return new DocumentCitation(
+                reference, UUID.randomUUID(), UUID.randomUUID(), title, "Document excerpt.", false);
     }
 }

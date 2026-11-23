@@ -14,9 +14,12 @@ import com.writelab.feedback.MockFeedbackModel;
 import com.writelab.feedback.RealFeedbackModel;
 import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.EmbeddingClient;
+import com.writelab.retrieval.ExplanationMaterialResolver;
 import com.writelab.retrieval.GroundingMaterialResolver;
 import com.writelab.retrieval.KeywordLearningMaterialRetriever;
+import com.writelab.retrieval.KeywordUserDocumentRetriever;
 import com.writelab.retrieval.LearningMaterialRetriever;
+import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.tools.LookupWordTool;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,6 +32,7 @@ import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -111,6 +115,21 @@ public class ModelConfiguration {
                 jdbcClient, embeddingClient, retrievalProperties.vectorRetrievalSettings());
     }
 
+    /**
+     * User Document retrieval is a separate corpus with its own budget. This implementation is the
+     * Mock-mode pg_trgm path; a later embedding ticket replaces it for REAL mode without touching
+     * the grounding seam.
+     */
+    @Bean
+    UserDocumentRetriever userDocumentRetriever(
+            JdbcClient jdbcClient,
+            TransactionTemplate transactionTemplate,
+            RetrievalProperties retrievalProperties
+    ) {
+        return new KeywordUserDocumentRetriever(
+                jdbcClient, transactionTemplate, retrievalProperties.userDocumentRetrievalSettings());
+    }
+
     @Bean
     CorpusSentenceResolver corpusExampleResolver(LearningMaterialRetriever learningMaterialRetriever) {
         return new CorpusSentenceResolver(learningMaterialRetriever);
@@ -119,6 +138,14 @@ public class ModelConfiguration {
     @Bean
     GroundingMaterialResolver groundingMaterialResolver(LearningMaterialRetriever learningMaterialRetriever) {
         return new GroundingMaterialResolver(learningMaterialRetriever);
+    }
+
+    @Bean
+    ExplanationMaterialResolver explanationMaterialResolver(
+            GroundingMaterialResolver groundingMaterialResolver,
+            UserDocumentRetriever userDocumentRetriever
+    ) {
+        return new ExplanationMaterialResolver(groundingMaterialResolver, userDocumentRetriever);
     }
 
     private static boolean hasApiKey(ConditionContext context) {
