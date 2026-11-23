@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import {
+  deleteUserDocument,
   listUserDocuments,
   setUserDocumentActive,
   toErrorMessage,
@@ -91,6 +92,28 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
       setDocuments((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
+
+  async function handleDelete(document: UserDocumentSummary) {
+    const confirmed = window.confirm(
+      `确定删除文档“${document.filename}”？删除后无法恢复。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyDocumentId(document.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await deleteUserDocument(document.id);
+      setDocuments((current) => current.filter((item) => item.id !== document.id));
+      setNotice(`已删除文档“${document.filename}”。`);
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -214,8 +237,8 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                 {document.chunkCount} 个分块
                 {!document.active && <span className="document-inactive">已停用</span>}
               </p>
-              {document.status === 'READY' && (
-                <div className="document-actions">
+              <div className="document-actions">
+                {document.status === 'READY' && (
                   <button
                     type="button"
                     className="text-button"
@@ -224,8 +247,16 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                   >
                     {document.active ? '停用' : '启用'}
                   </button>
-                </div>
-              )}
+                )}
+                <button
+                  type="button"
+                  className="text-button text-button-danger"
+                  disabled={busyDocumentId === document.id}
+                  onClick={() => void handleDelete(document)}
+                >
+                  删除
+                </button>
+              </div>
               {document.status === 'FAILED' && (
                 <div className="document-failure" role="note">
                   <p>失败原因：{failureMessage(document.errorCode)}</p>

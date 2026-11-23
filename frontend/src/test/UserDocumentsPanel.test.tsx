@@ -163,6 +163,52 @@ describe('UserDocumentsPanel', () => {
     expect(within(list).getByRole('button', { name: '停用' })).toBeInTheDocument();
   });
 
+  it('asks for confirmation before deleting and removes the document afterwards', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.listUserDocuments.mockResolvedValue([readyDocument]);
+    api.deleteUserDocument.mockResolvedValue(undefined);
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '删除' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('grammar.md'));
+    expect(api.deleteUserDocument).toHaveBeenCalledWith('doc-1');
+    expect(await screen.findByText('还没有上传任何文档')).toBeInTheDocument();
+    expect(screen.getByText('0 篇')).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it('does not send a delete request when the confirmation is cancelled', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    api.listUserDocuments.mockResolvedValue([readyDocument]);
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '删除' }));
+
+    expect(api.deleteUserDocument).not.toHaveBeenCalled();
+    expect(within(list).getByText('grammar.md')).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it('keeps the document and shows an error when deletion fails', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.listUserDocuments.mockResolvedValue([readyDocument]);
+    api.deleteUserDocument.mockRejectedValue(new Error('删除失败，请稍后重试。'));
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '删除' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('删除失败，请稍后重试。');
+    expect(within(list).getByText('grammar.md')).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
   it('shows a stable failure reason when processing fails', async () => {
     api.listUserDocuments.mockResolvedValue([failedDocument]);
 

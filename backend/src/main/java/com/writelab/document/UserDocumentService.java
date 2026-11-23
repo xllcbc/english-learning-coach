@@ -160,6 +160,19 @@ public class UserDocumentService {
     }
 
     /**
+     * Deletes the User Document; the {@code ON DELETE CASCADE} foreign key removes its Document
+     * Chunks. Citation snapshots live outside this table and stay untouched.
+     */
+    public void delete(UUID documentId) {
+        int deleted = jdbcClient.sql("DELETE FROM user_document WHERE id = :id")
+                .param("id", documentId)
+                .update();
+        if (deleted == 0) {
+            throw new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND);
+        }
+    }
+
+    /**
      * Enables or disables a User Document. The document keeps its chunks; retrieval only consults
      * active documents, so disabling is reversible and never re-indexes.
      */

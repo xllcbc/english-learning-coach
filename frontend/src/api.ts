@@ -125,6 +125,12 @@ export function uploadUserDocument(file: File): Promise<UserDocumentUploadRespon
   });
 }
 
+export function deleteUserDocument(id: string): Promise<void> {
+  return request<void>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
 export function setUserDocumentActive(id: string, active: boolean): Promise<UserDocumentSummary> {
   return request<UserDocumentSummary>(`/api/documents/${encodeURIComponent(id)}`, {
     method: 'PATCH',

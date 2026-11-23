@@ -135,6 +135,35 @@ class UserDocumentApiIntegrationTest {
     }
 
     @Test
+    void deletesTheDocumentAndItsChunks() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        DocumentBody ready = awaitTerminal(documentId);
+        assertThat(ready.chunkCount()).isPositive();
+        assertThat(countChunks(documentId)).isEqualTo(ready.chunkCount());
+
+        HttpResponse<String> deleted = delete("/api/documents/" + documentId);
+
+        assertThat(deleted.statusCode()).isEqualTo(204);
+        assertThat(deleted.body()).isEmpty();
+        assertThat(get("/api/documents/" + documentId).statusCode()).isEqualTo(404);
+        assertThat(listDocuments()).isEmpty();
+        assertThat(countChunks(documentId)).isZero();
+
+        UUID reuploaded = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        assertThat(reuploaded).isNotEqualTo(documentId);
+    }
+
+    @Test
+    void returnsStable404WhenDeletingAnUnknownDocument() throws Exception {
+        HttpResponse<String> response = delete("/api/documents/" + UUID.randomUUID());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(errorCode(response.body())).isEqualTo("DOCUMENT_NOT_FOUND");
+    }
+
+    @Test
     void returnsTheExistingDocumentForIdenticalContentWithoutAddingChunks() throws Exception {
         HttpResponse<String> first = upload("grammar.md", markdownDocument());
         UUID documentId = objectMapper.readValue(first.body(), UploadBody.class).id();
@@ -315,6 +344,20 @@ class UserDocumentApiIntegrationTest {
                 .method("PATCH", HttpRequest.BodyPublishers.ofString(json))
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> delete(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri(path))
+                .DELETE()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private long countChunks(UUID documentId) {
+        return jdbcClient.sql("SELECT count(*) FROM document_chunk WHERE document_id = :id")
+                .param("id", documentId)
+                .query(Long.class)
+                .single();
     }
 
     private HttpResponse<String> upload(String filename, byte[] content) throws Exception {

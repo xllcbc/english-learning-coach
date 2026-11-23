@@ -1387,8 +1387,16 @@ textarea {
 .document-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   margin-top: 10px;
+}
+
+.document-actions .text-button {
+  margin-left: 0;
+}
+
+.text-button-danger {
+  color: var(--error);
 }
 
 .document-failure {
