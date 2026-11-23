@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { listUserDocuments, toErrorMessage, uploadUserDocument } from '../api';
+import {
+  deleteUserDocument,
+  listUserDocuments,
+  retryUserDocument,
+  setUserDocumentActive,
+  toErrorMessage,
+  uploadUserDocument,
+} from '../api';
 import type { UserDocumentStatus, UserDocumentSummary } from '../types';
 
 const PROCESSING_STATUSES = new Set<UserDocumentStatus>([
@@ -44,6 +51,8 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -61,8 +70,10 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     void loadDocuments();
   }, [loadDocuments]);
 
-  const hasProcessingDocument = documents.some((document) =>
-    PROCESSING_STATUSES.has(document.status),
+  const hasProcessingDocument = documents.some(
+    (document) =>
+      PROCESSING_STATUSES.has(document.status)
+      || document.replacementStatus === 'PROCESSING',
   );
 
   useEffect(() => {
@@ -74,6 +85,58 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     }, pollIntervalMs);
     return () => window.clearInterval(timer);
   }, [hasProcessingDocument, loadDocuments, pollIntervalMs]);
+
+  function replaceDocument(updated: UserDocumentSummary) {
+    setDocuments((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    );
+  }
+
+  async function runDocumentAction(
+    document: UserDocumentSummary,
+    action: () => Promise<void>,
+  ) {
+    setBusyDocumentId(document.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
+
+  async function handleToggleActive(document: UserDocumentSummary) {
+    await runDocumentAction(document, async () => {
+      const updated = await setUserDocumentActive(document.id, !document.active);
+      replaceDocument(updated);
+    });
+  }
+
+  async function handleRetry(document: UserDocumentSummary) {
+    await runDocumentAction(document, async () => {
+      const updated = await retryUserDocument(document.id);
+      replaceDocument(updated);
+      await loadDocuments();
+    });
+  }
+
+  async function handleDelete(document: UserDocumentSummary) {
+    const confirmed = window.confirm(
+      `确定删除文档“${document.filename}”？删除后无法恢复。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await runDocumentAction(document, async () => {
+      await deleteUserDocument(document.id);
+      setDocuments((current) => current.filter((item) => item.id !== document.id));
+      setNotice(`已删除文档“${document.filename}”。`);
+    });
+  }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,6 +212,12 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
         </div>
       )}
 
+      {actionError && (
+        <div className="panel-error" role="alert">
+          <p>{actionError}</p>
+        </div>
+      )}
+
       {listStatus === 'loading' && (
         <p className="muted" role="status">
           正在加载我的文档…
@@ -180,12 +249,59 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                 <span className={`document-status document-status-${document.status.toLowerCase()}`}>
                   {STATUS_LABELS[document.status]}
                 </span>
+                {document.replacementStatus === 'PROCESSING' && (
+                  <span className="document-status document-status-updating">替换中</span>
+                )}
+                {document.replacementStatus === 'FAILED' && (
+                  <span className="document-status document-status-failed">替换失败</span>
+                )}
               </div>
-              <p className="document-meta">{document.chunkCount} 个分块</p>
+              <p className="document-meta">
+                {document.chunkCount} 个分块
+                {!document.active && <span className="document-inactive">已停用</span>}
+              </p>
+              <div className="document-actions">
+                {document.status === 'READY' && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busyDocumentId === document.id}
+                    onClick={() => void handleToggleActive(document)}
+                  >
+                    {document.active ? '停用' : '启用'}
+                  </button>
+                )}
+                {(document.status === 'FAILED'
+                  || document.replacementStatus === 'FAILED') && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busyDocumentId === document.id}
+                    onClick={() => void handleRetry(document)}
+                  >
+                    重试
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="text-button text-button-danger"
+                  disabled={busyDocumentId === document.id}
+                  onClick={() => void handleDelete(document)}
+                >
+                  删除
+                </button>
+              </div>
               {document.status === 'FAILED' && (
                 <div className="document-failure" role="note">
                   <p>失败原因：{failureMessage(document.errorCode)}</p>
                   <p>错误码：{document.errorCode ?? 'PROCESSING_FAILED'}</p>
+                </div>
+              )}
+              {document.replacementStatus === 'FAILED' && (
+                <div className="document-failure" role="note">
+                  <p>替换失败原因：{failureMessage(document.replacementErrorCode)}</p>
+                  <p>错误码：{document.replacementErrorCode ?? 'PROCESSING_FAILED'}</p>
+                  <p>旧内容仍然可用，可以重试替换。</p>
                 </div>
               )}
             </li>

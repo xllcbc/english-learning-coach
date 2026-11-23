@@ -125,6 +125,28 @@ export function uploadUserDocument(file: File): Promise<UserDocumentUploadRespon
   });
 }
 
+export function retryUserDocument(id: string): Promise<UserDocumentSummary> {
+  return request<UserDocumentSummary>(`/api/documents/${encodeURIComponent(id)}/retry`, {
+    method: 'POST',
+  });
+}
+
+export function deleteUserDocument(id: string): Promise<void> {
+  return request<void>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function setUserDocumentActive(id: string, active: boolean): Promise<UserDocumentSummary> {
+  return request<UserDocumentSummary>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ active }),
+  });
+}
+
 export interface ModelModeInfo {
   modelMode: 'MOCK' | 'REAL';
   mockMode: boolean;

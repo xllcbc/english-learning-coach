@@ -1,13 +1,12 @@
 package com.writelab.document;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
- * The background indexing seam. The upload request decides the allowed Document Chunks; the
- * processor owns the status transitions and the atomic persistence of that generation.
+ * The background indexing seam. Uploads persist the Document Chunks of a generation before
+ * scheduling this processor, so a failed run can be retried without keeping the original file.
  */
 public interface UserDocumentProcessor {
 
-    void process(UUID documentId, List<DocumentChunker.Chunk> chunks);
+    void process(UUID documentId, int generation);
 }
