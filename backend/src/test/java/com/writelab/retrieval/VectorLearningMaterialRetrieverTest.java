@@ -189,7 +189,7 @@ class VectorLearningMaterialRetrieverTest {
                 .param("id", UUID.randomUUID())
                 .param("wordForm", wordForm)
                 .param("sentence", sentence)
-                .param("embedding", VectorLearningMaterialRetriever.toVectorLiteral(embedding))
+                .param("embedding", EmbeddingVectors.toLiteral(embedding))
                 .update();
     }
 
@@ -202,7 +202,7 @@ class VectorLearningMaterialRetrieverTest {
                 .param("category", category.name())
                 .param("content", content)
                 .param("source", SOURCE)
-                .param("embedding", VectorLearningMaterialRetriever.toVectorLiteral(embedding))
+                .param("embedding", EmbeddingVectors.toLiteral(embedding))
                 .update();
     }
 

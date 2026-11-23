@@ -9,8 +9,8 @@
    余弦索引生效。
 2. `eval`：用 [`tools/retrieval-eval/`](../tools/retrieval-eval/) 里的小标注集跑检索，
    报告例句命中率、例句包含目标词形的比例、依据材料命中情况，并扫描阈值与 top-k。
-3. `documents`：为缺少向量、embedding model 过期或 chunker 版本变化的 User Document 手动重建
-   `document_chunk.embedding`，并把当前模型与 chunker 版本写回文档。
+3. `documents`：为缺少向量或 embedding model 过期的 User Document 手动重建
+   `document_chunk.embedding`，并把当前模型写回文档；`chunker_version` 保持分块时的实际版本。
 4. `eval-documents`：用同一目录下的 User Document fixture 跑内存检索，验证 expected chunk 进入
    top-4、干扰文档零误引、无关查询零返回。
 
@@ -170,7 +170,7 @@ tools/retrieval-tooling.sh eval \
 `documents` 是手动命令，不在应用启动、Maven、前端构建或 CI 中执行：
 
 ```bash
-# 只补缺失向量、embedding model 过期或 chunker 版本变化的 READY 文档
+# 只补缺失向量或 embedding model 过期的 READY 文档
 tools/retrieval-tooling.sh documents
 
 # 换模型后强制重算所有 READY 文档的 active generation
@@ -183,10 +183,8 @@ tools/retrieval-tooling.sh documents --limit 10 --batch-size 10
 行为：
 
 - 只处理 `READY` 文档的 `active_generation`，不会碰到待切换的 replacement generation；
-- 默认只请求 `embedding IS NULL` 的 chunk；模型或 chunker 版本变化、`--refresh` 时重算全部
-  active chunk；
-- 每批在一个短事务里更新，单批失败不会留下半批向量；全部完成后才写入 `embedding_model` 与
-  `chunker_version`；
+- 默认只请求 `embedding IS NULL` 的 chunk；模型变化或 `--refresh` 时重算全部 active chunk；
+- 每批在一个短事务里更新，单批失败不会留下半批向量；全部完成后才写入 `embedding_model`；
 - 不自动运行，也不自动产生 embedding 费用。Mock 时期上传的文档在运行前 `embedding_model` 为
   `NULL`，不会被 REAL 检索误用；运行后前端“N 篇文档尚未建立向量索引”提示消失。
 
@@ -230,6 +228,7 @@ tools/retrieval-tooling.sh eval-documents
 fixture 只证明“真实 embedding 下这组小样本的排序符合预期”，不证明模型不会执行注入内容；注入
 防护仍由 `ExplanationPrompt` 的分隔符与 system prompt 声明承担，并由后端单元测试覆盖。
 
+## Vocabulary Suggestion 的中文解释与真实例句
 
 本评测只覆盖「检索是否返回真实、含目标词形、且与查询相近的句子」，**不**评估模型中文解释与替换后
 例句的语义连贯性；没有证据表明需要改变 Vocabulary Suggestion 的语义，也没有把候选例句前移进提示词。

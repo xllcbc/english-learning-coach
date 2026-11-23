@@ -56,7 +56,7 @@ public class ExplanationMaterialResolver {
         }
 
         GroundingMaterialResolver.GroundingResult grounding =
-                groundingMaterialResolver.resolve(feedback, queryVector, queryEmbeddingFailed);
+                groundingMaterialResolver.resolve(feedback, queryVector);
 
         if (!StringUtils.hasText(query)) {
             return new ResolvedMaterials(grounding.materials(), List.of(), grounding.hits());

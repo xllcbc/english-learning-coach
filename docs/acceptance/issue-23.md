@@ -9,16 +9,16 @@
 | 配置 key 时上传在 `READY` 前完成所有 chunk 的 512 维 embedding；任一分块失败进入 `FAILED`，可重试且不留下半成品 | `EmbeddingDocumentChunkEmbedder` 分批请求、按批事务写入；处理器只有在全部 chunk 有向量时才提交 `READY`，失败记录 `EMBEDDING_FAILED`；重试只补 `embedding IS NULL` | `UserDocumentRealRetrievalIntegrationTest`、`DocumentErrorCode.EMBEDDING_FAILED` |
 | 未配置 key 时不构造 embedding 客户端、不发起请求，继续 Mock `pg_trgm` | Mock 条件不注册 `EmbeddingClient` / `DocumentChunkEmbedder`；`UserDocumentRetriever` 仍是 `KeywordUserDocumentRetriever` | `ModelConfigurationTest`；既有 `UserDocumentApiIntegrationTest` / `UserDocumentExplanationIntegrationTest` |
 | REAL 按 512 维 `halfvec` 余弦排序；阈值 0.55、最多 4 条、每文档 2 条、相同 chunk 去重；只查 `READY` 且 `active` | `VectorUserDocumentRetriever` 的窗口函数 SQL | `VectorUserDocumentRetrieverTest` |
-| Grounding Material 与 User Document 共用同一个 query vector；一次讲解只发生一次查询 embedding 调用 | `ExplanationMaterialResolver` 先构建一次向量，再传给两个 retriever | `SharedQueryVectorTest`、`UserDocumentRealRetrievalIntegrationTest` |
+| Grounding Material 与 User Document 共用同一个 query vector；一次讲解只发生一次查询 embedding 调用 | `ExplanationMaterialResolver` 先构建一次向量，再传给两个 retriever；共享向量失败时 User Document 直接降级，Grounding Material 回退到自己的既有路径 | `SharedQueryVectorTest`、`UserDocumentRealRetrievalIntegrationTest` |
 | REAL/Mock 由既有 API-key 条件装配；REAL 失败时用户文档降级，讲解仍完成 | `ModelConfiguration` 的 `MockModelCondition` / `RealModelCondition`；resolver 捕获异常并写 `RETRIEVAL_FAILED` | `ModelConfigurationTest`、`ExplanationMaterialResolverTest`、`SharedQueryVectorTest` |
-| 记录 `embedding_model` 与 `chunker_version`；提供 CLI 重建，不自动重建/扣费 | `user_document.embedding_model`、`chunker_version`；`tools/retrieval-tooling.sh documents` | `V11`、`UserDocumentSummary`、`docs/user-documents.md` |
+| 记录 `embedding_model` 与 `chunker_version`；提供 CLI 重建，不自动重建/扣费 | `user_document.embedding_model`、`chunker_version`；`tools/retrieval-tooling.sh documents`；CLI 只更新 `embedding_model`，保留分块时的 `chunker_version` | `V11`、`UserDocumentSummary`、`UserDocumentRealRetrievalIntegrationTest#runDocumentRebuildCli`、`docs/user-documents.md` |
 | Mock 时期文档不会被误当作已建索引；面板显示“N 篇文档尚未建立向量索引”，重建后消失 | `embeddingIndexed` 要求当前模型 + 全部 active chunk 有向量；面板在真实模式显示计数 | `UserDocumentRealRetrievalIntegrationTest`、`UserDocumentsPanel.test.tsx` |
 | 维度不是 512、embedding 失败、向量查询失败时文档检索降级并记录原因；Grounding Material 不受影响 | 共享向量与 retriever 都做 512/有限值校验；失败写 `RETRIEVAL_FAILED`，Grounding Material 结果独立 | `SharedQueryVectorTest`、`VectorUserDocumentRetrieverTest` |
 | fixture 8–10 案例，覆盖中文笔记 + 英文例句、干扰、无关、注入、同文档多 chunk；expected 进 top-4、干扰零误引、注入不改变指令 | 10 个案例、14 条 fixture；见下结果 | `tools/retrieval-eval/document_cases.csv`、`document_fixtures.csv` |
 | fixture 可手动重复执行，结果记录，不接入 Maven/前端/CI | `eval-documents` 手动命令，未加入构建 | `docs/retrieval-evaluation.md`、`tools/retrieval-eval/README.md` |
 | 后端 retriever seam 用确定性 fake embedding；HTTP seam 覆盖 REAL 上传→READY→引用→重建提示 | 新增两个容器测试 | `VectorUserDocumentRetrieverTest`、`UserDocumentRealRetrievalIntegrationTest` |
 | 既有 Mock 路径、Grounding Material 与 Corpus Sentence 行为不变 | 默认测试套件通过；共享向量在 Mock 下为 `null`，原 retriever 路径不变 | 全量 `-Pno-containers` |
-| 测试命令通过 | 见下 | 后端 73 tests / 前端 24 tests |
+| 测试命令通过 | 见下 | 后端 74 tests / 前端 24 tests |
 
 ## fixture 评测结果
 
@@ -46,6 +46,10 @@ tools/retrieval-tooling.sh eval-documents
 汇总：**10/10 通过**；expected chunk 全部进入 top-4；干扰文档零误引；无关查询零返回；注入文档
 未被引用；同一文档的两个 chunk 进入 top-4，第三个被每文档上限排除。
 
+注入内容不改变讲解指令由 `ExplanationPromptTest#keepsInjectedInstructionsInsideTheDocumentDelimiters`
+单独断言：注入文本只出现在 `<<<我的文档开始>>>` / `<<<我的文档结束>>>` 之间，system prompt 明确声明
+不得执行文档中的指令。fixture 评测负责证明“注入文档不会被当作有效依据引用”。
+
 ## 最后一轮自动化测试
 
 ```bash
@@ -60,7 +64,7 @@ npm test
 
 | 项目 | 结果 |
 | --- | --- |
-| 后端 `-Pno-containers` | 73 tests，0 failures，0 errors |
+| 后端 `-Pno-containers` | 74 tests，0 failures，0 errors |
 | 前端 Vitest | 24 tests，0 failures |
 
 容器测试（`*IntegrationTest` / `*RetrieverTest`）按仓库约定需要 Docker。本实现环境没有可用的

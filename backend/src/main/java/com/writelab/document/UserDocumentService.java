@@ -44,6 +44,22 @@ public class UserDocumentService {
     private static final Logger log = LoggerFactory.getLogger(UserDocumentService.class);
     private static final long UPLOAD_BUDGET_LOCK = 780_001L;
     private static final int INITIAL_GENERATION = 1;
+    private static final String EMBEDDING_INDEXED = """
+            (d.embedding_model IS NOT NULL
+                AND d.embedding_model = :embeddingModel
+                AND d.chunk_count > 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM document_chunk chunk
+                    WHERE chunk.document_id = d.id
+                        AND chunk.generation = d.active_generation
+                        AND chunk.embedding IS NULL
+                )) AS embedding_indexed""";
+    private static final String SUMMARY_COLUMNS = """
+            d.id, d.filename, d.status, d.active, d.char_count, d.chunk_count,
+            d.embedding_model, d.chunker_version, d.error_code,
+            d.pending_generation, d.pending_error_code,
+            d.created_at, d.updated_at, """ + EMBEDDING_INDEXED;
 
     private final JdbcClient jdbcClient;
     private final DocumentChunker chunker;
@@ -148,48 +164,16 @@ public class UserDocumentService {
     }
 
     public List<UserDocumentSummary> list() {
-        return jdbcClient.sql("""
-                        SELECT d.id, d.filename, d.status, d.active, d.char_count, d.chunk_count,
-                               d.embedding_model, d.chunker_version, d.error_code,
-                               d.pending_generation, d.pending_error_code,
-                               d.created_at, d.updated_at,
-                               (d.embedding_model IS NOT NULL
-                                   AND d.embedding_model = :embeddingModel
-                                   AND d.chunk_count > 0
-                                   AND NOT EXISTS (
-                                       SELECT 1
-                                       FROM document_chunk chunk
-                                       WHERE chunk.document_id = d.id
-                                           AND chunk.generation = d.active_generation
-                                           AND chunk.embedding IS NULL
-                                   )) AS embedding_indexed
-                        FROM user_document d
-                        ORDER BY d.created_at DESC, d.id DESC
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d ORDER BY d.created_at DESC, d.id DESC")
                 .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)
                 .list();
     }
 
     public UserDocumentSummary find(UUID documentId) {
-        return jdbcClient.sql("""
-                        SELECT d.id, d.filename, d.status, d.active, d.char_count, d.chunk_count,
-                               d.embedding_model, d.chunker_version, d.error_code,
-                               d.pending_generation, d.pending_error_code,
-                               d.created_at, d.updated_at,
-                               (d.embedding_model IS NOT NULL
-                                   AND d.embedding_model = :embeddingModel
-                                   AND d.chunk_count > 0
-                                   AND NOT EXISTS (
-                                       SELECT 1
-                                       FROM document_chunk chunk
-                                       WHERE chunk.document_id = d.id
-                                           AND chunk.generation = d.active_generation
-                                           AND chunk.embedding IS NULL
-                                   )) AS embedding_indexed
-                        FROM user_document d
-                        WHERE d.id = :id
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d WHERE d.id = :id")
                 .param("id", documentId)
                 .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)
@@ -530,26 +514,10 @@ public class UserDocumentService {
     }
 
     private Optional<UserDocumentSummary> findByHash(String contentHash) {
-        return jdbcClient.sql("""
-                        SELECT d.id, d.filename, d.status, d.active, d.char_count, d.chunk_count,
-                               d.embedding_model, d.chunker_version, d.error_code,
-                               d.pending_generation, d.pending_error_code,
-                               d.created_at, d.updated_at,
-                               (d.embedding_model IS NOT NULL
-                                   AND d.embedding_model = :embeddingModel
-                                   AND d.chunk_count > 0
-                                   AND NOT EXISTS (
-                                       SELECT 1
-                                       FROM document_chunk chunk
-                                       WHERE chunk.document_id = d.id
-                                           AND chunk.generation = d.active_generation
-                                           AND chunk.embedding IS NULL
-                                   )) AS embedding_indexed
-                        FROM user_document d
-                        WHERE d.content_hash = :hash OR d.pending_content_hash = :hash
-                        ORDER BY d.created_at DESC, d.id DESC
-                        LIMIT 1
-                        """)
+        return jdbcClient.sql("SELECT " + SUMMARY_COLUMNS
+                        + " FROM user_document d"
+                        + " WHERE d.content_hash = :hash OR d.pending_content_hash = :hash"
+                        + " ORDER BY d.created_at DESC, d.id DESC LIMIT 1")
                 .param("hash", contentHash)
                 .param("embeddingModel", embeddingModel)
                 .query(UserDocumentService::toSummary)

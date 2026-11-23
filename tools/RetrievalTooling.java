@@ -548,7 +548,6 @@ public final class RetrievalTooling {
      */
     private static void rebuildDocuments(Map<String, String> options) throws Exception {
         String model = env("WRITELAB_MODEL_EMBEDDING_NAME", "text-embedding-3-small");
-        String chunkerVersion = env("WRITELAB_DOCUMENT_CHUNKER_VERSION", "document-chunker-v1");
         boolean refresh = options.containsKey("refresh");
         long limit = options.containsKey("limit") ? Long.parseLong(options.get("limit")) : Long.MAX_VALUE;
         int batchSize = Integer.parseInt(
@@ -563,20 +562,19 @@ public final class RetrievalTooling {
         try (Connection connection = connection()) {
             List<DocumentRow> documents = readDocumentRows(connection);
             System.out.printf(Locale.ROOT,
-                    "documents: %d READY documents, model=%s, chunker=%s, refresh=%s%n",
-                    documents.size(), model, chunkerVersion, refresh);
+                    "documents: %d READY documents, model=%s, refresh=%s%n",
+                    documents.size(), model, refresh);
             for (DocumentRow document : documents) {
                 if (processed >= limit) {
                     break;
                 }
                 boolean missing = countUnembeddedChunks(connection, document) > 0;
                 boolean staleModel = !model.equals(document.embeddingModel());
-                boolean staleChunker = !chunkerVersion.equals(document.chunkerVersion());
-                if (!refresh && !missing && !staleModel && !staleChunker) {
+                if (!refresh && !missing && !staleModel) {
                     continue;
                 }
                 processed++;
-                boolean reembedAll = refresh || staleModel || staleChunker;
+                boolean reembedAll = refresh || staleModel;
                 List<Row> chunks = readDocumentChunks(connection, document, reembedAll);
                 System.out.printf(Locale.ROOT, "%s (%s): %d chunks to embed%n",
                         document.filename(), document.id(), chunks.size());
@@ -592,16 +590,11 @@ public final class RetrievalTooling {
                 }
                 try (PreparedStatement statement = connection.prepareStatement("""
                         UPDATE user_document
-                        SET embedding_model = ?,
-                            chunker_version = CASE
-                                WHEN pending_generation IS NULL THEN ? ELSE chunker_version
-                            END,
-                            updated_at = now()
+                        SET embedding_model = ?, updated_at = now()
                         WHERE id = ?
                         """)) {
                     statement.setString(1, model);
-                    statement.setString(2, chunkerVersion);
-                    statement.setObject(3, java.util.UUID.fromString(document.id()));
+                    statement.setObject(2, java.util.UUID.fromString(document.id()));
                     statement.executeUpdate();
                 }
             }
@@ -614,7 +607,7 @@ public final class RetrievalTooling {
     private static List<DocumentRow> readDocumentRows(Connection connection) throws SQLException {
         List<DocumentRow> rows = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("""
-                        SELECT id, filename, active_generation, embedding_model, chunker_version
+                        SELECT id, filename, active_generation, embedding_model
                         FROM user_document
                         WHERE status = 'READY'
                         ORDER BY created_at, id
@@ -625,8 +618,7 @@ public final class RetrievalTooling {
                         resultSet.getString("id"),
                         resultSet.getString("filename"),
                         resultSet.getInt("active_generation"),
-                        resultSet.getString("embedding_model"),
-                        resultSet.getString("chunker_version")));
+                        resultSet.getString("embedding_model")));
             }
         }
         return rows;
@@ -1062,8 +1054,7 @@ public final class RetrievalTooling {
             String id,
             String filename,
             int generation,
-            String embeddingModel,
-            String chunkerVersion
+            String embeddingModel
     ) {
     }
 

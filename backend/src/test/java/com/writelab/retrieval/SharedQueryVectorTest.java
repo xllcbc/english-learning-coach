@@ -65,10 +65,11 @@ class SharedQueryVectorTest {
     }
 
     @Test
-    void degradesBothCorporaWhenTheSharedQueryVectorCannotBeBuilt() {
+    void keepsGroundingMaterialWhenTheSharedQueryVectorCannotBeBuilt() {
         RecordingEmbeddingClient embeddings = new RecordingEmbeddingClient(
                 List.of(), new IllegalStateException("embedding service unavailable"));
-        RecordingGroundingRetriever grounding = new RecordingGroundingRetriever(List.of(RankedGroundingMaterial.semantic(rule(), 0.9)));
+        RecordingGroundingRetriever grounding = new RecordingGroundingRetriever(
+                List.of(RankedGroundingMaterial.semantic(rule(), 0.9)));
         RecordingDocumentRetriever documents = new RecordingDocumentRetriever(
                 List.of(chunk("grammar.md", "Grammar", "Subject-verb agreement.", 0.91)));
 
@@ -76,34 +77,41 @@ class SharedQueryVectorTest {
                 .resolve(feedback());
 
         assertThat(embeddings.calls).hasSize(1);
-        assertThat(grounding.calls).isZero();
+        assertThat(grounding.calls).isEqualTo(1);
+        assertThat(grounding.lastVector).isNull();
         assertThat(documents.calls).isZero();
-        assertThat(materials.groundingMaterials()).isEmpty();
+        assertThat(materials.groundingMaterials()).hasSize(1);
         assertThat(materials.documentCitations()).isEmpty();
         assertThat(materials.hits())
                 .extracting(RetrievalHit::kind, RetrievalHit::skipReason)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple(
-                                RetrievalHit.GROUNDING_MATERIAL, RetrievalHit.RETRIEVAL_FAILED),
+                        org.assertj.core.groups.Tuple.tuple(RetrievalHit.GROUNDING_MATERIAL, null),
                         org.assertj.core.groups.Tuple.tuple(
                                 RetrievalHit.USER_DOCUMENT, RetrievalHit.RETRIEVAL_FAILED));
     }
 
     @Test
-    void degradesWhenTheQueryEmbeddingHasTheWrongDimensions() {
+    void keepsGroundingMaterialWhenTheQueryEmbeddingHasTheWrongDimensions() {
         RecordingEmbeddingClient embeddings = new RecordingEmbeddingClient(List.of(new float[]{1.0f, 0.0f}));
-        RecordingGroundingRetriever grounding = new RecordingGroundingRetriever(List.of(RankedGroundingMaterial.semantic(rule(), 0.9)));
+        RecordingGroundingRetriever grounding = new RecordingGroundingRetriever(
+                List.of(RankedGroundingMaterial.semantic(rule(), 0.9)));
         RecordingDocumentRetriever documents = new RecordingDocumentRetriever(
                 List.of(chunk("grammar.md", "Grammar", "Subject-verb agreement.", 0.91)));
 
         ExplanationMaterialResolver.ResolvedMaterials materials = resolver(grounding, documents, embeddings)
                 .resolve(feedback());
 
-        assertThat(grounding.calls).isZero();
+        assertThat(grounding.calls).isEqualTo(1);
+        assertThat(grounding.lastVector).isNull();
         assertThat(documents.calls).isZero();
+        assertThat(materials.groundingMaterials()).hasSize(1);
+        assertThat(materials.documentCitations()).isEmpty();
         assertThat(materials.hits())
-                .extracting(RetrievalHit::skipReason)
-                .containsOnly(RetrievalHit.RETRIEVAL_FAILED);
+                .extracting(RetrievalHit::kind, RetrievalHit::skipReason)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(RetrievalHit.GROUNDING_MATERIAL, null),
+                        org.assertj.core.groups.Tuple.tuple(
+                                RetrievalHit.USER_DOCUMENT, RetrievalHit.RETRIEVAL_FAILED));
     }
 
     private static ExplanationMaterialResolver resolver(

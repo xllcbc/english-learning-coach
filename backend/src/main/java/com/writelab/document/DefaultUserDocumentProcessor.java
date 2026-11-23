@@ -31,14 +31,6 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
     public DefaultUserDocumentProcessor(
             JdbcClient jdbcClient,
             TransactionTemplate transactionTemplate,
-            DocumentChunkEmbedder embedder
-    ) {
-        this(jdbcClient, transactionTemplate, embedder, null);
-    }
-
-    public DefaultUserDocumentProcessor(
-            JdbcClient jdbcClient,
-            TransactionTemplate transactionTemplate,
             DocumentChunkEmbedder embedder,
             String chunkerVersion
     ) {

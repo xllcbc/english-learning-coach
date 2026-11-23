@@ -7,19 +7,19 @@ import java.util.List;
  * implementations. A malformed provider response must be rejected before it reaches a halfvec cast,
  * so the resolver can degrade to "no citation" with a single stable skip reason.
  */
-final class EmbeddingVectors {
+public final class EmbeddingVectors {
 
     private EmbeddingVectors() {
     }
 
-    static float[] requireSingle(List<float[]> vectors) {
+    public static float[] requireSingle(List<float[]> vectors) {
         if (vectors == null || vectors.size() != 1) {
             throw new IllegalStateException("embedding 返回的向量数量与输入不一致");
         }
         return requireDimensions(vectors.getFirst());
     }
 
-    static float[] requireDimensions(float[] vector) {
+    public static float[] requireDimensions(float[] vector) {
         if (vector == null || vector.length != EmbeddingClient.VECTOR_DIMENSIONS) {
             throw new IllegalStateException("embedding 返回的向量维度不是 " + EmbeddingClient.VECTOR_DIMENSIONS);
         }
@@ -31,7 +31,7 @@ final class EmbeddingVectors {
         return vector;
     }
 
-    static String toLiteral(float[] vector) {
+    public static String toLiteral(float[] vector) {
         StringBuilder literal = new StringBuilder(vector.length * 8).append('[');
         for (int index = 0; index < vector.length; index++) {
             if (index > 0) {

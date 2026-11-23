@@ -51,7 +51,7 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
         Map<String, List<RankedCorpusSentence>> candidates = new LinkedHashMap<>();
         int index = 0;
         for (Map.Entry<String, String> query : queries.entrySet()) {
-            String vector = toVectorLiteral(vectors.get(index++));
+            String vector = EmbeddingVectors.toLiteral(vectors.get(index++));
             List<RankedCorpusSentence> rows = jdbcClient.sql("""
                             SELECT id, word_form, sentence, source, license,
                                    1 - (embedding <=> CAST(:query AS halfvec)) AS similarity
@@ -144,9 +144,5 @@ public class VectorLearningMaterialRetriever implements LearningMaterialRetrieve
             EmbeddingVectors.requireDimensions(vector);
         }
         return vectors;
-    }
-
-    static String toVectorLiteral(float[] vector) {
-        return EmbeddingVectors.toLiteral(vector);
     }
 }

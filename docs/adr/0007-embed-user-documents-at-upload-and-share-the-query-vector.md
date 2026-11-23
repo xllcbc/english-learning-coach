@@ -20,11 +20,12 @@ embedding + pgvector。实现 REAL 路径时有两个边界需要固定：
    已建立向量索引。
 2. **一个查询向量，两份语料。** 讲解检索编排层先计算一次 query vector，再把它同时传给
    `GroundingMaterialResolver` 与 `UserDocumentRetriever`。REAL retriever 不再自行 embedding；
-   Mock retriever 忽略该参数，继续走 `pg_trgm`。共享向量构建失败时，两份语料都按
-   `RETRIEVAL_FAILED` 降级，且不会发起第二次 embedding 请求。
-3. **重建是显式操作。** 缺少向量、`embedding_model` 过期或 chunker 版本变化的 READY 文档由
+   Mock retriever 忽略该参数，继续走 `pg_trgm`。共享向量构建失败时，User Document 直接按
+   `RETRIEVAL_FAILED` 跳过；Grounding Material 回退到自己的既有检索路径，因此它的失败边界不被
+   用户文档的失败拖累。成功路径仍然只有一次查询 embedding 调用。
+3. **重建是显式操作。** 缺少向量或 `embedding_model` 过期的 READY 文档由
    `tools/retrieval-tooling.sh documents` 手动重建。应用启动、上传和讲解都不自动重建，也不自动
-   产生 embedding 费用。
+   产生 embedding 费用。CLI 只刷新向量，不覆盖分块时记录的 `chunker_version`。
 
 ## 与既有 ADR 的关系
 
@@ -45,5 +46,6 @@ embedding + pgvector。实现 REAL 路径时有两个边界需要固定：
 - 一次讲解的在线 embedding 成本固定为一次查询 embedding；上传成本与 chunk 数成正比，可预算。
 - 供应商换模型后，旧文档在 `embedding_model` 与新配置不一致时不会被 REAL 检索使用，面板提示
   “N 篇文档尚未建立向量索引”，直到手动重建。
-- chunker 版本变化需要重新分块，而原始文件不保留，因此 CLI 只重建向量并在文档中记录当前
-  chunker 版本；要改变 chunk 边界仍需重新上传。
+- chunker 版本变化需要重新分块，而原始文件不保留，因此 CLI 只重建向量并保留分块时的
+  `chunker_version`；要改变 chunk 边界仍需重新上传。文档的 `chunkerVersion` 因此仍能暴露分块
+  策略漂移，而不会被向量重建掩盖。

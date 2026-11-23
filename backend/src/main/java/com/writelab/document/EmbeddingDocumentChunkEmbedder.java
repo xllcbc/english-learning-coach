@@ -1,6 +1,7 @@
 package com.writelab.document;
 
 import com.writelab.retrieval.EmbeddingClient;
+import com.writelab.retrieval.EmbeddingVectors;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -63,7 +64,7 @@ public class EmbeddingDocumentChunkEmbedder implements DocumentChunkEmbedder {
                                     SET embedding = CAST(:embedding AS halfvec)
                                     WHERE id = :id
                                     """)
-                            .param("embedding", toVectorLiteral(vectors.get(index)))
+                            .param("embedding", EmbeddingVectors.toLiteral(vectors.get(index)))
                             .param("id", batch.get(index).id())
                             .update();
                 }
@@ -76,34 +77,16 @@ public class EmbeddingDocumentChunkEmbedder implements DocumentChunkEmbedder {
         List<float[]> vectors;
         try {
             vectors = embeddingClient.embed(batch.stream().map(ChunkRow::content).toList());
+            if (vectors == null || vectors.size() != batch.size()) {
+                throw new IllegalStateException("embedding 返回的向量数量与输入不一致");
+            }
+            for (float[] vector : vectors) {
+                EmbeddingVectors.requireDimensions(vector);
+            }
         } catch (RuntimeException exception) {
             throw new DocumentProcessingException(DocumentErrorCode.EMBEDDING_FAILED, exception);
         }
-        if (vectors == null || vectors.size() != batch.size()) {
-            throw new DocumentProcessingException(DocumentErrorCode.EMBEDDING_FAILED);
-        }
-        for (float[] vector : vectors) {
-            if (vector == null || vector.length != EmbeddingClient.VECTOR_DIMENSIONS) {
-                throw new DocumentProcessingException(DocumentErrorCode.EMBEDDING_FAILED);
-            }
-            for (float value : vector) {
-                if (!Float.isFinite(value)) {
-                    throw new DocumentProcessingException(DocumentErrorCode.EMBEDDING_FAILED);
-                }
-            }
-        }
         return vectors;
-    }
-
-    private static String toVectorLiteral(float[] vector) {
-        StringBuilder literal = new StringBuilder(vector.length * 8).append('[');
-        for (int index = 0; index < vector.length; index++) {
-            if (index > 0) {
-                literal.append(',');
-            }
-            literal.append(vector[index]);
-        }
-        return literal.append(']').toString();
     }
 
     private record ChunkRow(UUID id, String content) {

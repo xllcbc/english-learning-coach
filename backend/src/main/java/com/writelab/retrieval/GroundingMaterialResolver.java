@@ -27,16 +27,16 @@ public class GroundingMaterialResolver {
     }
 
     public GroundingResult resolve(StructuredFeedback feedback) {
-        return resolve(feedback, null, false);
+        return resolve(feedback, null);
     }
 
     /**
      * Resolves Grounding Material with a query vector that the explanation orchestrator already
-     * built. When the shared vector could not be built, the semantic path must not issue a second
-     * embedding request: it records the same failure instead.
+     * built when available. When the shared vector could not be built, a semantic retriever falls
+     * back to its own existing path: Grounding Material must not be dropped merely because the
+     * optional User Document lookup failed.
      */
-    public GroundingResult resolve(
-            StructuredFeedback feedback, float[] queryVector, boolean queryEmbeddingFailed) {
+    public GroundingResult resolve(StructuredFeedback feedback, float[] queryVector) {
         List<IssueCategory> categories = focusedCategories(feedback);
         if (categories.isEmpty()) {
             return new GroundingResult(List.of(), List.of());
@@ -44,19 +44,14 @@ public class GroundingMaterialResolver {
 
         List<RankedGroundingMaterial> rankedMaterials;
         String skipReason = null;
-        if (queryEmbeddingFailed) {
+        try {
+            rankedMaterials = retriever.groundingMaterials(
+                    categories, FocusedIssueQuery.text(feedback), queryVector);
+        } catch (RuntimeException exception) {
+            log.warn("依据材料检索失败，本次讲解不引用依据: categories={}, cause={}",
+                    categories, exception.getClass().getSimpleName());
             rankedMaterials = List.of();
             skipReason = RetrievalHit.RETRIEVAL_FAILED;
-        } else {
-            try {
-                rankedMaterials = retriever.groundingMaterials(
-                        categories, FocusedIssueQuery.text(feedback), queryVector);
-            } catch (RuntimeException exception) {
-                log.warn("依据材料检索失败，本次讲解不引用依据: categories={}, cause={}",
-                        categories, exception.getClass().getSimpleName());
-                rankedMaterials = List.of();
-                skipReason = RetrievalHit.RETRIEVAL_FAILED;
-            }
         }
 
         if (rankedMaterials.isEmpty()) {

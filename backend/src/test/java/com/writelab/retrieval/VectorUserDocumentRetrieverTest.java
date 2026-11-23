@@ -213,7 +213,7 @@ class VectorUserDocumentRetrieverTest {
             UUID documentId, int generation, int position, String headingPath, String content,
             float[] embedding) {
         UUID id = UUID.randomUUID();
-        String embeddingValue = embedding == null ? "" : VectorLearningMaterialRetriever.toVectorLiteral(embedding);
+        String embeddingValue = embedding == null ? "" : EmbeddingVectors.toLiteral(embedding);
         jdbcClient.sql("""
                         INSERT INTO document_chunk (
                             id, document_id, generation, position, heading_path,

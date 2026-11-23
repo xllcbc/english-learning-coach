@@ -128,10 +128,10 @@ REAL 检索与 Mock 使用相同的 User Document 预算：
 | 去重 | 相同 chunk 文本只保留最相似的一条 |
 | 范围 | 只检索 `READY`、`active` 且 `embeddingModel` 等于当前配置的文档 |
 
-Grounding Material 与 User Document 共用同一次查询 embedding；一次 Teacher Explanation 只发生
-一次查询 embedding 调用。共享查询向量失败、维度不是 512、向量查询失败或 embedding 服务失败时，
-只跳过用户文档检索并记录 `RETRIEVAL_FAILED`，讲解仍以 `complete` 结束，Grounding Material 的
-既有降级行为不变。
+Grounding Material 与 User Document 共用同一次查询 embedding；成功路径上一次 Teacher Explanation
+只发生一次查询 embedding 调用。共享查询向量失败、维度不是 512、文档向量查询失败或 embedding
+服务失败时，只跳过用户文档检索并记录 `RETRIEVAL_FAILED`，讲解仍以 `complete` 结束；Grounding
+Material 回退到自己的既有检索路径，不受用户文档失败影响。
 
 ### 重建缺失或过期的向量
 
@@ -139,7 +139,7 @@ Grounding Material 与 User Document 共用同一次查询 embedding；一次 Te
 手动命令重建：
 
 ```bash
-# 只处理缺少向量、embedding model 过期或 chunker 版本变化的 READY 文档
+# 只处理缺少向量或 embedding model 过期的 READY 文档
 tools/retrieval-tooling.sh documents
 
 # 强制重算所有 READY 文档的 active generation
@@ -149,10 +149,10 @@ tools/retrieval-tooling.sh documents --refresh
 tools/retrieval-tooling.sh documents --limit 10 --batch-size 10
 ```
 
-命令逐文档补向量，全部完成后写入 `embedding_model` 与 `chunker_version`；它不在应用启动、Maven
-或 CI 中自动执行，也不会自动产生 embedding 费用。前端在真实模型模式下显示“N 篇文档尚未建立向量
-索引”，重建完成后该提示消失。chunker 版本变化需要改变 chunk 边界时，仍应重新上传文档；CLI 只
-刷新向量。
+命令逐文档补向量，全部完成后写入 `embedding_model`；它不在应用启动、Maven 或 CI 中自动执行，
+也不会自动产生 embedding 费用。`chunker_version` 保留分块当时的实际版本，CLI 不会覆盖它。前端在
+真实模型模式下显示“N 篇文档尚未建立向量索引”，重建完成后该提示消失。chunker 版本变化需要改变
+chunk 边界时，仍应重新上传文档；CLI 只刷新向量。
 
 
 | 项目 | 默认值 | 配置项 |

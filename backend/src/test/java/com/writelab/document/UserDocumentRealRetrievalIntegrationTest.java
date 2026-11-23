@@ -11,13 +11,17 @@ import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.feedback.Scores;
 import com.writelab.feedback.StructuredFeedback;
+import com.sun.net.httpserver.HttpServer;
 import com.writelab.retrieval.EmbeddingClient;
 import java.io.ByteArrayOutputStream;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,15 +29,15 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.postgresql.Driver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -83,10 +87,7 @@ class UserDocumentRealRetrievalIntegrationTest {
     private JdbcClient jdbcClient;
 
     @Autowired
-    private DocumentaryEmbeddingClient embeddingClient;
-
-    @Autowired
-    private DocumentChunkEmbedder documentChunkEmbedder;
+    private FakeDocumentEmbeddingClient embeddingClient;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -131,7 +132,7 @@ class UserDocumentRealRetrievalIntegrationTest {
         assertThat(before.embeddingModel()).isNull();
         assertThat(complete(practiceId).documentCitations()).isEmpty();
 
-        rebuildVectors(legacy);
+        runDocumentRebuildCli();
 
         DocumentBody after = getDocument(legacy);
         assertThat(after.embeddingIndexed()).isTrue();
@@ -186,20 +187,57 @@ class UserDocumentRealRetrievalIntegrationTest {
         return readEvent(result.events().getLast(), CompleteBody.class);
     }
 
-    private void rebuildVectors(UUID documentId) {
-        int generation = jdbcClient.sql("SELECT active_generation FROM user_document WHERE id = :id")
-                .param("id", documentId)
-                .query(Integer.class)
-                .single();
-        documentChunkEmbedder.embed(documentId, generation);
-        jdbcClient.sql("""
-                        UPDATE user_document
-                        SET embedding_model = 'test-embedding', updated_at = :updatedAt
-                        WHERE id = :id
-                        """)
-                .param("updatedAt", Timestamp.from(Instant.now()))
-                .param("id", documentId)
-                .update();
+    private void runDocumentRebuildCli() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        String vector = "[1.0" + ",0.0".repeat(EmbeddingClient.VECTOR_DIMENSIONS - 1) + "]";
+        server.createContext("/embeddings", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            int count = objectMapper.readTree(body).get("input").size();
+            String response = "{\"data\":[" + java.util.stream.IntStream.range(0, count)
+                    .mapToObj(index -> "{\"embedding\":" + vector + "}")
+                    .collect(Collectors.joining(",")) + "]}";
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            Path repoRoot = Path.of("").toAbsolutePath();
+            while (repoRoot != null && !Files.exists(repoRoot.resolve("tools/RetrievalTooling.java"))) {
+                repoRoot = repoRoot.getParent();
+            }
+            assertThat(repoRoot).as("找不到 tools/RetrievalTooling.java").isNotNull();
+            String driverJar = Path.of(Driver.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI()).toString();
+            ProcessBuilder builder = new ProcessBuilder(
+                    Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                    "-cp", driverJar,
+                    repoRoot.resolve("tools/RetrievalTooling.java").toString(),
+                    "documents");
+            builder.directory(repoRoot.toFile());
+            builder.redirectErrorStream(true);
+            builder.environment().put("SPRING_DATASOURCE_URL", postgres.getJdbcUrl());
+            builder.environment().put("SPRING_DATASOURCE_USERNAME", postgres.getUsername());
+            builder.environment().put("SPRING_DATASOURCE_PASSWORD", postgres.getPassword());
+            builder.environment().put("WRITELAB_MODEL_API_KEY", "test-key");
+            builder.environment().put("WRITELAB_MODEL_BASE_URL",
+                    "http://127.0.0.1:" + server.getAddress().getPort());
+            builder.environment().put("WRITELAB_MODEL_EMBEDDING_NAME", "test-embedding");
+            builder.environment().put("WRITELAB_MODEL_EMBEDDING_URL",
+                    "http://127.0.0.1:" + server.getAddress().getPort() + "/embeddings");
+            Process process = builder.start();
+            boolean finished = process.waitFor(120, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+            }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(finished).as("rebuild CLI timed out: " + output).isTrue();
+            assertThat(process.exitValue()).as(output).isZero();
+        } finally {
+            server.stop(0);
+        }
     }
 
     private UUID insertUnindexedDocument(String filename, String text) {
@@ -398,15 +436,6 @@ class UserDocumentRealRetrievalIntegrationTest {
         return events;
     }
 
-    private static List<Integer> citationNumbers(String explanation) {
-        Matcher matcher = Pattern.compile("\\[依据(\\d+)]").matcher(explanation);
-        List<Integer> numbers = new ArrayList<>();
-        while (matcher.find()) {
-            numbers.add(Integer.parseInt(matcher.group(1)));
-        }
-        return numbers;
-    }
-
     private URI uri(String path) {
         return URI.create("http://localhost:" + port + path);
     }
@@ -493,8 +522,8 @@ class UserDocumentRealRetrievalIntegrationTest {
 
         @Bean
         @Primary
-        DocumentaryEmbeddingClient documentaryEmbeddingClient() {
-            return new DocumentaryEmbeddingClient();
+        FakeDocumentEmbeddingClient documentaryEmbeddingClient() {
+            return new FakeDocumentEmbeddingClient();
         }
 
         @Bean
@@ -532,7 +561,7 @@ class UserDocumentRealRetrievalIntegrationTest {
         }
     }
 
-    static final class DocumentaryEmbeddingClient implements EmbeddingClient {
+    static final class FakeDocumentEmbeddingClient implements EmbeddingClient {
 
         private final AtomicInteger calls = new AtomicInteger();
         private final AtomicBoolean failNext = new AtomicBoolean(false);

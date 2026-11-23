@@ -53,14 +53,14 @@ public class VectorUserDocumentRetriever implements UserDocumentRetriever {
                 : EmbeddingVectors.requireDimensions(queryVector);
 
         return jdbcClient.sql("""
-                        WITH scored AS (
+                        WITH nearest AS (
                             SELECT chunk.id AS chunk_id,
                                    chunk.document_id,
                                    chunk.position,
                                    chunk.heading_path,
                                    chunk.content,
                                    document.filename,
-                                   1 - (chunk.embedding <=> CAST(:query AS halfvec)) AS similarity
+                                   chunk.embedding <=> CAST(:query AS halfvec) AS distance
                             FROM document_chunk chunk
                             JOIN user_document document ON document.id = chunk.document_id
                             WHERE document.status = 'READY'
@@ -68,6 +68,12 @@ public class VectorUserDocumentRetriever implements UserDocumentRetriever {
                                 AND document.embedding_model = :embeddingModel
                                 AND chunk.generation = document.active_generation
                                 AND chunk.embedding IS NOT NULL
+                            ORDER BY chunk.embedding <=> CAST(:query AS halfvec)
+                            LIMIT :candidateLimit
+                        ), scored AS (
+                            SELECT chunk_id, document_id, position, heading_path, content, filename,
+                                   1 - distance AS similarity
+                            FROM nearest
                         ), deduplicated AS (
                             SELECT scored.*,
                                    ROW_NUMBER() OVER (
@@ -93,6 +99,7 @@ public class VectorUserDocumentRetriever implements UserDocumentRetriever {
                         """)
                 .param("query", EmbeddingVectors.toLiteral(vector))
                 .param("embeddingModel", embeddingModel)
+                .param("candidateLimit", Math.max(settings.maxHits() * 10, 100))
                 .param("threshold", settings.similarityThreshold())
                 .param("perDocumentHits", settings.perDocumentHits())
                 .param("maxHits", settings.maxHits())
