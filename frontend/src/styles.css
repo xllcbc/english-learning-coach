@@ -1366,9 +1366,29 @@ textarea {
 }
 
 .document-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 8px 0 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.document-inactive {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-alt);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .document-failure {

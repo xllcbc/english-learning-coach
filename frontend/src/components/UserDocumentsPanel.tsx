@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { listUserDocuments, toErrorMessage, uploadUserDocument } from '../api';
+import {
+  listUserDocuments,
+  setUserDocumentActive,
+  toErrorMessage,
+  uploadUserDocument,
+} from '../api';
 import type { UserDocumentStatus, UserDocumentSummary } from '../types';
 
 const PROCESSING_STATUSES = new Set<UserDocumentStatus>([
@@ -44,6 +49,8 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -74,6 +81,22 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     }, pollIntervalMs);
     return () => window.clearInterval(timer);
   }, [hasProcessingDocument, loadDocuments, pollIntervalMs]);
+
+  async function handleToggleActive(document: UserDocumentSummary) {
+    setBusyDocumentId(document.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const updated = await setUserDocumentActive(document.id, !document.active);
+      setDocuments((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    } catch (error) {
+      setActionError(toErrorMessage(error));
+    } finally {
+      setBusyDocumentId(null);
+    }
+  }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,6 +172,12 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
         </div>
       )}
 
+      {actionError && (
+        <div className="panel-error" role="alert">
+          <p>{actionError}</p>
+        </div>
+      )}
+
       {listStatus === 'loading' && (
         <p className="muted" role="status">
           正在加载我的文档…
@@ -181,7 +210,22 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                   {STATUS_LABELS[document.status]}
                 </span>
               </div>
-              <p className="document-meta">{document.chunkCount} 个分块</p>
+              <p className="document-meta">
+                {document.chunkCount} 个分块
+                {!document.active && <span className="document-inactive">已停用</span>}
+              </p>
+              {document.status === 'READY' && (
+                <div className="document-actions">
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busyDocumentId === document.id}
+                    onClick={() => void handleToggleActive(document)}
+                  >
+                    {document.active ? '停用' : '启用'}
+                  </button>
+                </div>
+              )}
               {document.status === 'FAILED' && (
                 <div className="document-failure" role="note">
                   <p>失败原因：{failureMessage(document.errorCode)}</p>

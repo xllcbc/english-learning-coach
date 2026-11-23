@@ -125,6 +125,16 @@ export function uploadUserDocument(file: File): Promise<UserDocumentUploadRespon
   });
 }
 
+export function setUserDocumentActive(id: string, active: boolean): Promise<UserDocumentSummary> {
+  return request<UserDocumentSummary>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ active }),
+  });
+}
+
 export interface ModelModeInfo {
   modelMode: 'MOCK' | 'REAL';
   mockMode: boolean;

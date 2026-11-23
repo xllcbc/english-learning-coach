@@ -8,11 +8,17 @@ import type { UserDocumentSummary } from '../types';
 const api = vi.hoisted(() => ({
   listUserDocuments: vi.fn(),
   uploadUserDocument: vi.fn(),
+  setUserDocumentActive: vi.fn(),
+  deleteUserDocument: vi.fn(),
+  retryUserDocument: vi.fn(),
 }));
 
 vi.mock('../api', () => ({
   listUserDocuments: api.listUserDocuments,
   uploadUserDocument: api.uploadUserDocument,
+  setUserDocumentActive: api.setUserDocumentActive,
+  deleteUserDocument: api.deleteUserDocument,
+  retryUserDocument: api.retryUserDocument,
   toErrorMessage: (error: unknown) =>
     error instanceof Error ? error.message : '无法连接后端服务，请确认服务已启动。',
 }));
@@ -49,6 +55,9 @@ describe('UserDocumentsPanel', () => {
   beforeEach(() => {
     api.listUserDocuments.mockReset();
     api.uploadUserDocument.mockReset();
+    api.setUserDocumentActive.mockReset();
+    api.deleteUserDocument.mockReset();
+    api.retryUserDocument.mockReset();
   });
 
   it('shows the upload hints and an empty state when there are no documents', async () => {
@@ -116,6 +125,42 @@ describe('UserDocumentsPanel', () => {
     // A continued poll would have replaced the terminal READY state with the later FAILED response.
     expect(screen.getByText('已就绪')).toBeInTheDocument();
     expect(screen.queryByText('处理失败')).not.toBeInTheDocument();
+  });
+
+  it('toggles a ready document between disabled and enabled immediately', async () => {
+    api.listUserDocuments.mockResolvedValue([readyDocument]);
+    api.setUserDocumentActive
+      .mockResolvedValueOnce({ ...readyDocument, active: false })
+      .mockResolvedValueOnce({ ...readyDocument, active: true });
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    const item = within(list).getByRole('listitem');
+    await userEvent.click(within(item).getByRole('button', { name: '停用' }));
+
+    expect(api.setUserDocumentActive).toHaveBeenCalledWith('doc-1', false);
+    expect(await within(item).findByText('已停用')).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: '启用' })).toBeInTheDocument();
+
+    await userEvent.click(within(item).getByRole('button', { name: '启用' }));
+
+    expect(api.setUserDocumentActive).toHaveBeenLastCalledWith('doc-1', true);
+    expect(await within(item).findByRole('button', { name: '停用' })).toBeInTheDocument();
+    expect(within(item).queryByText('已停用')).not.toBeInTheDocument();
+  });
+
+  it('shows an understandable message when toggling a document fails', async () => {
+    api.listUserDocuments.mockResolvedValue([readyDocument]);
+    api.setUserDocumentActive.mockRejectedValue(new Error('停用失败，请稍后重试。'));
+
+    render(<UserDocumentsPanel />);
+
+    const list = await screen.findByRole('list', { name: '我的文档列表' });
+    await userEvent.click(within(list).getByRole('button', { name: '停用' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('停用失败，请稍后重试。');
+    expect(within(list).getByRole('button', { name: '停用' })).toBeInTheDocument();
   });
 
   it('shows a stable failure reason when processing fails', async () => {

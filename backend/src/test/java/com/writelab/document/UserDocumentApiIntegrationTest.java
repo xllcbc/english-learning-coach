@@ -93,6 +93,48 @@ class UserDocumentApiIntegrationTest {
     }
 
     @Test
+    void deactivatesAndReactivatesAReadyDocument() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        DocumentBody ready = awaitTerminal(documentId);
+        assertThat(ready.status()).isEqualTo("READY");
+        assertThat(ready.active()).isTrue();
+
+        HttpResponse<String> deactivated = patch(
+                "/api/documents/" + documentId, "{\"active\": false}");
+
+        assertThat(deactivated.statusCode()).isEqualTo(200);
+        DocumentBody inactive = objectMapper.readValue(deactivated.body(), DocumentBody.class);
+        assertThat(inactive.id()).isEqualTo(documentId);
+        assertThat(inactive.active()).isFalse();
+        assertThat(inactive.status()).isEqualTo("READY");
+        assertThat(getDocument(documentId).active()).isFalse();
+        assertThat(listDocuments()).singleElement().satisfies(document -> {
+            assertThat(document.id()).isEqualTo(documentId);
+            assertThat(document.active()).isFalse();
+        });
+
+        HttpResponse<String> reactivated = patch(
+                "/api/documents/" + documentId, "{\"active\": true}");
+
+        assertThat(reactivated.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readValue(reactivated.body(), DocumentBody.class).active()).isTrue();
+        assertThat(getDocument(documentId).active()).isTrue();
+    }
+
+    @Test
+    void rejectsAnActiveUpdateWithoutTheActiveFlag() throws Exception {
+        UUID documentId = objectMapper.readValue(
+                upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
+        awaitTerminal(documentId);
+
+        HttpResponse<String> response = patch("/api/documents/" + documentId, "{}");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(errorCode(response.body())).isEqualTo("INVALID_DOCUMENT_UPDATE");
+    }
+
+    @Test
     void returnsTheExistingDocumentForIdenticalContentWithoutAddingChunks() throws Exception {
         HttpResponse<String> first = upload("grammar.md", markdownDocument());
         UUID documentId = objectMapper.readValue(first.body(), UploadBody.class).id();
@@ -261,6 +303,20 @@ class UserDocumentApiIntegrationTest {
         return objectMapper.readValue(response.body(), DocumentBody[].class);
     }
 
+    private DocumentBody getDocument(UUID documentId) throws Exception {
+        HttpResponse<String> response = get("/api/documents/" + documentId);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), DocumentBody.class);
+    }
+
+    private HttpResponse<String> patch(String path, String json) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri(path))
+                .header("Content-Type", "application/json")
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> upload(String filename, byte[] content) throws Exception {
         String boundary = "----WriteLabBoundary" + UUID.randomUUID();
         ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -376,6 +432,8 @@ class UserDocumentApiIntegrationTest {
             int charCount,
             int chunkCount,
             String errorCode,
+            String replacementStatus,
+            String replacementErrorCode,
             Instant createdAt,
             Instant updatedAt
     ) {

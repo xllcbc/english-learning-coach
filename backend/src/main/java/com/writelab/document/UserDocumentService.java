@@ -159,6 +159,29 @@ public class UserDocumentService {
                 .orElseThrow(() -> new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND));
     }
 
+    /**
+     * Enables or disables a User Document. The document keeps its chunks; retrieval only consults
+     * active documents, so disabling is reversible and never re-indexes.
+     */
+    public UserDocumentSummary setActive(UUID documentId, Boolean active) {
+        if (active == null) {
+            throw new UserDocumentException(DocumentErrorCode.INVALID_DOCUMENT_UPDATE);
+        }
+        int updated = jdbcClient.sql("""
+                        UPDATE user_document
+                        SET active = :active, updated_at = :updatedAt
+                        WHERE id = :id
+                        """)
+                .param("active", active)
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("id", documentId)
+                .update();
+        if (updated == 0) {
+            throw new UserDocumentException(DocumentErrorCode.DOCUMENT_NOT_FOUND);
+        }
+        return find(documentId);
+    }
+
     private void processAsync(UUID documentId, List<DocumentChunker.Chunk> chunks) {
         try {
             processor.process(documentId, chunks);
