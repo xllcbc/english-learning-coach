@@ -1,6 +1,10 @@
 package com.writelab.practice;
 
 import com.writelab.dictionary.DictionaryEntryNotFoundException;
+import com.writelab.document.DocumentErrorCode;
+import com.writelab.document.DuplicateDocumentException;
+import com.writelab.document.DuplicateDocumentResponse;
+import com.writelab.document.UserDocumentException;
 import com.writelab.feedback.InvalidFeedbackException;
 import com.writelab.feedback.ModelCallException;
 import com.writelab.feedback.ModelGenerationException;
@@ -18,6 +22,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.InterruptedIOException;
@@ -26,6 +32,35 @@ import java.io.InterruptedIOException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(DuplicateDocumentException.class)
+    ResponseEntity<DuplicateDocumentResponse> handleDuplicateDocument(DuplicateDocumentException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new DuplicateDocumentResponse(
+                        DocumentErrorCode.DUPLICATE_DOCUMENT.name(),
+                        DocumentErrorCode.DUPLICATE_DOCUMENT.message(),
+                        exception.existingDocumentId()));
+    }
+
+    @ExceptionHandler(UserDocumentException.class)
+    ResponseEntity<ApiError> handleUserDocument(UserDocumentException exception) {
+        return ResponseEntity.status(exception.code().status())
+                .body(new ApiError(exception.code().name(), exception.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ApiError> handleMaxUploadSize() {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(new ApiError(
+                        DocumentErrorCode.FILE_TOO_LARGE.name(),
+                        DocumentErrorCode.FILE_TOO_LARGE.message()));
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    ResponseEntity<ApiError> handleMissingFilePart() {
+        return ResponseEntity.badRequest()
+                .body(new ApiError("DOCUMENT_FILE_REQUIRED", "请选择要上传的文档文件。"));
+    }
 
     @ExceptionHandler(WordCountOutOfRangeException.class)
     ResponseEntity<ApiError> handleWordCountOutOfRange(WordCountOutOfRangeException exception) {
