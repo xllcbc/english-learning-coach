@@ -18,13 +18,24 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
 { "id": "c0f2b6a1-...", "status": "UPLOADED" }
 ```
 
-相同内容的文档重复上传返回 `409 Conflict` 与已有文档标识，不会新增文档或 Document Chunk：
+相同内容的文档重复上传返回 `409 Conflict` 与已有文档标识，不新增文档或 Document Chunk；响应同时带回该文档的完整元数据：
 
 ```json
 {
   "code": "DUPLICATE_DOCUMENT",
   "message": "相同内容的文档已经存在。",
-  "documentId": "c0f2b6a1-..."
+  "documentId": "c0f2b6a1-...",
+  "document": {
+    "id": "c0f2b6a1-...",
+    "filename": "grammar-notes.md",
+    "status": "READY",
+    "active": true,
+    "charCount": 1200,
+    "chunkCount": 3,
+    "errorCode": null,
+    "createdAt": "2026-11-23T08:00:00Z",
+    "updatedAt": "2026-11-23T08:00:02Z"
+  }
 }
 ```
 
@@ -69,7 +80,7 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
 | 分块目标长度 | 300–500 tokens | `WRITELAB_DOCUMENT_CHUNK_MIN_TOKENS` / `WRITELAB_DOCUMENT_CHUNK_MAX_TOKENS` |
 | 分块重叠 | 约 15% | `WRITELAB_DOCUMENT_CHUNK_OVERLAP_RATIO` |
 
-超限返回 `413 Payload Too Large` 与稳定错误码。分块总数按所有文档的 `chunkCount` 之和计算；上传前就会检查，不会先处理再失败。
+超限返回 `413 Payload Too Large` 与稳定错误码。分块总数按所有文档的 `chunkCount` 之和计算；上传前就会检查，不会先处理再失败。上传请求先做预算检查再写库，预算检查与插入在同一个事务里串行化，避免并发上传同时越过文档数或分块数上限。
 
 ## 稳定错误码
 
@@ -86,7 +97,7 @@ curl -F "file=@grammar-notes.md" http://localhost:8080/api/documents
 | `404` | `DOCUMENT_NOT_FOUND` | 文档不存在 |
 | — | `PROCESSING_FAILED` | 后台处理失败，保存在文档的 `errorCode` 中 |
 
-`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索。
+`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。
 
 ## 分块规则
 
@@ -117,4 +128,4 @@ cd ../frontend
 npm test
 ```
 
-需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码和失败状态；前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因和重复内容提示。
+需要 Docker 的 `UserDocumentApiIntegrationTest` 覆盖上传到 `READY`、去重、限额、错误码和失败状态；前端 `UserDocumentsPanel` 组件测试覆盖上传、列表、轮询、失败原因和重复内容提示。容器测试需要本机 Docker 正在运行；`-Pno-containers` 只跳过这些容器测试，不会跳过前端组件测试。

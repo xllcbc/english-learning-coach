@@ -54,6 +54,12 @@ tools/retrieval-tooling.sh stats           # 查看向量覆盖率与数据库�
 `build --refresh` 全量覆盖。详细说明与实测容量见
 [检索离线评测与索引构建](docs/retrieval-evaluation.md)。
 
+### User Document
+
+“我的文档”面板支持上传 UTF-8 的 `.md` / `.txt`，并显示处理状态与分块数量。上传、限额、错误码与
+“如何确认文档已就绪”的完整说明见
+[User Document 上传与就绪](docs/user-documents.md)。
+
 ## 3. 启动数据库
 
 ```bash
