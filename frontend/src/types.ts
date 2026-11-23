@@ -92,6 +92,31 @@ export interface ApiError {
   message: string;
 }
 
+export type UserDocumentStatus =
+  | 'UPLOADED'
+  | 'PARSING'
+  | 'CHUNKING'
+  | 'EMBEDDING'
+  | 'READY'
+  | 'FAILED';
+
+export interface UserDocumentSummary {
+  id: string;
+  filename: string;
+  status: UserDocumentStatus;
+  active: boolean;
+  charCount: number;
+  chunkCount: number;
+  errorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserDocumentUploadResponse {
+  id: string;
+  status: UserDocumentStatus;
+}
+
 export interface DictionaryEntry {
   word: string;
   phonetic: string;

@@ -5,6 +5,8 @@ import type {
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
+  UserDocumentSummary,
+  UserDocumentUploadResponse,
 } from './types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '');
@@ -104,6 +106,23 @@ export function listPractices(): Promise<PracticeSummary[]> {
 
 export function getPractice(id: string): Promise<PracticeResponse> {
   return request<PracticeResponse>(`/api/practices/${encodeURIComponent(id)}`);
+}
+
+export function listUserDocuments(): Promise<UserDocumentSummary[]> {
+  return request<UserDocumentSummary[]>('/api/documents');
+}
+
+export function getUserDocument(id: string): Promise<UserDocumentSummary> {
+  return request<UserDocumentSummary>(`/api/documents/${encodeURIComponent(id)}`);
+}
+
+export function uploadUserDocument(file: File): Promise<UserDocumentUploadResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  return request<UserDocumentUploadResponse>('/api/documents', {
+    method: 'POST',
+    body: form,
+  });
 }
 
 export interface ModelModeInfo {

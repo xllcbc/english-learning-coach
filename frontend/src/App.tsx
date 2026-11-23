@@ -18,6 +18,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import type { HistoryStatus } from './components/HistoryPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
+import { UserDocumentsPanel } from './components/UserDocumentsPanel';
 import { formatTimestamp } from './format';
 import type {
   ExplanationStatus,
@@ -471,15 +472,18 @@ export default function App() {
         </section>
       </main>
 
-      <SavedVocabularyPanel
-        entries={savedVocabulary}
-        status={savedStatus}
-        error={savedError}
-        deleteError={deleteError}
-        deletingId={deletingId}
-        onRetry={loadSavedVocabulary}
-        onDelete={handleDeleteSavedVocabulary}
-      />
+      <div className="library-grid">
+        <SavedVocabularyPanel
+          entries={savedVocabulary}
+          status={savedStatus}
+          error={savedError}
+          deleteError={deleteError}
+          deletingId={deletingId}
+          onRetry={loadSavedVocabulary}
+          onDelete={handleDeleteSavedVocabulary}
+        />
+        <UserDocumentsPanel />
+      </div>
     </div>
   );
 }
