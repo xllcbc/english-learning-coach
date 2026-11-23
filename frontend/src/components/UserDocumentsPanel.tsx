@@ -86,15 +86,21 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     return () => window.clearInterval(timer);
   }, [hasProcessingDocument, loadDocuments, pollIntervalMs]);
 
-  async function handleToggleActive(document: UserDocumentSummary) {
+  function replaceDocument(updated: UserDocumentSummary) {
+    setDocuments((current) =>
+      current.map((item) => (item.id === updated.id ? updated : item)),
+    );
+  }
+
+  async function runDocumentAction(
+    document: UserDocumentSummary,
+    action: () => Promise<void>,
+  ) {
     setBusyDocumentId(document.id);
     setActionError(null);
     setNotice(null);
     try {
-      const updated = await setUserDocumentActive(document.id, !document.active);
-      setDocuments((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
+      await action();
     } catch (error) {
       setActionError(toErrorMessage(error));
     } finally {
@@ -102,21 +108,19 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
     }
   }
 
+  async function handleToggleActive(document: UserDocumentSummary) {
+    await runDocumentAction(document, async () => {
+      const updated = await setUserDocumentActive(document.id, !document.active);
+      replaceDocument(updated);
+    });
+  }
+
   async function handleRetry(document: UserDocumentSummary) {
-    setBusyDocumentId(document.id);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await runDocumentAction(document, async () => {
       const updated = await retryUserDocument(document.id);
-      setDocuments((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
+      replaceDocument(updated);
       await loadDocuments();
-    } catch (error) {
-      setActionError(toErrorMessage(error));
-    } finally {
-      setBusyDocumentId(null);
-    }
+    });
   }
 
   async function handleDelete(document: UserDocumentSummary) {
@@ -127,18 +131,11 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
       return;
     }
 
-    setBusyDocumentId(document.id);
-    setActionError(null);
-    setNotice(null);
-    try {
+    await runDocumentAction(document, async () => {
       await deleteUserDocument(document.id);
       setDocuments((current) => current.filter((item) => item.id !== document.id));
       setNotice(`已删除文档“${document.filename}”。`);
-    } catch (error) {
-      setActionError(toErrorMessage(error));
-    } finally {
-      setBusyDocumentId(null);
-    }
+    });
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
@@ -253,10 +250,10 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
                   {STATUS_LABELS[document.status]}
                 </span>
                 {document.replacementStatus === 'PROCESSING' && (
-                  <span className="document-status document-status-updating">更新中</span>
+                  <span className="document-status document-status-updating">替换中</span>
                 )}
                 {document.replacementStatus === 'FAILED' && (
-                  <span className="document-status document-status-failed">更新失败</span>
+                  <span className="document-status document-status-failed">替换失败</span>
                 )}
               </div>
               <p className="document-meta">
@@ -302,9 +299,9 @@ export function UserDocumentsPanel({ pollIntervalMs = 1500 }: UserDocumentsPanel
               )}
               {document.replacementStatus === 'FAILED' && (
                 <div className="document-failure" role="note">
-                  <p>更新失败原因：{failureMessage(document.replacementErrorCode)}</p>
+                  <p>替换失败原因：{failureMessage(document.replacementErrorCode)}</p>
                   <p>错误码：{document.replacementErrorCode ?? 'PROCESSING_FAILED'}</p>
-                  <p>旧内容仍然可用，可以重试更新。</p>
+                  <p>旧内容仍然可用，可以重试替换。</p>
                 </div>
               )}
             </li>

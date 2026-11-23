@@ -177,11 +177,11 @@ describe('UserDocumentsPanel', () => {
     render(<UserDocumentsPanel pollIntervalMs={10} />);
 
     const list = await screen.findByRole('list', { name: '我的文档列表' });
-    expect(within(list).getByText('更新中')).toBeInTheDocument();
+    expect(within(list).getByText('替换中')).toBeInTheDocument();
     expect(within(list).getByText('3 个分块')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(within(list).queryByText('更新中')).not.toBeInTheDocument();
+      expect(within(list).queryByText('替换中')).not.toBeInTheDocument();
     });
     expect(within(list).getByText('已就绪')).toBeInTheDocument();
   });
@@ -203,15 +203,15 @@ describe('UserDocumentsPanel', () => {
     render(<UserDocumentsPanel pollIntervalMs={10} />);
 
     const list = await screen.findByRole('list', { name: '我的文档列表' });
-    expect(within(list).getByText('更新失败')).toBeInTheDocument();
-    expect(within(list).getByText('更新失败原因：文档处理失败，请稍后重试。')).toBeInTheDocument();
+    expect(within(list).getByText('替换失败')).toBeInTheDocument();
+    expect(within(list).getByText('替换失败原因：文档处理失败，请稍后重试。')).toBeInTheDocument();
     expect(within(list).getByText('3 个分块')).toBeInTheDocument();
 
     await userEvent.click(within(list).getByRole('button', { name: '重试' }));
 
     expect(api.retryUserDocument).toHaveBeenCalledWith('doc-1');
     await waitFor(() => {
-      expect(within(list).queryByText('更新失败')).not.toBeInTheDocument();
+      expect(within(list).queryByText('替换失败')).not.toBeInTheDocument();
     });
   });
 

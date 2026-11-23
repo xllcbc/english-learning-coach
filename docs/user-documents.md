@@ -51,11 +51,11 @@ curl -X PATCH http://localhost:8080/api/documents/<document-id> \
 # 删除：文档与其 Document Chunk 一起消失，历史引用快照不受影响
 curl -X DELETE http://localhost:8080/api/documents/<document-id>
 
-# 重试 FAILED 文档：幂等，不会新增文档或 chunk
+# 重试 FAILED 文档或恢复中断的处理：幂等，不会新增文档或 chunk
 curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 ```
 
-`PATCH` 返回更新后的完整文档元数据；`DELETE` 返回 `204 No Content`；`retry` 返回 `202 Accepted` 与当前文档元数据。重复停用/启用或重复重试都是幂等的。面板在停用后显示“已停用”，失败文档显示“重试”。
+`PATCH` 返回更新后的完整文档元数据；`DELETE` 返回 `204 No Content`；`retry` 返回 `202 Accepted` 与当前文档元数据。重复停用/启用或重复重试都是幂等的。`retry` 优先恢复待切换的替换 generation，其次重试 `FAILED` 或进程中断留下的未完成 generation；已经 `READY` 且没有待替换内容时返回当前元数据，不重复处理。缺少已落库 chunk 的历史失败文档返回 `409 DOCUMENT_RETRY_UNAVAILABLE`，请删除后重新上传。面板在停用后显示“已停用”，失败文档显示“重试”。
 
 ## 同名替换
 
@@ -65,8 +65,9 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 2. 此时旧内容仍是 `active_generation`，文档保持 `READY`，`replacementStatus` 为 `PROCESSING`；
 3. 全部 chunk 就绪后，在一个事务里切换 `active_generation`、更新内容哈希与字符数，再删除旧 generation；
 4. 任一步失败时，旧内容继续可用，`status` 仍为 `READY`，`replacementStatus` 变为 `FAILED`，`replacementErrorCode` 给出原因；点击“重试”只处理待切换的 generation。
+5. 上一次替换仍在进行或已失败时，再次上传同名文件会取消待切换的 generation 并重新开始替换；替换中不会永久阻塞。
 
-完全相同内容重复上传仍然返回 `409 DUPLICATE_DOCUMENT`，不会触发新的 generation。原内容也会保留其内容哈希，因此重复上传旧内容不会被误判为新文档。
+完全相同内容重复上传仍然返回 `409 DUPLICATE_DOCUMENT`，不会触发新的 generation。替换成功并删除旧 generation 后，旧内容不再保留内容哈希；再次上传旧内容会按一次新的上传处理（同名则再次替换，不同名则新建文档）。
 
 ## 如何确认文档已就绪
 
@@ -109,7 +110,7 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 | 分块目标长度 | 300–500 tokens | `WRITELAB_DOCUMENT_CHUNK_MIN_TOKENS` / `WRITELAB_DOCUMENT_CHUNK_MAX_TOKENS` |
 | 分块重叠 | 约 15% | `WRITELAB_DOCUMENT_CHUNK_OVERLAP_RATIO` |
 
-超限返回 `413 Payload Too Large` 与稳定错误码。分块总数按所有文档的 `chunkCount` 之和计算；上传前就会检查，不会先处理再失败。上传请求先做预算检查再写库，预算检查与插入在同一个事务里串行化，避免并发上传同时越过文档数或分块数上限。
+超限返回 `413 Payload Too Large` 与稳定错误码。分块总数取所有文档 `chunkCount` 之和与实际 `document_chunk` 行数的较大者，待切换的 replacement generation 也计入预算；上传前就会检查，不会先处理再失败。上传请求先做预算检查再写库，预算检查与插入在同一个事务里串行化，避免并发上传同时越过文档数或分块数上限。
 
 ## 稳定错误码
 
@@ -123,13 +124,13 @@ curl -X POST http://localhost:8080/api/documents/<document-id>/retry
 | `422` | `INVALID_ENCODING` | 不是有效 UTF-8 |
 | `422` | `BINARY_DOCUMENT` | 看起来是二进制内容 |
 | `409` | `DUPLICATE_DOCUMENT` | 相同内容已存在，响应带 `documentId` |
-| `409` | `DOCUMENT_PROCESSING` | 同名文档正在处理或替换中，暂不能再次替换 |
+| `409` | `DOCUMENT_RETRY_UNAVAILABLE` | 历史失败文档没有已落库 chunk，需删除后重新上传 |
 | `400` | `INVALID_DOCUMENT_UPDATE` | `PATCH` 缺少 `active` |
 | `404` | `DOCUMENT_NOT_FOUND` | 文档不存在 |
 | — | `PROCESSING_FAILED` | 后台处理失败，保存在文档的 `errorCode` 中 |
 | — | `replacementErrorCode` | 替换失败原因；此时 `status` 仍是 `READY` |
 
-`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。替换失败的文档仍以旧 generation 参与检索，面板显示“更新失败”和重试入口。
+`FAILED` 文档在面板中显示“失败原因”和错误码。失败文档不参与后续检索：教师讲解的检索接缝（#22）只查询 `READY` 且 `active` 的文档。替换失败的文档仍以旧 generation 参与检索，面板显示“替换失败”和重试入口。
 
 ## 分块规则
 

@@ -43,26 +43,35 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
         markStatus(documentId, DocumentStatus.PARSING);
         markStatus(documentId, DocumentStatus.CHUNKING);
 
-        int chunkCount = countChunks(documentId, generation);
-        if (chunkCount == 0) {
-            throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
-        }
+        transactionTemplate.executeWithoutResult(status -> {
+            State current = loadStateForUpdate(documentId).orElse(null);
+            if (current == null
+                    || current.activeGeneration() != generation
+                    || current.pendingGeneration() != null) {
+                return;
+            }
 
-        transactionTemplate.executeWithoutResult(status -> jdbcClient.sql("""
-                                UPDATE user_document
-                                SET status = :status,
-                                    chunk_count = :chunkCount,
-                                    error_code = NULL,
-                                    active_generation = :generation,
-                                    updated_at = :updatedAt
-                                WHERE id = :id
-                                """)
-                .param("status", DocumentStatus.READY.name())
-                .param("chunkCount", chunkCount)
-                .param("generation", generation)
-                .param("updatedAt", Timestamp.from(Instant.now()))
-                .param("id", documentId)
-                .update());
+            int chunkCount = countChunks(documentId, generation);
+            if (chunkCount == 0) {
+                throw new DocumentProcessingException(DocumentErrorCode.EMPTY_DOCUMENT);
+            }
+
+            jdbcClient.sql("""
+                            UPDATE user_document
+                            SET status = :status,
+                                chunk_count = :chunkCount,
+                                error_code = NULL,
+                                active_generation = :generation,
+                                updated_at = :updatedAt
+                            WHERE id = :id
+                            """)
+                    .param("status", DocumentStatus.READY.name())
+                    .param("chunkCount", chunkCount)
+                    .param("generation", generation)
+                    .param("updatedAt", Timestamp.from(Instant.now()))
+                    .param("id", documentId)
+                    .update();
+        });
     }
 
     /**
@@ -120,6 +129,18 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
                         SELECT active_generation, pending_generation
                         FROM user_document
                         WHERE id = :id
+                        """)
+                .param("id", documentId)
+                .query(DefaultUserDocumentProcessor::toState)
+                .optional();
+    }
+
+    private Optional<State> loadStateForUpdate(UUID documentId) {
+        return jdbcClient.sql("""
+                        SELECT active_generation, pending_generation
+                        FROM user_document
+                        WHERE id = :id
+                        FOR UPDATE
                         """)
                 .param("id", documentId)
                 .query(DefaultUserDocumentProcessor::toState)

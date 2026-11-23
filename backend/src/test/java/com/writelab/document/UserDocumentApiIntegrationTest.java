@@ -247,7 +247,7 @@ class UserDocumentApiIntegrationTest {
     }
 
     @Test
-    void reuploadingTheSameNameWhileAReplacementIsRunningIsRejected() throws Exception {
+    void supersedesAPendingReplacementWhenTheSameNameIsUploadedAgain() throws Exception {
         UUID documentId = objectMapper.readValue(
                 upload("grammar.md", markdownDocument()).body(), UploadBody.class).id();
         awaitTerminal(documentId);
@@ -256,16 +256,51 @@ class UserDocumentApiIntegrationTest {
         upload("grammar.md", replacementDocument());
         failableProcessor.awaitBlocked();
 
-        byte[] differentAgain = (new String(replacementDocument(), StandardCharsets.UTF_8)
-                + "\n\n## Extra\n\nA paragraph that only exists in the second replacement.\n")
-                .getBytes(StandardCharsets.UTF_8);
-        HttpResponse<String> second = upload("grammar.md", differentAgain);
+        String differentAgainText = new String(replacementDocument(), StandardCharsets.UTF_8)
+                + "\n\n## Extra\n\nA paragraph that only exists in the second replacement.\n";
+        HttpResponse<String> second = upload(
+                "grammar.md", differentAgainText.getBytes(StandardCharsets.UTF_8));
 
-        assertThat(second.statusCode()).isEqualTo(409);
-        assertThat(errorCode(second.body())).isEqualTo("DOCUMENT_PROCESSING");
+        assertThat(second.statusCode()).isEqualTo(202);
+        assertThat(objectMapper.readValue(second.body(), UploadBody.class).id())
+                .isEqualTo(documentId);
 
         failableProcessor.releaseBlocked();
-        awaitDocument(documentId, document -> document.replacementStatus().equals("NONE"));
+        DocumentBody settled = awaitDocument(documentId, document ->
+                document.status().equals("READY")
+                        && document.replacementStatus().equals("NONE"));
+
+        assertThat(settled.charCount())
+                .isEqualTo(differentAgainText.codePointCount(0, differentAgainText.length()));
+        assertThat(settled.chunkCount()).isPositive();
+        assertThat(countChunks(documentId)).isEqualTo(settled.chunkCount());
+        assertThat(listDocuments()).hasSize(1);
+    }
+
+    @Test
+    void rejectsRetryingAFailedDocumentWithoutStoredChunks() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        Instant now = Instant.now();
+        jdbcClient.sql("""
+                        INSERT INTO user_document (
+                            id, filename, content_hash, status, active, char_count, chunk_count,
+                            embedding_model, chunker_version, error_code, active_generation,
+                            created_at, updated_at
+                        ) VALUES (
+                            :id, 'legacy.md', :hash, 'FAILED', TRUE, 10, 0,
+                            NULL, 'document-chunker-v1', 'PROCESSING_FAILED', 1, :createdAt, :updatedAt
+                        )
+                        """)
+                .param("id", documentId)
+                .param("hash", String.format("%064d", 999))
+                .param("createdAt", Timestamp.from(now))
+                .param("updatedAt", Timestamp.from(now))
+                .update();
+
+        HttpResponse<String> response = post("/api/documents/" + documentId + "/retry");
+
+        assertThat(response.statusCode()).isEqualTo(409);
+        assertThat(errorCode(response.body())).isEqualTo("DOCUMENT_RETRY_UNAVAILABLE");
     }
 
     @Test

@@ -14,7 +14,9 @@ ALTER TABLE user_document
     ADD CONSTRAINT chk_user_document_pending_hash
         CHECK ((pending_generation IS NULL) = (pending_content_hash IS NULL)),
     ADD CONSTRAINT chk_user_document_pending_char_count
-        CHECK ((pending_generation IS NULL) = (pending_char_count IS NULL));
+        CHECK ((pending_generation IS NULL) = (pending_char_count IS NULL)),
+    ADD CONSTRAINT chk_user_document_pending_char_count_non_negative
+        CHECK (pending_char_count IS NULL OR pending_char_count >= 0);
 
 CREATE UNIQUE INDEX uq_user_document_pending_content_hash
     ON user_document (pending_content_hash)
