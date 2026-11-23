@@ -668,8 +668,8 @@ class UserDocumentApiIntegrationTest {
             CountDownLatch entered = blockEntered;
             CountDownLatch release = blockRelease;
             if (entered != null && release != null) {
-                blockEntered = null;
-                blockRelease = null;
+                // Keep the latch fields visible to awaitBlocked/releaseBlocked; only reset() clears
+                // them. Clearing them here races with the test thread.
                 entered.countDown();
                 try {
                     if (!release.await(5, TimeUnit.SECONDS)) {
