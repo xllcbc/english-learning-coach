@@ -171,13 +171,20 @@ public class DefaultUserDocumentProcessor implements UserDocumentProcessor {
                 .single();
     }
 
+    /**
+     * Exposes intermediate states without ever downgrading a {@code READY} document that has a
+     * replacement in flight; in that case the old generation must stay {@code READY} for retrieval.
+     */
     private void markStatus(UUID documentId, DocumentStatus status) {
         jdbcClient.sql("""
                         UPDATE user_document
                         SET status = :status, error_code = NULL, updated_at = :updatedAt
                         WHERE id = :id
+                          AND status <> :readyStatus
+                          AND pending_generation IS NULL
                         """)
                 .param("status", status.name())
+                .param("readyStatus", DocumentStatus.READY.name())
                 .param("updatedAt", Timestamp.from(Instant.now()))
                 .param("id", documentId)
                 .update();
