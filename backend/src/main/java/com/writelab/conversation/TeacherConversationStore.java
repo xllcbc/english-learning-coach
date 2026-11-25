@@ -103,6 +103,32 @@ class TeacherConversationStore {
                 .single();
     }
 
+    /**
+     * The earlier turns exactly as the model needs them: position, learner message and stored
+     * answer. Kept separate from {@link #readTurns} so a new question does not rebuild every Agent
+     * Step and citation snapshot on the way in.
+     */
+    List<HistoryRow> readHistory(UUID conversationId, int limit) {
+        return jdbcClient.sql("""
+                        SELECT position, learner_message, answer
+                        FROM (
+                            SELECT position, learner_message, answer
+                            FROM teacher_conversation_turn
+                            WHERE conversation_id = :conversationId
+                            ORDER BY position DESC
+                            LIMIT :limit
+                        ) recent
+                        ORDER BY position
+                        """)
+                .param("conversationId", conversationId)
+                .param("limit", limit)
+                .query((resultSet, rowNum) -> new HistoryRow(
+                        resultSet.getInt("position"),
+                        resultSet.getString("learner_message"),
+                        resultSet.getString("answer")))
+                .list();
+    }
+
     List<TeacherConversationTurnResponse> readTurns(UUID conversationId) {
         List<TurnRow> rows = jdbcClient.sql("""
                         SELECT id, position, learner_message, answer, stop_reason, model_mode, created_at
@@ -288,6 +314,9 @@ class TeacherConversationStore {
     }
 
     record PracticeSource(String writingText, String structuredResponse, ModelMode modelMode) {
+    }
+
+    record HistoryRow(int position, String learnerMessage, String answer) {
     }
 
     record ConversationRow(UUID id, ModelMode modelMode) {

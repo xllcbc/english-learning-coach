@@ -34,7 +34,8 @@ class LookupWordToolDefinitionTest {
         assertThat(result.observation())
                 .contains("\"status\":\"SUCCESS\"")
                 .contains("moreover")
-                .contains("而且");
+                .contains("而且")
+                .doesNotContain("\"reference\"");
     }
 
     @Test
@@ -63,6 +64,22 @@ class LookupWordToolDefinitionTest {
         assertThat(second.status()).isEqualTo(ToolInvocationStatus.SUCCESS);
         assertThat(third.status()).isEqualTo(ToolInvocationStatus.BLOCKED);
         assertThat(third.observation()).contains("\"status\":\"BLOCKED\"");
+    }
+
+    @Test
+    void assignsCitableReferencesWhenOpenedForAnAgentTurn() throws Exception {
+        when(dictionaryService.find(anyString())).thenReturn(Optional.of(
+                new DictionaryEntry("moreover", "/mɔːrˈoʊvər/", "adv.", "而且", "Moreover, it helps.")));
+        ToolSession session = registry.find("lookup_word").orElseThrow()
+                .openSession(new ToolTurnContext(4));
+
+        Map<?, ?> first = new ObjectMapper().readValue(
+                session.invoke(Map.of("word", "moreover")).observation(), Map.class);
+        Map<?, ?> second = new ObjectMapper().readValue(
+                session.invoke(Map.of("word", "moreover")).observation(), Map.class);
+
+        assertThat(first.get("reference")).isEqualTo(4);
+        assertThat(second.get("reference")).isEqualTo(5);
     }
 
     @Test

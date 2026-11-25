@@ -155,6 +155,29 @@ class TutorAgentCoreContractTest {
         assertThat(model.contexts().get(0).availableTools()).containsExactly("lookup_word");
     }
 
+    @Test
+    void passesEarlierTurnsToTheModelOnEveryDecision() {
+        StubTool lookup = new StubTool("lookup_word", arguments -> "definition");
+        ToolRegistry registry = new ToolRegistry(List.of(lookup));
+        ScriptedTutorModelClient model = new ScriptedTutorModelClient(
+                TutorModelDecision.answer("第二轮回答。"));
+        TutorAgentCore core = new TutorAgentCore(model, registry);
+
+        AgentTurn turn = core.run(new AgentTurnRequest(
+                "那这里呢？",
+                Set.of("lookup_word"),
+                new AgentLoopBudget(4, 2),
+                TutorBriefing.empty(),
+                List.of(new TutorTurnMemory(1, "第一轮的问题", "第一轮的回答"))));
+
+        assertThat(turn.completed()).isTrue();
+        assertThat(model.contexts()).singleElement().satisfies(context -> {
+            assertThat(context.history()).containsExactly(
+                    new TutorTurnMemory(1, "第一轮的问题", "第一轮的回答"));
+            assertThat(context.learnerMessage()).isEqualTo("那这里呢？");
+        });
+    }
+
     private static final class StubTool implements ToolDefinition {
 
         private final String name;

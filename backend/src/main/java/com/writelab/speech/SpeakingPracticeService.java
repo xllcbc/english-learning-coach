@@ -31,8 +31,8 @@ public class SpeakingPracticeService {
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             LookupWordTool.NAME,
-            // The parent spec gives Speaking Practice these tools too. They are not registered yet,
-            // so ToolRegistry filters them out of the model context until the workflows land.
+            // The parent spec gives Speaking Practice these tools too. Neither is wired into this
+            // scenario yet, so keep them out of the model context until that slice lands.
             "search_user_documents",
             "save_vocabulary");
     private static final TutorBriefing BRIEFING = new TutorBriefing("""

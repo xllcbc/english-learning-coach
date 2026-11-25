@@ -43,6 +43,28 @@ class MockTutorModelClientTest {
     }
 
     @Test
+    void answersWithEarlierTurnsAsContextWithoutAskingTheLearnerToRestate() {
+        TutorModelContext context = new TutorModelContext(
+                "那这里为什么要加冠词？",
+                List.of(),
+                Set.of("lookup_word"),
+                new TutorBriefing(
+                        "Practice Attempt 原文与学习问题。",
+                        List.of(new TutorCitableSource(
+                                1, TutorSourceKind.GROUNDING_MATERIAL, "语法",
+                                "可数名词单数不能裸用。", "WriteLab 自建依据材料", "CC BY 4.0"))),
+                List.of(new TutorTurnMemory(1, "为什么这里用 moreover？", "它表示递进 [依据1]。")));
+
+        TutorModelDecision decision = client.next(context);
+
+        String answer = ((TutorModelDecision.Answer) decision).content();
+        assertThat(answer)
+                .contains("为什么这里用 moreover")
+                .contains("那这里为什么要加冠词")
+                .contains("[依据1]");
+    }
+
+    @Test
     void refusesToInventASourceWhenNothingIsGrounded() {
         TutorModelContext context = new TutorModelContext(
                 "为什么这里用 moreover？",

@@ -5,13 +5,14 @@ import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorCitationPlan;
 import com.writelab.agent.TutorCitableSource;
 import com.writelab.agent.TutorSourceKind;
+import com.writelab.agent.TutorToolSources;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,9 +34,11 @@ final class ConversationCitations {
             List<AgentStep> steps,
             ObjectMapper objectMapper
     ) {
-        List<ConversationCitation> citations = new ArrayList<>();
+        // One turn may mix briefing sources, retrieval tool results and dictionary lookups. They
+        // all share one [依据N] sequence, so collect by reference and replay in that order.
+        TreeMap<Integer, ConversationCitation> byReference = new TreeMap<>();
         for (TutorCitableSource source : briefingSources) {
-            citations.add(new ConversationCitation(
+            add(byReference, new ConversationCitation(
                     source.reference(),
                     kindOf(source.kind()),
                     source.title(),
@@ -43,14 +46,38 @@ final class ConversationCitations {
                     source.source(),
                     source.license()));
         }
+
         List<AgentStep> lookups = LookupWordSteps.successful(steps);
         for (int index = 0; index < lookups.size(); index++) {
-            citations.add(dictionaryCitation(
-                    TutorCitationPlan.dictionaryReference(briefingSources, index),
-                    lookups.get(index),
-                    objectMapper));
+            int reference = TutorCitationPlan.lookupReference(
+                    briefingSources, lookups, index, objectMapper);
+            add(byReference, dictionaryCitation(reference, lookups.get(index), objectMapper));
         }
-        return List.copyOf(citations);
+
+        for (TutorCitableSource source : TutorToolSources.successful(steps, objectMapper)) {
+            add(byReference, new ConversationCitation(
+                    source.reference(),
+                    kindOf(source.kind()),
+                    source.title(),
+                    source.content(),
+                    source.source(),
+                    source.license()));
+        }
+        return List.copyOf(byReference.values());
+    }
+
+    /**
+     * A duplicate reference means two different sources claim the same number, which would make
+     * the persisted citation list ambiguous. Fail instead of letting the last writer win.
+     */
+    private static void add(
+            TreeMap<Integer, ConversationCitation> byReference,
+            ConversationCitation citation
+    ) {
+        ConversationCitation previous = byReference.putIfAbsent(citation.reference(), citation);
+        if (previous != null) {
+            throw new IllegalStateException("重复的引用编号: " + citation.reference());
+        }
     }
 
     static List<ConversationCitation> cited(String answer, List<ConversationCitation> available) {

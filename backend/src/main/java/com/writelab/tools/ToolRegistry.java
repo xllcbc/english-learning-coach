@@ -55,9 +55,17 @@ public final class ToolRegistry {
      * scenario access to it; only the allowlist passed here does.
      */
     public Map<String, ToolSession> openSessions(Set<String> allowlist) {
+        return openSessions(allowlist, ToolTurnContext.empty());
+    }
+
+    /**
+     * Opens one session per allowlisted tool for a single agent turn, sharing the turn's reference
+     * allocator so every citable tool result gets a distinct {@code [依据N]}.
+     */
+    public Map<String, ToolSession> openSessions(Set<String> allowlist, ToolTurnContext context) {
         Map<String, ToolSession> sessions = new LinkedHashMap<>();
         for (String name : availableNames(allowlist)) {
-            sessions.put(name, definitions.get(name).openSession());
+            sessions.put(name, definitions.get(name).openSession(context));
         }
         return Collections.unmodifiableMap(sessions);
     }
