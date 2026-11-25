@@ -1,10 +1,12 @@
 package com.writelab.explanation;
 
 import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueCategoryLabels;
 import com.writelab.feedback.IssueSeverity;
 import com.writelab.feedback.LearningIssue;
 import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.GroundingMaterial;
+import com.writelab.streaming.TextChunker;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,7 +17,7 @@ public class MockExplanationModel implements ExplanationModel {
 
     @Override
     public void streamExplanation(ExplanationRequest request, Consumer<String> onDelta) {
-        for (String chunk : ExplanationChunker.chunks(compose(request))) {
+        for (String chunk : TextChunker.chunks(compose(request))) {
             onDelta.accept(chunk);
         }
     }
@@ -38,7 +40,7 @@ public class MockExplanationModel implements ExplanationModel {
         for (int index = 0; index < keyIssues.size(); index++) {
             LearningIssue issue = keyIssues.get(index);
             text.append("第").append(index + 1).append("点（")
-                    .append(categoryLabel(issue.category())).append("，")
+                    .append(IssueCategoryLabels.label(issue.category())).append("，")
                     .append(severityLabel(issue.severity())).append("）：\n");
             text.append("原句：").append(issue.originalSentence()).append("\n");
             text.append("改为：").append(issue.suggestion()).append("\n");
@@ -85,16 +87,6 @@ public class MockExplanationModel implements ExplanationModel {
             citations.append(" [依据").append(document.reference()).append(']');
         }
         return citations.toString();
-    }
-
-    private static String categoryLabel(IssueCategory category) {
-        return switch (category) {
-            case GRAMMAR -> "语法";
-            case VOCABULARY -> "词汇";
-            case SENTENCE_STRUCTURE -> "句式";
-            case COHERENCE -> "连贯性";
-            case PUNCTUATION -> "标点";
-        };
     }
 
     private static String severityLabel(IssueSeverity severity) {

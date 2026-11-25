@@ -237,7 +237,6 @@ export interface ConversationStart {
   practiceId: string;
   conversationId: string;
   turnPosition: number;
-  replay: boolean;
   mockMode: boolean;
 }
 

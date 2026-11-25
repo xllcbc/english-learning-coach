@@ -1,9 +1,7 @@
 package com.writelab.agent;
 
-import com.writelab.tools.LookupWordTool;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,7 +26,7 @@ public class MockTutorModelClient implements TutorModelClient {
     @Override
     public TutorModelDecision next(TutorModelContext context) {
         List<TutorCitableSource> sources = context.briefing().sources();
-        List<AgentStep> lookups = successfulLookups(context.steps());
+        List<AgentStep> lookups = LookupWordSteps.successful(context.steps());
 
         if (sources.isEmpty() && lookups.isEmpty()) {
             return TutorModelDecision.answer(NO_GROUNDING_ANSWER);
@@ -48,10 +46,10 @@ public class MockTutorModelClient implements TutorModelClient {
         int reference = sources.size();
         for (AgentStep lookup : lookups) {
             reference++;
-            Map<String, Object> observation = readObservation(lookup.output());
-            String word = text(observation, "word", lookup.arguments().get("word"));
-            String meaning = text(observation, "meaningZh", "");
-            String partOfSpeech = text(observation, "partOfSpeech", "");
+            Map<String, Object> observation = LookupWordSteps.observation(lookup, objectMapper);
+            String word = LookupWordSteps.text(observation, "word", lookup.arguments().get("word"));
+            String meaning = LookupWordSteps.text(observation, "meaningZh", "");
+            String partOfSpeech = LookupWordSteps.text(observation, "partOfSpeech", "");
             answer.append("- 查词「").append(word).append("」：");
             if (!partOfSpeech.isBlank()) {
                 answer.append(partOfSpeech).append(' ');
@@ -61,35 +59,5 @@ public class MockTutorModelClient implements TutorModelClient {
 
         answer.append("以上依据已随回答保存，重开这份 Practice Attempt 可以原样回看。");
         return TutorModelDecision.answer(answer.toString());
-    }
-
-    private static List<AgentStep> successfulLookups(List<AgentStep> steps) {
-        List<AgentStep> lookups = new ArrayList<>();
-        for (AgentStep step : steps) {
-            if (step.isToolCall()
-                    && LookupWordTool.NAME.equals(step.toolName())
-                    && step.status() == AgentStepStatus.SUCCESS) {
-                lookups.add(step);
-            }
-        }
-        return lookups;
-    }
-
-    private Map<String, Object> readObservation(String output) {
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> observation = objectMapper.readValue(output, Map.class);
-            return observation == null ? Map.of() : observation;
-        } catch (RuntimeException malformed) {
-            return Map.of();
-        }
-    }
-
-    private static String text(Map<String, Object> observation, String key, Object fallback) {
-        Object value = observation.get(key);
-        if (value == null || value.toString().isBlank()) {
-            return fallback == null ? "" : fallback.toString();
-        }
-        return value.toString();
     }
 }

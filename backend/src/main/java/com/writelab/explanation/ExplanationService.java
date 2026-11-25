@@ -7,6 +7,7 @@ import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.ExplanationMaterialResolver;
 import com.writelab.retrieval.GroundingMaterial;
 import com.writelab.retrieval.RetrievalHit;
+import com.writelab.streaming.TextChunker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -139,7 +140,7 @@ public class ExplanationService {
     }
 
     private void replay(UUID practiceId, String savedExplanation, SseEmitter emitter) {
-        for (String chunk : ExplanationChunker.chunks(savedExplanation)) {
+        for (String chunk : TextChunker.chunks(savedExplanation)) {
             send(emitter, "delta", new DeltaEvent(chunk));
         }
         // Replay reads back the Retrieval Hits written when the explanation was generated, so reopening

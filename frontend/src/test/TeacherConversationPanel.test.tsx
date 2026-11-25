@@ -74,7 +74,7 @@ describe('TeacherConversationPanel', () => {
     expect(await screen.findByText('已经保存的问题')).toBeInTheDocument();
     expect(screen.getByText('已经保存的回答 [依据1]。')).toBeInTheDocument();
     expect(screen.getByText('本次回答的依据')).toBeInTheDocument();
-    expect(screen.getByText('规则')).toBeInTheDocument();
+    expect(screen.getByText('依据材料')).toBeInTheDocument();
     expect(screen.getByText('Mock 模式')).toBeInTheDocument();
     expect(api.streamConversationTurn).not.toHaveBeenCalled();
   });
@@ -90,7 +90,6 @@ describe('TeacherConversationPanel', () => {
             practiceId: string;
             conversationId: string;
             turnPosition: number;
-            replay: boolean;
             mockMode: boolean;
           }) => void;
           onDelta: (text: string) => void;
@@ -101,7 +100,6 @@ describe('TeacherConversationPanel', () => {
           practiceId: 'practice-1',
           conversationId: 'conversation-1',
           turnPosition: 1,
-          replay: false,
           mockMode: false,
         });
         handlers.onDelta('用连接词');
@@ -133,7 +131,7 @@ describe('TeacherConversationPanel', () => {
 
     expect(await screen.findByText('用连接词会更连贯。')).toBeInTheDocument();
     expect(screen.getByText('本次回答的依据')).toBeInTheDocument();
-    expect(screen.getByText('词典')).toBeInTheDocument();
+    expect(screen.getByText('词典条目')).toBeInTheDocument();
     expect(screen.getByText('Dictionary Entry · moreover')).toBeInTheDocument();
     expect(screen.getByText('真实模型')).toBeInTheDocument();
     expect(api.streamConversationTurn).toHaveBeenCalledWith(

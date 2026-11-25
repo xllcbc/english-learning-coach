@@ -73,6 +73,7 @@ class TeacherConversationApiIntegrationTest {
     @Test
     void streamsAQuestionAndPersistsItsAnswerAgentStepsAndCitations() throws Exception {
         UUID practiceId = createPractice();
+        int gradingInvocations = practiceDetail(practiceId).toolInvocations().size();
         model.script(
                 context -> TutorModelDecision.toolCall("lookup_word", Map.of("word", "moreover")),
                 context -> TutorModelDecision.answer(
@@ -93,7 +94,6 @@ class TeacherConversationApiIntegrationTest {
         assertThat(start.practiceId()).isEqualTo(practiceId);
         assertThat(start.conversationId()).isNotNull();
         assertThat(start.turnPosition()).isEqualTo(1);
-        assertThat(start.replay()).isFalse();
         assertThat(start.mockMode()).isTrue();
 
         CompleteBody complete = readEvent(streamed.events().getLast(), CompleteBody.class);
@@ -146,6 +146,9 @@ class TeacherConversationApiIntegrationTest {
         assertThat(getConversation(practiceId).turns()).hasSize(1);
         assertThat(model.callCount()).isZero();
         assertThat(callsAfterAnswer).isEqualTo(2);
+
+        // Conversation lookups are their own Tool Invocations; the grading trace must not absorb them.
+        assertThat(practiceDetail(practiceId).toolInvocations()).hasSize(gradingInvocations);
     }
 
     @Test
@@ -352,6 +355,12 @@ class TeacherConversationApiIntegrationTest {
         return objectMapper.readValue(response.body(), ConversationBody.class);
     }
 
+    private PracticeBody practiceDetail(UUID practiceId) throws Exception {
+        HttpResponse<String> response = get("/api/practices/" + practiceId);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), PracticeBody.class);
+    }
+
     private HttpResponse<String> get(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri(path)).GET().build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -418,7 +427,6 @@ class TeacherConversationApiIntegrationTest {
             UUID practiceId,
             UUID conversationId,
             int turnPosition,
-            boolean replay,
             boolean mockMode
     ) {
     }
@@ -477,6 +485,6 @@ class TeacherConversationApiIntegrationTest {
     private record CreateBody(String text) {
     }
 
-    private record PracticeBody(UUID id) {
+    private record PracticeBody(UUID id, List<ToolInvocation> toolInvocations) {
     }
 }

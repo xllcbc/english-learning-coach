@@ -19,8 +19,8 @@ interface TeacherConversationPanelProps {
 }
 
 const citationKindLabels: Record<ConversationCitationKind, string> = {
-  GROUNDING_MATERIAL: '规则',
-  DICTIONARY_ENTRY: '词典',
+  GROUNDING_MATERIAL: '依据材料',
+  DICTIONARY_ENTRY: '词典条目',
   USER_DOCUMENT: '我的文档',
 };
 
@@ -235,14 +235,14 @@ export function TeacherConversationPanel({
           onChange={(event) => setDraft(event.target.value)}
           placeholder="就这篇写作继续追问，例如：这里为什么用 although？"
           rows={3}
-          disabled={asking}
+          disabled={asking || loadStatus !== 'ready'}
         />
         <div className="conversation-actions">
           <span className="privacy-note">回答与引用会随这份练习保存。</span>
           <button
             type="submit"
             className="retry-button"
-            disabled={asking || draft.trim().length === 0}
+            disabled={asking || loadStatus !== 'ready' || draft.trim().length === 0}
           >
             {asking ? '正在回答…' : '提问'}
           </button>

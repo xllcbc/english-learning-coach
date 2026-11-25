@@ -1,6 +1,7 @@
 package com.writelab.ai;
 
 import com.writelab.agent.AgentStep;
+import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
@@ -8,6 +9,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,7 +28,7 @@ public class RealTutorModelClient implements TutorModelClient {
 
             规则：
             1. 回答必须使用中文，并针对这份 Practice Attempt 的具体句子或学习问题。
-            2. 每条规则或事实后面用 [依据N] 标注来源；N 只能取自“可引用依据”的编号。
+            2. 每条规则或事实后面用 [依据N] 标注来源；N 只能取自“可引用依据”或“成功查词的词典条目”的编号。
             3. 工具结果可以补充事实，但不得把工具结果之外的规则说成已证实。
             4. 没有可引用来源时，直接说明缺少依据，不要编造。
             5. 不需要工具时直接给出 answer。
@@ -72,8 +74,33 @@ public class RealTutorModelClient implements TutorModelClient {
                         .append(step.output()).append('\n');
             }
         }
+
+        appendDictionaryCitations(prompt, context);
         prompt.append("\n请输出下一步的 JSON。");
         return prompt.toString();
+    }
+
+    /**
+     * Makes the dictionary reference numbers explicit. Without this list the real model would see
+     * the lookup observation but have no legitimate {@code [依据N]} number to cite it with, while
+     * the citation builder still assigns one after every briefing source.
+     */
+    private void appendDictionaryCitations(StringBuilder prompt, TutorModelContext context) {
+        List<AgentStep> lookups = LookupWordSteps.successful(context.steps());
+        if (lookups.isEmpty()) {
+            return;
+        }
+        prompt.append("\n成功查词的词典条目（可引用）：\n");
+        int reference = context.briefing().sources().size();
+        for (AgentStep step : lookups) {
+            reference++;
+            Map<String, Object> observation = LookupWordSteps.observation(step, objectMapper);
+            String word = LookupWordSteps.text(observation, "word", step.arguments().get("word"));
+            String partOfSpeech = LookupWordSteps.text(observation, "partOfSpeech", "");
+            String meaning = LookupWordSteps.text(observation, "meaningZh", "");
+            prompt.append("- [依据").append(reference).append("] ").append(word).append("：")
+                    .append(partOfSpeech).append(' ').append(meaning).append('\n');
+        }
     }
 
     private TutorModelDecision parse(String content) {
