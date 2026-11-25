@@ -1,5 +1,6 @@
 package com.writelab.agent;
 
+import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.tools.ToolRegistry;
 import com.writelab.tools.ToolResult;
@@ -36,6 +37,7 @@ public final class TutorAgentCore {
         Set<String> availableTools = toolRegistry.availableNames(request.allowedTools());
         Map<String, ToolSession> sessions = toolRegistry.openSessions(request.allowedTools());
         List<AgentStep> steps = new ArrayList<>();
+        List<ToolInvocation> toolInvocations = new ArrayList<>();
         int toolCalls = 0;
 
         while (steps.size() < request.budget().maxSteps()) {
@@ -44,48 +46,37 @@ public final class TutorAgentCore {
                     new TutorModelContext(request.learnerMessage(), steps, availableTools));
 
             if (decision instanceof TutorModelDecision.Answer answer) {
-                steps.add(new AgentStep(
-                        steps.size() + 1,
-                        AgentStepKind.ANSWER,
-                        null,
-                        Map.of(),
-                        AgentStepStatus.SUCCESS,
-                        answer.content(),
-                        elapsedMillis(startedNanos)));
-                return new AgentTurn(
-                        request.learnerMessage(), answer.content(), steps, AgentStopReason.COMPLETED);
+                steps.add(answerStep(steps.size() + 1, answer.content(), startedNanos));
+                return turn(request, answer.content(), steps, toolInvocations, AgentStopReason.COMPLETED);
             }
 
             TutorModelDecision.ToolCall call = (TutorModelDecision.ToolCall) decision;
-            if (toolCalls >= request.budget().maxToolCalls()) {
-                steps.add(new AgentStep(
-                        steps.size() + 1,
-                        AgentStepKind.TOOL_CALL,
-                        call.toolName(),
-                        call.arguments(),
-                        AgentStepStatus.BLOCKED,
-                        TOOL_BUDGET_ANSWER,
-                        elapsedMillis(startedNanos)));
-                return new AgentTurn(
-                        request.learnerMessage(),
-                        TOOL_BUDGET_ANSWER,
-                        steps,
-                        AgentStopReason.TOOL_BUDGET_EXHAUSTED);
-            }
-
             ToolSession session = sessions.get(call.toolName());
             if (session == null) {
-                steps.add(new AgentStep(
+                steps.add(toolStep(
                         steps.size() + 1,
-                        AgentStepKind.TOOL_CALL,
-                        call.toolName(),
-                        call.arguments(),
+                        call,
                         AgentStepStatus.UNKNOWN_TOOL,
                         unknownToolObservation(call.toolName(), availableTools),
-                        elapsedMillis(startedNanos)));
+                        startedNanos));
+                toolInvocations.add(toolInvocation(call, ToolInvocationStatus.BLOCKED, startedNanos));
                 continue;
             }
 
+            if (toolCalls >= request.budget().maxToolCalls()) {
+                steps.add(toolStep(
+                        steps.size() + 1,
+                        call,
+                        AgentStepStatus.BLOCKED,
+                        TOOL_BUDGET_ANSWER,
+                        startedNanos));
+                toolInvocations.add(toolInvocation(call, ToolInvocationStatus.BLOCKED, startedNanos));
+                return turn(
+                        request, TOOL_BUDGET_ANSWER, steps, toolInvocations,
+                        AgentStopReason.TOOL_BUDGET_EXHAUSTED);
+            }
+
+            long toolStartedNanos = System.nanoTime();
             ToolResult result;
             try {
                 result = session.invoke(call.arguments());
@@ -97,21 +88,69 @@ public final class TutorAgentCore {
                         "工具执行失败，请换一种方式回答。");
             }
             toolCalls++;
-            steps.add(new AgentStep(
+            toolInvocations.add(toolInvocation(
+                    call, result.status(), elapsedMillis(toolStartedNanos)));
+            steps.add(toolStep(
                     steps.size() + 1,
-                    AgentStepKind.TOOL_CALL,
-                    call.toolName(),
-                    call.arguments(),
+                    call,
                     AgentStepStatus.from(result.status()),
                     result.observation(),
-                    elapsedMillis(startedNanos)));
+                    startedNanos));
         }
 
-        return new AgentTurn(
-                request.learnerMessage(),
-                STEP_BUDGET_ANSWER,
-                steps,
+        return turn(
+                request, STEP_BUDGET_ANSWER, steps, toolInvocations,
                 AgentStopReason.STEP_BUDGET_EXHAUSTED);
+    }
+
+    private static AgentStep answerStep(int position, String answer, long startedNanos) {
+        return new AgentStep(
+                position,
+                AgentStepKind.ANSWER,
+                null,
+                Map.of(),
+                AgentStepStatus.SUCCESS,
+                answer,
+                elapsedMillis(startedNanos));
+    }
+
+    private static AgentStep toolStep(
+            int position,
+            TutorModelDecision.ToolCall call,
+            AgentStepStatus status,
+            String output,
+            long startedNanos
+    ) {
+        return new AgentStep(
+                position,
+                AgentStepKind.TOOL_CALL,
+                call.toolName(),
+                call.arguments(),
+                status,
+                output,
+                elapsedMillis(startedNanos));
+    }
+
+    private static ToolInvocation toolInvocation(
+            TutorModelDecision.ToolCall call,
+            ToolInvocationStatus status,
+            long startedNanos
+    ) {
+        return new ToolInvocation(
+                call.toolName(),
+                call.arguments(),
+                status,
+                elapsedMillis(startedNanos));
+    }
+
+    private static AgentTurn turn(
+            AgentTurnRequest request,
+            String answer,
+            List<AgentStep> steps,
+            List<ToolInvocation> toolInvocations,
+            AgentStopReason stopReason
+    ) {
+        return new AgentTurn(request.learnerMessage(), answer, steps, toolInvocations, stopReason);
     }
 
     private static String unknownToolObservation(String toolName, Set<String> availableTools) {

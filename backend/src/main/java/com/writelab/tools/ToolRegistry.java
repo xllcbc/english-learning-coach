@@ -56,11 +56,8 @@ public final class ToolRegistry {
      */
     public Map<String, ToolSession> openSessions(Set<String> allowlist) {
         Map<String, ToolSession> sessions = new LinkedHashMap<>();
-        for (String name : new TreeSet<>(allowlist)) {
-            ToolDefinition definition = definitions.get(name);
-            if (definition != null) {
-                sessions.put(name, definition.openSession());
-            }
+        for (String name : availableNames(allowlist)) {
+            sessions.put(name, definitions.get(name).openSession());
         }
         return Collections.unmodifiableMap(sessions);
     }
