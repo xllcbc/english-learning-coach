@@ -87,6 +87,7 @@ public class LearningReviewWorkflow {
         List<StudyPlanRecommendation> plan = new ArrayList<>(clusters.size());
         for (int index = 0; index < clusters.size(); index++) {
             Cluster cluster = clusters.get(index);
+            List<GroundingMaterial> materials = groundingMaterialsFor(cluster);
             plan.add(new StudyPlanRecommendation(
                     index + 1,
                     cluster.category,
@@ -94,9 +95,9 @@ public class LearningReviewWorkflow {
                     cluster.severity,
                     cluster.issues.size(),
                     cluster.attemptCount,
-                    actionFor(cluster),
+                    actionFor(cluster, !materials.isEmpty()),
                     cluster.evidence(),
-                    groundingMaterialsFor(cluster)
+                    materials
             ));
         }
 
@@ -135,10 +136,13 @@ public class LearningReviewWorkflow {
                 .toList();
     }
 
-    private static String actionFor(Cluster cluster) {
+    private static String actionFor(Cluster cluster, boolean hasGroundingMaterial) {
         String severityLabel = cluster.severity == IssueSeverity.MAJOR ? "严重" : "轻微";
+        String nextStep = hasGroundingMaterial
+                ? "先阅读下方依据材料，再用最近一次的原句做最小改写练习。"
+                : "先用最近一次的原句做最小改写练习，再回看同类问题的解释。";
         return "优先复习「" + IssueCategoryLabels.label(cluster.category) + "」类学习问题（"
-                + severityLabel + "）。先阅读下方依据材料，再用最近一次的原句做最小改写练习。";
+                + severityLabel + "）。" + nextStep;
     }
 
     private List<GroundingMaterial> groundingMaterialsFor(Cluster cluster) {
