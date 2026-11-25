@@ -47,8 +47,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * End-to-end Speaking Practice behaviour through the real WebSocket channel and the real database.
  * Every assertion is external: the wire message, or the replay API that reads the persisted
  * Speaking Session. No SQL or private methods are asserted.
+ *
+ * <p>{@code classes} is explicit because this package also contains a nested
+ * {@code @SpringBootApplication} for the no-database speech contract test; without it Spring could
+ * discover that test app here and start this integration test without a datasource.
  */
 @SpringBootTest(
+        classes = com.writelab.WriteLabApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "writelab.model.api-key="
 )
