@@ -45,7 +45,7 @@ _避免_：词典数据、词库
 _避免_：查字典、搜索词
 
 **Tool Invocation（工具调用记录）**：
-一次模型调用应用工具的记录，包含工具名、参数、结果状态和耗时。
+一次模型调用应用工具的记录，包含工具名、参数、结果状态和耗时。工作流（应用代码）自行调用工具不产生 Tool Invocation。
 _避免_：工具日志、调用历史
 
 **Grounding Material（依据材料）**：
@@ -83,3 +83,41 @@ _避免_：命中日志、检索日志、工具调用记录
 **Saved Vocabulary（已保存词汇）**：
 学习者明确选择保留下来供以后复习的词汇建议。
 _避免_：建议词、自动词汇
+
+### 教师对话
+
+**Teacher Conversation（教师对话）**：
+学习者针对一份 Practice Attempt 与教师进行的有序多轮问答，历史落库并可回放；它不同于 Practice Attempt，也不同于跨练习的 Learning Review。
+_避免_：答疑、聊天、会话
+
+**Teacher Conversation Turn（教师对话回合）**：
+一次学习者发言以及教师随后的回应，是 Teacher Conversation 的有序组成单位。
+_避免_：消息、记录、轮次
+
+**Agent Step（代理步骤）**：
+Teacher Conversation 或 Speaking Session 回合内由模型驱动的一次决策与动作，可能调用工具或给出最终回答；只存在于 agent 场景，工作流步骤不属于此概念。
+_避免_：工具调用、执行记录、步骤日志
+
+### 口语练习
+
+**Speaking Practice（口语练习）**：
+学习者通过语音与教师进行的对话式练习，其产物是 Speaking Session；它不同于书面的 Practice Attempt。
+_避免_：语音聊天、口语会话
+
+**Speaking Session（口语练习记录）**：
+一次 Speaking Practice 的完整记录，包含语音转写回合与发现的学习问题，独立于 Practice Attempt，可回放。
+_避免_：口语会话、语音记录、录音
+
+### 学习复盘
+
+**Learning Review（学习复盘）**：
+跨多份 Practice Attempt 汇总反复出现的学习问题与估计等级变化，并产出 Study Plan 的过程；它是工作流，不是对话。
+_避免_：诊断报告、学情分析
+
+**Study Plan（学习计划）**：
+Learning Review 的产物，按优先级排列薄弱项及对应的针对性行动。
+_避免_：学习建议、提升方案
+
+**Targeted Practice（针对性练习）**：
+由 Study Plan 驱动、聚焦特定薄弱项的一次写作任务及其后续 Practice Attempt。
+_避免_：自适应练习、定制练习
