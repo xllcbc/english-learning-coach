@@ -129,6 +129,63 @@ export interface TeacherConversation {
 }
 
 
+export type LearningReviewStatus = 'SUFFICIENT_DATA' | 'INSUFFICIENT_DATA';
+
+export type LevelTrendDirection = 'IMPROVING' | 'WORSENING' | 'STABLE';
+
+export interface EstimatedLevelPoint {
+  practiceAttemptId: string;
+  level: EstimatedLevel;
+  createdAt: string;
+}
+
+export interface EstimatedLevelChange {
+  fromLevel: EstimatedLevel;
+  toLevel: EstimatedLevel;
+  delta: number;
+  direction: LevelTrendDirection;
+  points: EstimatedLevelPoint[];
+}
+
+export interface LearningIssueEvidence {
+  learningIssueId: string;
+  practiceAttemptId: string;
+  practiceCreatedAt: string;
+  originalSentence: string;
+  suggestion: string;
+  explanation: string;
+}
+
+export interface GroundingMaterial {
+  id: string;
+  category: IssueCategory;
+  content: string;
+  source: string;
+  license: string;
+}
+
+export interface StudyPlanRecommendation {
+  priority: number;
+  category: IssueCategory;
+  categoryLabel: string;
+  severity: IssueSeverity;
+  occurrenceCount: number;
+  attemptCount: number;
+  priorityScore: number;
+  action: string;
+  evidence: LearningIssueEvidence[];
+  groundingMaterials: GroundingMaterial[];
+}
+
+export interface LearningReview {
+  status: LearningReviewStatus;
+  message: string;
+  attemptCount: number;
+  recentAttemptLimit: number;
+  estimatedLevelChange: EstimatedLevelChange | null;
+  studyPlan: StudyPlanRecommendation[];
+}
+
 export interface PracticeResponse {
   id: string;
   writingText: string;
