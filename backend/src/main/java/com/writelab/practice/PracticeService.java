@@ -19,8 +19,11 @@ import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.retrieval.RetrievalHit;
 import com.writelab.persistence.ToolInvocationRows;
+import com.writelab.targeted.TargetedPracticeStore;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.writing.WordCounter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -40,6 +43,8 @@ import java.util.stream.Collectors;
 @Service
 public class PracticeService {
 
+    private static final Logger log = LoggerFactory.getLogger(PracticeService.class);
+
     static final int MIN_WORDS = 200;
     static final int MAX_WORDS = 500;
 
@@ -52,6 +57,7 @@ public class PracticeService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final CorpusSentenceResolver corpusSentenceResolver;
+    private final TargetedPracticeStore targetedPracticeStore;
 
     public PracticeService(
             FeedbackModel feedbackModel,
@@ -60,7 +66,8 @@ public class PracticeService {
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
-            CorpusSentenceResolver corpusSentenceResolver
+            CorpusSentenceResolver corpusSentenceResolver,
+            TargetedPracticeStore targetedPracticeStore
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
@@ -69,12 +76,17 @@ public class PracticeService {
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
         this.corpusSentenceResolver = corpusSentenceResolver;
+        this.targetedPracticeStore = targetedPracticeStore;
     }
 
-    public PracticeResponse create(String writingText) {
+    public PracticeResponse create(String writingText, UUID targetedPracticeId) {
         int wordCount = WordCounter.count(writingText);
         if (wordCount < MIN_WORDS || wordCount > MAX_WORDS) {
             throw new WordCountOutOfRangeException(wordCount);
+        }
+        if (targetedPracticeId != null) {
+            // Check before the model call so an already-submitted target never pays for grading.
+            targetedPracticeStore.requirePending(targetedPracticeId);
         }
 
         // The model call can block for minutes; keep it outside the transaction so it never pins a pooled connection.
@@ -113,6 +125,18 @@ public class PracticeService {
                 toRetrievalHitEntities(resolved)
         );
         transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
+
+        // The model has already been paid for and the Practice Attempt is committed. A failure to
+        // link a Targeted Practice must not hide the grading feedback the learner just earned.
+        if (targetedPracticeId != null) {
+            try {
+                targetedPracticeStore.complete(
+                        targetedPracticeId, id, createdAt, resolvedFeedback.learningIssues());
+            } catch (RuntimeException exception) {
+                log.warn("针对性练习关联失败，但批改结果已保存: targetedPracticeId={}, practiceAttemptId={}, cause={}",
+                        targetedPracticeId, id, exception.getClass().getSimpleName());
+            }
+        }
 
         return toResponse(
                 entity,

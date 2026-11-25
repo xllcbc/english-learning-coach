@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { getLearningReview, toErrorMessage } from '../api';
+import { createTargetedPractice, getLearningReview, toErrorMessage } from '../api';
 import { formatTimestamp } from '../format';
 import { severityLabels } from '../labels';
 import type {
@@ -10,6 +10,7 @@ import type {
   LearningReview,
   LevelTrendDirection,
   StudyPlanRecommendation,
+  TargetedPractice,
 } from '../types';
 
 const directionLabels: Record<LevelTrendDirection, string> = {
@@ -20,10 +21,16 @@ const directionLabels: Record<LevelTrendDirection, string> = {
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
-export function LearningReviewPanel() {
+interface LearningReviewPanelProps {
+  onStartTargetedPractice?: (practice: TargetedPractice) => void;
+}
+
+export function LearningReviewPanel({ onStartTargetedPractice }: LearningReviewPanelProps) {
   const [review, setReview] = useState<LearningReview | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [startingKey, setStartingKey] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const loadReview = useCallback(async () => {
     setStatus('loading');
@@ -41,6 +48,20 @@ export function LearningReviewPanel() {
   useEffect(() => {
     void loadReview();
   }, [loadReview]);
+
+  async function startTargetedPractice(item: StudyPlanRecommendation) {
+    const key = `${item.category}-${item.severity}`;
+    setStartingKey(key);
+    setStartError(null);
+    try {
+      const practice = await createTargetedPractice(item.category, item.severity);
+      onStartTargetedPractice?.(practice);
+    } catch (startFailure) {
+      setStartError(toErrorMessage(startFailure));
+    } finally {
+      setStartingKey(null);
+    }
+  }
 
   const sufficient = review?.status === 'SUFFICIENT_DATA';
   const hasPlan = sufficient && (review?.studyPlan.length ?? 0) > 0;
@@ -101,9 +122,20 @@ export function LearningReviewPanel() {
           {hasPlan && (
             <ol className="study-plan" aria-label="Study Plan">
               {review.studyPlan.map((item) => (
-                <StudyPlanItem key={`${item.priority}-${item.category}-${item.severity}`} item={item} />
+                <StudyPlanItem
+                  key={`${item.priority}-${item.category}-${item.severity}`}
+                  item={item}
+                  starting={startingKey === `${item.category}-${item.severity}`}
+                  onStart={() => void startTargetedPractice(item)}
+                />
               ))}
             </ol>
+          )}
+
+          {startError && (
+            <div className="panel-error" role="alert">
+              <p>{startError}</p>
+            </div>
           )}
         </div>
       )}
@@ -134,7 +166,15 @@ function LevelChange({ change }: { change: EstimatedLevelChange }) {
   );
 }
 
-function StudyPlanItem({ item }: { item: StudyPlanRecommendation }) {
+function StudyPlanItem({
+  item,
+  starting,
+  onStart,
+}: {
+  item: StudyPlanRecommendation;
+  starting: boolean;
+  onStart: () => void;
+}) {
   return (
     <li className="study-plan-item" aria-label={`优先级 ${item.priority}：${item.categoryLabel}`}>
       <div className="study-plan-heading">
@@ -146,6 +186,15 @@ function StudyPlanItem({ item }: { item: StudyPlanRecommendation }) {
         <span className="muted">
           最近 {item.attemptCount} 次练习中出现 {item.occurrenceCount} 次
         </span>
+        <button
+          type="button"
+          className="text-button targeted-start"
+          aria-label={`对「${item.categoryLabel}」发起针对性练习`}
+          onClick={onStart}
+          disabled={starting}
+        >
+          {starting ? '正在生成…' : '针对性练习'}
+        </button>
       </div>
 
       <p className="study-plan-action">{item.action}</p>

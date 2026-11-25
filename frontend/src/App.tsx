@@ -6,6 +6,8 @@ import {
   deleteSavedVocabulary,
   getModelMode,
   getPractice,
+  getTargetedPractice,
+  getTargetedPracticeForPractice,
   listPractices,
   listSavedVocabulary,
   saveVocabulary,
@@ -20,6 +22,7 @@ import { LearningReviewPanel } from './components/LearningReviewPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
 import { SpeakingPracticePanel } from './components/SpeakingPracticePanel';
+import { TargetedPracticePanel } from './components/TargetedPracticePanel';
 import { TeacherConversationPanel } from './components/TeacherConversationPanel';
 import { UserDocumentsPanel } from './components/UserDocumentsPanel';
 import { formatTimestamp } from './format';
@@ -30,6 +33,7 @@ import type {
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
+  TargetedPractice,
 } from './types';
 import { countWords, MAX_WORDS, MIN_WORDS } from './wordCount';
 
@@ -60,6 +64,32 @@ function countMessage(wordCount: number): string {
   return `词数符合要求，可以提交。`;
 }
 
+function completeTargetedPracticeLocally(
+  task: TargetedPractice,
+  practice: PracticeResponse,
+): TargetedPractice {
+  const afterCount = practice.feedback.learningIssues.filter(
+    (issue) => issue.category === task.category && issue.severity === task.severity,
+  ).length;
+  const change = task.beforeCount - afterCount;
+  return {
+    ...task,
+    status: 'SUBMITTED',
+    practiceAttemptId: practice.id,
+    completedAt: practice.createdAt,
+    comparison: {
+      beforePracticeAttemptId: task.beforePracticeAttemptId,
+      beforeCreatedAt: task.beforeCreatedAt,
+      beforeCount: task.beforeCount,
+      afterPracticeAttemptId: practice.id,
+      afterCreatedAt: practice.createdAt,
+      afterCount,
+      change,
+      trend: change > 0 ? 'IMPROVED' : change < 0 ? 'WORSENED' : 'UNCHANGED',
+    },
+  };
+}
+
 export default function App() {
   const [writingText, setWritingText] = useState('');
   const [result, setResult] = useState<PracticeResponse | null>(null);
@@ -85,6 +115,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailStatus, setDetailStatus] = useState<DetailStatus>('idle');
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [targetedPractice, setTargetedPractice] = useState<TargetedPractice | null>(null);
   const detailRequest = useRef(0);
   const feedbackHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -236,6 +267,7 @@ export default function App() {
 
     cancelExplanation();
     resetExplanation('idle');
+    setTargetedPractice(null);
     setSelectedId(id);
     setDetailStatus('loading');
     setDetailError(null);
@@ -254,6 +286,15 @@ export default function App() {
       if (practice.hasExplanation) {
         void startExplanation(practice.id);
       }
+      void getTargetedPracticeForPractice(practice.id)
+        .then((linked) => {
+          if (requestId === detailRequest.current) {
+            setTargetedPractice((current) => current ?? linked);
+          }
+        })
+        .catch(() => {
+          // History still works without the optional Targeted Practice comparison.
+        });
       feedbackHeadingRef.current?.focus();
     } catch (error) {
       if (requestId !== detailRequest.current) {
@@ -274,6 +315,10 @@ export default function App() {
       return;
     }
 
+    const pendingTargetedPractice = targetedPractice?.status === 'PENDING'
+      ? targetedPractice
+      : null;
+
     cancelExplanation();
     setStatus('submitting');
     setErrorMessage(null);
@@ -283,16 +328,42 @@ export default function App() {
     setDetailError(null);
 
     try {
-      const practice = await createPractice(writingText);
+      const practice = await createPractice(writingText, pendingTargetedPractice?.id);
       setResult(practice);
       setSelectedId(practice.id);
       setStatus('idle');
+      if (pendingTargetedPractice) {
+        try {
+          setTargetedPractice(await getTargetedPractice(pendingTargetedPractice.id));
+        } catch {
+          // The Practice Attempt is already graded and shown. Keep the comparison visible from the
+          // graded feedback if the targeted refresh fails.
+          setTargetedPractice(completeTargetedPracticeLocally(pendingTargetedPractice, practice));
+        }
+      }
       void startExplanation(practice.id);
       void refreshHistory();
     } catch (error) {
       setStatus('error');
       setErrorMessage(toErrorMessage(error));
     }
+  }
+
+  function handleStartTargetedPractice(practice: TargetedPractice) {
+    cancelExplanation();
+    resetExplanation('idle');
+    setTargetedPractice(practice);
+    setWritingText('');
+    setResult(null);
+    setSelectedId(null);
+    setStatus('idle');
+    setErrorMessage(null);
+    setDetailStatus('idle');
+    setDetailError(null);
+  }
+
+  function handleDismissTargetedPractice() {
+    setTargetedPractice(null);
   }
 
   async function handleSaveVocabulary(practiceAttemptId: string, word: string): Promise<void> {
@@ -372,6 +443,13 @@ export default function App() {
             </div>
             <span className={`count-pill count-${currentCountState}`}>{wordCount} 词</span>
           </div>
+
+          {targetedPractice?.status === 'PENDING' && (
+            <TargetedPracticePanel
+              practice={targetedPractice}
+              onDismiss={handleDismissTargetedPractice}
+            />
+          )}
 
           <form onSubmit={handleSubmit} noValidate>
             <label className="sr-only" htmlFor="writing-text">
@@ -460,6 +538,12 @@ export default function App() {
             </div>
           )}
 
+          {status !== 'submitting' && detailStatus !== 'loading' && result
+            && targetedPractice?.status === 'SUBMITTED'
+            && targetedPractice.practiceAttemptId === result.id && (
+              <TargetedPracticePanel practice={targetedPractice} />
+            )}
+
           {status !== 'submitting' && detailStatus !== 'loading' && result && (
             <FeedbackView
               result={result}
@@ -487,7 +571,7 @@ export default function App() {
       </main>
 
       <div className="library-grid">
-        <LearningReviewPanel />
+        <LearningReviewPanel onStartTargetedPractice={handleStartTargetedPractice} />
         <SavedVocabularyPanel
           entries={savedVocabulary}
           status={savedStatus}

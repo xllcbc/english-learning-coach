@@ -26,7 +26,7 @@ public class PracticeController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PracticeResponse create(@Valid @RequestBody CreatePracticeRequest request) {
-        return practiceService.create(request.text());
+        return practiceService.create(request.text(), request.targetedPracticeId());
     }
 
     @GetMapping

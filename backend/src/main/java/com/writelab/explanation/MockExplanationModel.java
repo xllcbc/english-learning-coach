@@ -2,7 +2,7 @@ package com.writelab.explanation;
 
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueCategoryLabels;
-import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.IssueSeverityLabels;
 import com.writelab.feedback.LearningIssue;
 import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.GroundingMaterial;
@@ -41,7 +41,7 @@ public class MockExplanationModel implements ExplanationModel {
             LearningIssue issue = keyIssues.get(index);
             text.append("第").append(index + 1).append("点（")
                     .append(IssueCategoryLabels.label(issue.category())).append("，")
-                    .append(severityLabel(issue.severity())).append("）：\n");
+                    .append(IssueSeverityLabels.label(issue.severity())).append("）：\n");
             text.append("原句：").append(issue.originalSentence()).append("\n");
             text.append("改为：").append(issue.suggestion()).append("\n");
             text.append("讲解：").append(issue.explanation())
@@ -87,9 +87,5 @@ public class MockExplanationModel implements ExplanationModel {
             citations.append(" [依据").append(document.reference()).append(']');
         }
         return citations.toString();
-    }
-
-    private static String severityLabel(IssueSeverity severity) {
-        return severity == IssueSeverity.MAJOR ? "严重" : "轻微";
     }
 }

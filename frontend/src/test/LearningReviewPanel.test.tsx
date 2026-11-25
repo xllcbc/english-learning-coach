@@ -3,14 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LearningReviewPanel } from '../components/LearningReviewPanel';
-import type { LearningReview } from '../types';
+import type { LearningReview, TargetedPractice } from '../types';
 
 const api = vi.hoisted(() => ({
   getLearningReview: vi.fn(),
+  createTargetedPractice: vi.fn(),
 }));
 
 vi.mock('../api', () => ({
   getLearningReview: api.getLearningReview,
+  createTargetedPractice: api.createTargetedPractice,
   toErrorMessage: (error: unknown) =>
     error instanceof Error ? error.message : '无法连接后端服务，请确认服务已启动。',
 }));
@@ -94,6 +96,7 @@ function review(overrides: Partial<LearningReview> = {}): LearningReview {
 describe('LearningReviewPanel', () => {
   beforeEach(() => {
     api.getLearningReview.mockReset();
+    api.createTargetedPractice.mockReset();
   });
 
   it('shows the prioritized Study Plan with traceable Learning Issues and the Estimated Level change', async () => {
@@ -156,4 +159,46 @@ describe('LearningReviewPanel', () => {
 
     expect(api.getLearningReview).toHaveBeenCalledTimes(2);
   });
+
+  it('starts a Targeted Practice for exactly one Study Plan weak item', async () => {
+    const onStartTargetedPractice = vi.fn();
+    api.getLearningReview.mockResolvedValue(review());
+    api.createTargetedPractice.mockResolvedValue(targetedPractice());
+
+    render(<LearningReviewPanel onStartTargetedPractice={onStartTargetedPractice} />);
+    await screen.findByText(/发现 2 类反复出现/);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: '对「连贯性」发起针对性练习' }),
+    );
+
+    expect(api.createTargetedPractice).toHaveBeenCalledWith('COHERENCE', 'MAJOR');
+    expect(onStartTargetedPractice).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'targeted-1', category: 'COHERENCE' }),
+    );
+  });
 });
+
+function targetedPractice(): TargetedPractice {
+  return {
+    id: 'targeted-1',
+    createdAt: '2026-11-10T09:00:00Z',
+    priority: 2,
+    category: 'COHERENCE',
+    categoryLabel: '连贯性',
+    severity: 'MAJOR',
+    focus: '本次聚焦「连贯性」类学习问题（严重）：段落之间需要明确的连接词。',
+    prompt: 'Write a 200-500 word essay in English.',
+    evidence: [],
+    groundingMaterials: [],
+    occurrenceCount: 3,
+    attemptCount: 3,
+    beforePracticeAttemptId: 'practice-2',
+    beforeCreatedAt: '2026-11-02T09:00:00Z',
+    beforeCount: 1,
+    status: 'PENDING',
+    practiceAttemptId: null,
+    completedAt: null,
+    comparison: null,
+  };
+}
