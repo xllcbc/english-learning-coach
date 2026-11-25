@@ -128,6 +128,72 @@ export interface TeacherConversation {
   turns: TeacherConversationTurn[];
 }
 
+export type SpeakingInputMode = 'VOICE' | 'TEXT';
+
+export type SpeakingFallbackReason = 'failed' | 'timeout' | 'synthesis_failed';
+
+export interface SpeakingTurn {
+  id: string;
+  sessionId: string;
+  position: number;
+  inputMode: SpeakingInputMode;
+  transcript: string;
+  reply: string;
+  fallbackReason: SpeakingFallbackReason | null;
+  stopReason: AgentStopReason | null;
+  modelMode: 'MOCK' | 'REAL';
+  createdAt: string;
+  steps: AgentStep[];
+  toolInvocations: ToolInvocation[];
+}
+
+export interface SpeakingSession {
+  id: string;
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+  createdAt: string;
+  updatedAt: string;
+  turns: SpeakingTurn[];
+}
+
+export interface SpeakingSessionSummary {
+  id: string;
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+  turnCount: number;
+  createdAt: string;
+}
+
+export interface SpeakingAudioReply {
+  type: 'audio';
+  sessionId: string;
+  audio: string;
+  mimeType: string;
+  transcript: string;
+  reply: string;
+  inputMode: SpeakingInputMode;
+  mockMode: boolean;
+}
+
+export interface SpeakingTextReply {
+  type: 'text';
+  sessionId: string;
+  text: string;
+  fallback: boolean;
+  reason: SpeakingFallbackReason;
+  transcript: string;
+  inputMode: SpeakingInputMode;
+  mockMode: boolean;
+}
+
+export interface SpeakingChannelError {
+  code: string;
+  message: string;
+}
+
+export type SpeakingServerMessage = SpeakingAudioReply | SpeakingTextReply;
+
+
 
 export interface PracticeResponse {
   id: string;

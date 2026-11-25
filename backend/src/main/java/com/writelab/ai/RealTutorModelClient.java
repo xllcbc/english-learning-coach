@@ -6,6 +6,7 @@ import com.writelab.agent.TutorCitationPlan;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
+import com.writelab.agent.TutorScenario;
 import org.springframework.ai.chat.client.ChatClient;
 import tools.jackson.databind.ObjectMapper;
 
@@ -20,7 +21,7 @@ import java.util.Map;
  */
 public class RealTutorModelClient implements TutorModelClient {
 
-    private static final String SYSTEM_PROMPT = """
+    private static final String TEACHER_SYSTEM_PROMPT = """
             你是 WriteLab 的英语写作教师，正在回答学习者关于一份已完成 Practice Attempt 的追问。
             你每一步只做一个决定，并只输出一个 JSON 对象，不要输出 Markdown 代码块或额外文字。
             两种输出形态：
@@ -35,6 +36,20 @@ public class RealTutorModelClient implements TutorModelClient {
             5. 不需要工具时直接给出 answer。
             """;
 
+    private static final String SPEAKING_SYSTEM_PROMPT = """
+            你是 WriteLab 的英语口语教练，正在进行一次 Speaking Practice 的单个回合。
+            你每一步只做一个决定，并只输出一个 JSON 对象，不要输出 Markdown 代码块或额外文字。
+            两种输出形态：
+            {"type":"tool_call","tool":"<工具名>","arguments":{"<参数名>":"<参数值>"}}
+            {"type":"answer","content":"<中文回答>"}
+
+            规则：
+            1. 用中文给出一到两句具体、鼓励性的口语反馈，并给出一个可马上练习的小建议。
+            2. 回答不要使用 [依据N] 引用标记；口语练习没有书面依据材料。
+            3. 需要确认某个英文词的含义时可以调用 lookup_word。
+            4. 不需要工具时直接给出 answer，回答要简短，便于语音朗读。
+            """;
+
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
 
@@ -46,11 +61,17 @@ public class RealTutorModelClient implements TutorModelClient {
     @Override
     public TutorModelDecision next(TutorModelContext context) {
         String content = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
+                .system(systemPrompt(context))
                 .user(userPrompt(context))
                 .call()
                 .content();
         return parse(content);
+    }
+
+    private static String systemPrompt(TutorModelContext context) {
+        return context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE
+                ? SPEAKING_SYSTEM_PROMPT
+                : TEACHER_SYSTEM_PROMPT;
     }
 
     private String userPrompt(TutorModelContext context) {
@@ -91,16 +112,23 @@ public class RealTutorModelClient implements TutorModelClient {
         if (lookups.isEmpty()) {
             return;
         }
-        prompt.append("\n成功查词的词典条目（可引用）：\n");
+        boolean speaking = context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE;
+        prompt.append(speaking
+                ? "\n成功查词的词典条目（仅供参考，不要写 [依据N]）：\n"
+                : "\n成功查词的词典条目（可引用）：\n");
         for (int index = 0; index < lookups.size(); index++) {
             AgentStep step = lookups.get(index);
             Map<String, Object> observation = LookupWordSteps.observation(step, objectMapper);
             String word = LookupWordSteps.text(observation, "word", step.arguments().get("word"));
             String partOfSpeech = LookupWordSteps.text(observation, "partOfSpeech", "");
             String meaning = LookupWordSteps.text(observation, "meaningZh", "");
-            prompt.append("- [依据")
-                    .append(TutorCitationPlan.dictionaryReference(context.briefing().sources(), index))
-                    .append("] ").append(word).append("：")
+            prompt.append("- ");
+            if (!speaking) {
+                prompt.append("[依据")
+                        .append(TutorCitationPlan.dictionaryReference(context.briefing().sources(), index))
+                        .append("] ");
+            }
+            prompt.append(word).append("：")
                     .append(partOfSpeech).append(' ').append(meaning).append('\n');
         }
     }

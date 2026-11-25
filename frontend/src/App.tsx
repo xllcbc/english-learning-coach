@@ -18,6 +18,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import type { HistoryStatus } from './components/HistoryPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
+import { SpeakingPracticePanel } from './components/SpeakingPracticePanel';
 import { TeacherConversationPanel } from './components/TeacherConversationPanel';
 import { UserDocumentsPanel } from './components/UserDocumentsPanel';
 import { formatTimestamp } from './format';
@@ -496,6 +497,8 @@ export default function App() {
         />
         <UserDocumentsPanel realMode={!isMock} />
       </div>
+
+      <SpeakingPracticePanel defaultMockMode={isMock} />
     </div>
   );
 }

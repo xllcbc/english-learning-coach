@@ -75,6 +75,14 @@ public class ApiExceptionHandler {
                 .body(new ApiError("PRACTICE_NOT_FOUND", "找不到对应的练习记录，请刷新后重试。"));
     }
 
+    @ExceptionHandler(com.writelab.speech.SpeakingSessionNotFoundException.class)
+    ResponseEntity<ApiError> handleSpeakingSessionNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(
+                        "SPEAKING_SESSION_NOT_FOUND",
+                        "找不到对应的 Speaking Session，请开始新的练习。"));
+    }
+
     @ExceptionHandler(DictionaryEntryNotFoundException.class)
     ResponseEntity<ApiError> handleDictionaryEntryNotFound(DictionaryEntryNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
