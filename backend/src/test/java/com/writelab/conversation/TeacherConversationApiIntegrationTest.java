@@ -248,9 +248,11 @@ class TeacherConversationApiIntegrationTest {
         assertThat(turn.toolInvocations()).extracting(ToolInvocation::toolName)
                 .containsExactly("lookup_word", "retrieve_grounding_material",
                         "search_user_documents", "query_learning_progress");
+        // Citations are ordered by their [依据N], and the lookup ran before the retrieval tools.
+        assertThat(turn.citations()).extracting(CitationBody::reference).isSorted();
         assertThat(turn.citations()).extracting(CitationBody::kind).containsExactly(
-                ConversationCitationKind.GROUNDING_MATERIAL,
                 ConversationCitationKind.DICTIONARY_ENTRY,
+                ConversationCitationKind.GROUNDING_MATERIAL,
                 ConversationCitationKind.USER_DOCUMENT);
 
         assertThat(model.contexts()).allSatisfy(context -> assertThat(context.availableTools())
