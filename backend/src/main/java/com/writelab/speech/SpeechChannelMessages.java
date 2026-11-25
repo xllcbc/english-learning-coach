@@ -22,12 +22,21 @@ package com.writelab.speech;
  * {"type":"text","sessionId":"<uuid>","text":"...","fallback":true,"reason":"timeout",
  *  "transcript":"..."}
  * }</pre>
+ * Barge-in: the learner started speaking, so the channel cancels the reply it is still producing.
+ * The channel acknowledges the cancellation with an {@code interrupted} message:
+ * <pre>{@code
+ * {"type":"barge_in","sessionId":"<uuid>"}
+ * {"type":"interrupted","sessionId":"<uuid>","reason":"barge_in"}
+ * }</pre>
  */
 public final class SpeechChannelMessages {
 
     public static final String TYPE_AUDIO = "audio";
     public static final String TYPE_TEXT = "text";
+    public static final String TYPE_BARGE_IN = "barge_in";
+    public static final String TYPE_INTERRUPTED = "interrupted";
     public static final String TYPE_ERROR = "error";
+    public static final String BARGE_IN_REASON = "barge_in";
 
     private SpeechChannelMessages() {
     }
@@ -36,7 +45,7 @@ public final class SpeechChannelMessages {
     }
 
     public sealed interface OutgoingMessage
-            permits SpokenReplyMessage, TextReplyMessage, ErrorMessage {
+            permits SpokenReplyMessage, TextReplyMessage, InterruptedMessage, ErrorMessage {
     }
 
     public record SpokenReplyMessage(
@@ -61,6 +70,10 @@ public final class SpeechChannelMessages {
             String inputMode,
             boolean mockMode
     ) implements OutgoingMessage {
+    }
+
+    public record InterruptedMessage(String type, String sessionId, String reason)
+            implements OutgoingMessage {
     }
 
     public record ErrorMessage(String type, String code, String message)

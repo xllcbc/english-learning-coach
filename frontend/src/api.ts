@@ -12,6 +12,7 @@ import type {
   SpeakingAudioReply,
   SpeakingChannelError,
   SpeakingInputMode,
+  SpeakingInterrupted,
   SpeakingServerMessage,
   SpeakingSession,
   SpeakingSessionSummary,
@@ -411,6 +412,7 @@ export interface SpeakingChannelHandlers {
   onOpen?: () => void;
   onAudio?: (reply: SpeakingAudioReply) => void;
   onText?: (reply: SpeakingTextReply) => void;
+  onInterrupted?: (interrupted: SpeakingInterrupted) => void;
   onError?: (error: SpeakingChannelError) => void;
   onClose?: () => void;
 }
@@ -418,6 +420,8 @@ export interface SpeakingChannelHandlers {
 export interface SpeakingChannelConnection {
   sendAudio(base64Audio: string, mimeType: string, sessionId: string | null): void;
   sendText(text: string, sessionId: string | null): void;
+  /** Announces that the learner started speaking so the channel can cancel a reply in flight. */
+  bargeIn(sessionId: string | null): void;
   close(): void;
 }
 
@@ -450,6 +454,8 @@ export function openSpeakingChannel(
       handlers.onAudio?.(payload as SpeakingAudioReply);
     } else if (payload.type === 'text') {
       handlers.onText?.(payload as SpeakingTextReply);
+    } else if (payload.type === 'interrupted') {
+      handlers.onInterrupted?.(payload as SpeakingInterrupted);
     } else if (payload.type === 'error') {
       const error = payload as SpeakingChannelError;
       handlers.onError?.({ code: error.code, message: error.message });
@@ -469,6 +475,12 @@ export function openSpeakingChannel(
       socket.send(JSON.stringify({
         type: 'text',
         text,
+        sessionId: sessionId ?? undefined,
+      }));
+    },
+    bargeIn(sessionId) {
+      socket.send(JSON.stringify({
+        type: 'barge_in',
         sessionId: sessionId ?? undefined,
       }));
     },

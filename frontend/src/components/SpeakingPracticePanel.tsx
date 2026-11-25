@@ -184,6 +184,11 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           reply.reason,
         );
       },
+      onInterrupted: () => {
+        // The server abandoned the reply in flight; local playback was already stopped when the
+        // learner started speaking, so the panel only needs to leave its waiting state.
+        setThinking(false);
+      },
       onError: (channelError) => {
         setError(channelError.message);
         setThinking(false);
@@ -224,7 +229,11 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       return;
     }
 
+    // Barge-in: the learner has started a new utterance, so stop the tutor's playback and tell the
+    // channel to abandon a reply it is still producing (ADR-0011).
     stopSpeakingAudio();
+    connectionRef.current.bargeIn(sessionIdRef.current);
+    setThinking(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -410,7 +419,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           type="button"
           className={isRecording ? 'retry-button is-recording' : 'retry-button'}
           onClick={() => void toggleRecording()}
-          disabled={thinking || !connectionReady || !canRecord}
+          disabled={!connectionReady || !canRecord}
         >
           {isRecording ? '停止录音并发送' : '开始录音'}
         </button>

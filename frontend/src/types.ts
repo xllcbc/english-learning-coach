@@ -186,12 +186,18 @@ export interface SpeakingTextReply {
   mockMode: boolean;
 }
 
+export interface SpeakingInterrupted {
+  type: 'interrupted';
+  sessionId: string | null;
+  reason: 'barge_in';
+}
+
 export interface SpeakingChannelError {
   code: string;
   message: string;
 }
 
-export type SpeakingServerMessage = SpeakingAudioReply | SpeakingTextReply;
+export type SpeakingServerMessage = SpeakingAudioReply | SpeakingTextReply | SpeakingInterrupted;
 
 
 

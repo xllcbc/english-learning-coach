@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -218,6 +219,44 @@ class SpeechChannelContractTest {
     }
 
     @Test
+    void bargeInCancelsTheReplyInFlightAndTheNextTurnStillAnswers() throws Exception {
+        CountDownLatch modelStarted = new CountDownLatch(1);
+        CountDownLatch releaseModel = new CountDownLatch(1);
+        tutorModel.script(context -> {
+            modelStarted.countDown();
+            try {
+                assertThat(releaseModel.await(5, TimeUnit.SECONDS)).isTrue();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(interrupted);
+            }
+            return TutorModelDecision.answer("This reply must never reach the learner.");
+        });
+
+        sendAudio(null);
+        assertThat(modelStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+        sendBargeIn(null);
+        SpeechChannelMessages.InterruptedMessage interrupted = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.InterruptedMessage.class);
+        assertThat(interrupted.type()).isEqualTo(SpeechChannelMessages.TYPE_INTERRUPTED);
+        assertThat(interrupted.reason()).isEqualTo(SpeechChannelMessages.BARGE_IN_REASON);
+
+        releaseModel.countDown();
+        assertThat(listener.poll(500, TimeUnit.MILLISECONDS))
+                .as("an interrupted turn must not deliver its reply")
+                .isNull();
+
+        tutorModel.script(context -> TutorModelDecision.answer("Now the learner has the floor."));
+        sendText("I want to steer the conversation.", null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.type()).isEqualTo(SpeechChannelMessages.TYPE_AUDIO);
+        assertThat(reply.reply()).isEqualTo("Now the learner has the floor.");
+    }
+
+    @Test
     void rejectsAnUnknownSessionWithoutCallingTheModel() throws Exception {
         sendText("This belongs to no session.", UUID.randomUUID().toString());
 
@@ -255,6 +294,12 @@ class SpeechChannelContractTest {
     private void sendText(String text, String sessionId) throws Exception {
         String payload = objectMapper.writeValueAsString(new SpeechChannelMessages.SpeechInput(
                 SpeechChannelMessages.TYPE_TEXT, null, null, text, sessionId));
+        webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
+    }
+
+    private void sendBargeIn(String sessionId) throws Exception {
+        String payload = objectMapper.writeValueAsString(new SpeechChannelMessages.SpeechInput(
+                SpeechChannelMessages.TYPE_BARGE_IN, null, null, null, sessionId));
         webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
     }
 
@@ -487,6 +532,10 @@ class SpeechChannelContractTest {
             String message = messages.poll(5, TimeUnit.SECONDS);
             assertThat(message).as("WebSocket reply").isNotNull();
             return message;
+        }
+
+        private String poll(long timeout, TimeUnit unit) throws InterruptedException {
+            return messages.poll(timeout, unit);
         }
     }
 }

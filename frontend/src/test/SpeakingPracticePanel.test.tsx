@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SpeakingPracticePanel } from '../components/SpeakingPracticePanel';
 import type { SpeakingChannelHandlers } from '../api';
@@ -71,6 +71,7 @@ function captureChannel() {
   const connection = {
     sendAudio: vi.fn(),
     sendText: vi.fn(),
+    bargeIn: vi.fn(),
     close: vi.fn(),
   };
   let handlers: SpeakingChannelHandlers = {};
@@ -93,12 +94,18 @@ describe('SpeakingPracticePanel', () => {
     api.stopSpeakingAudio.mockReset();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (navigator as { mediaDevices?: unknown }).mediaDevices;
+  });
+
   it('replays the latest Speaking Session and labels Mock mode', async () => {
     api.listSpeakingSessions.mockResolvedValue([summary()]);
     api.getSpeakingSession.mockResolvedValue(session());
     api.openSpeakingChannel.mockReturnValue({
       sendAudio: vi.fn(),
       sendText: vi.fn(),
+      bargeIn: vi.fn(),
       close: vi.fn(),
     });
 
@@ -151,6 +158,32 @@ describe('SpeakingPracticePanel', () => {
       'I enjoy history books.',
       'session-1',
     );
+  });
+
+  it('barges in and stops waiting when the learner starts a new recording', async () => {
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([]);
+    const getUserMedia = vi.fn().mockRejectedValue(new Error('no microphone'));
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    vi.stubGlobal('MediaRecorder', class MediaRecorder {});
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+    await screen.findByText('还没有 Speaking Session。');
+    captured.getHandlers().onOpen?.();
+
+    await userEvent.type(screen.getByLabelText('说或输入一句英语'), 'A slow reply.');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(await screen.findByText('正在回复…')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '开始录音' }));
+
+    expect(captured.connection.bargeIn).toHaveBeenCalledWith(null);
+    expect(api.stopSpeakingAudio).toHaveBeenCalled();
+    expect(screen.queryByText('正在回复…')).not.toBeInTheDocument();
+    expect(await screen.findByText('无法访问麦克风，请检查权限或改用文字输入。')).toBeInTheDocument();
   });
 
   it('shows a transcription fallback and continues on the same session with text', async () => {
@@ -229,6 +262,7 @@ describe('SpeakingPracticePanel', () => {
     api.openSpeakingChannel.mockReturnValue({
       sendAudio: vi.fn(),
       sendText: vi.fn(),
+      bargeIn: vi.fn(),
       close: vi.fn(),
     });
 
