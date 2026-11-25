@@ -1,9 +1,14 @@
 package com.writelab.agent;
 
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Deterministic offline model for Teacher Conversation. It never invents a source: it cites only
@@ -16,6 +21,17 @@ public class MockTutorModelClient implements TutorModelClient {
     private static final String NO_GROUNDING_ANSWER =
             "我目前没有可引用的依据材料，不能可靠回答这个问题。"
                     + "请先在「我的文档」补充材料，或重新生成教师讲解后再问。";
+
+    /**
+     * Deterministic word-choice lessons for Mock mode. Speaking Practice has no written Practice
+     * Attempt to grade, so the offline coach reports one obvious, low-risk improvement instead of
+     * inventing a grammar rewrite.
+     */
+    private static final List<Map.Entry<String, String>> SPEAKING_WORD_CHOICES = List.of(
+            Map.entry("a lot of", "many"),
+            Map.entry("very", "particularly"),
+            Map.entry("good", "effective")
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -97,6 +113,35 @@ public class MockTutorModelClient implements TutorModelClient {
                 answer.append("\n关于「").append(word).append("」：").append(meaning);
             }
         }
-        return TutorModelDecision.answer(answer.toString());
+        return TutorModelDecision.answer(
+                answer.toString(), speakingIssues(context.learnerMessage()));
+    }
+
+    private static List<LearningIssue> speakingIssues(String learnerMessage) {
+        String sentence = learnerMessage == null ? "" : learnerMessage.strip();
+        if (sentence.isEmpty()) {
+            return List.of();
+        }
+        for (Map.Entry<String, String> choice : SPEAKING_WORD_CHOICES) {
+            Matcher matcher = Pattern.compile(
+                            "\\b" + Pattern.quote(choice.getKey()) + "\\b",
+                            Pattern.CASE_INSENSITIVE)
+                    .matcher(sentence);
+            if (!matcher.find()) {
+                continue;
+            }
+            String matched = matcher.group();
+            String suggestion = sentence.substring(0, matcher.start())
+                    + choice.getValue()
+                    + sentence.substring(matcher.end());
+            return List.of(new LearningIssue(
+                    sentence,
+                    suggestion,
+                    IssueCategory.VOCABULARY,
+                    IssueSeverity.MINOR,
+                    "口语里用词可以更精确：把「" + matched + "」换成「"
+                            + choice.getValue() + "」会更自然。"));
+        }
+        return List.of();
     }
 }

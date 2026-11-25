@@ -9,11 +9,16 @@ import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
 import com.writelab.agent.TutorScenario;
 import com.writelab.agent.TutorTurnMemory;
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import org.springframework.ai.chat.client.ChatClient;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -45,13 +50,17 @@ public class RealTutorModelClient implements TutorModelClient {
             你每一步只做一个决定，并只输出一个 JSON 对象，不要输出 Markdown 代码块或额外文字。
             两种输出形态：
             {"type":"tool_call","tool":"<工具名>","arguments":{"<参数名>":"<参数值>"}}
-            {"type":"answer","content":"<中文回答>"}
+            {"type":"answer","content":"<中文回答>","issues":[{"originalSentence":"<学习者原句>","suggestion":"<最小英文修改句>","category":"GRAMMAR","severity":"MINOR","explanation":"<中文解释>"}]}
 
             规则：
             1. 用中文给出一到两句具体、鼓励性的口语反馈，并给出一个可马上练习的小建议。
             2. 回答不要使用 [依据N] 引用标记；口语练习没有书面依据材料。
             3. 需要确认某个英文词的含义时可以调用 lookup_word。
-            4. 不需要工具时直接给出 answer，回答要简短，便于语音朗读。
+            4. 只有学习者的句子有明确语言问题时才记录 issues；没有问题时 issues 必须是空数组。
+            5. originalSentence 必须逐字取自学习者这一回合说的话；suggestion 是只修复该问题的最小英文修改稿；
+               category 取 GRAMMAR / VOCABULARY / SENTENCE_STRUCTURE / COHERENCE / PUNCTUATION；
+               severity 取 MINOR / MAJOR；explanation 用中文说明原因。
+            6. 不需要工具时直接给出 answer，回答要简短，便于语音朗读。
             """;
 
     private final ChatClient chatClient;
@@ -69,7 +78,7 @@ public class RealTutorModelClient implements TutorModelClient {
                 .user(userPrompt(context))
                 .call()
                 .content();
-        return parse(content);
+        return parse(content, context.briefing().scenario());
     }
 
     private static String systemPrompt(TutorModelContext context) {
@@ -160,7 +169,7 @@ public class RealTutorModelClient implements TutorModelClient {
         }
     }
 
-    private TutorModelDecision parse(String content) {
+    private TutorModelDecision parse(String content, TutorScenario scenario) {
         String json = extractJson(content);
         @SuppressWarnings("unchecked")
         Map<String, Object> decision = objectMapper.readValue(json, Map.class);
@@ -174,9 +183,64 @@ public class RealTutorModelClient implements TutorModelClient {
         }
         if ("answer".equals(type)) {
             Object answer = decision.get("content");
-            return TutorModelDecision.answer(answer == null ? "" : answer.toString());
+            return TutorModelDecision.answer(
+                    answer == null ? "" : answer.toString(),
+                    scenario == TutorScenario.SPEAKING_PRACTICE
+                            ? spokenIssues(decision.get("issues"))
+                            : List.of());
         }
         throw new IllegalStateException("模型返回了无法识别的决定类型: " + type);
+    }
+
+    /**
+     * Reads the optional spoken Learning Issues from a speaking answer. A malformed entry is
+     * skipped rather than failing the turn: the spoken reply matters more than one extraction.
+     */
+    private static List<LearningIssue> spokenIssues(Object raw) {
+        if (!(raw instanceof List<?> items)) {
+            return List.of();
+        }
+        List<LearningIssue> issues = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> entry)) {
+                continue;
+            }
+            String originalSentence = text(entry.get("originalSentence"));
+            String suggestion = text(entry.get("suggestion"));
+            IssueCategory category = category(text(entry.get("category")));
+            IssueSeverity severity = severity(text(entry.get("severity")));
+            if (originalSentence.isBlank() || suggestion.isBlank()
+                    || category == null || severity == null) {
+                continue;
+            }
+            issues.add(new LearningIssue(
+                    originalSentence,
+                    suggestion,
+                    category,
+                    severity,
+                    text(entry.get("explanation"))));
+        }
+        return List.copyOf(issues);
+    }
+
+    private static IssueCategory category(String value) {
+        try {
+            return IssueCategory.valueOf(value.strip().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
+    private static IssueSeverity severity(String value) {
+        try {
+            return IssueSeverity.valueOf(value.strip().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
+    private static String text(Object value) {
+        return value == null ? "" : value.toString().strip();
     }
 
     private static String extractJson(String content) {

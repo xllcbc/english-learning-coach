@@ -1,5 +1,6 @@
 package com.writelab.agent;
 
+import com.writelab.feedback.LearningIssue;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.tools.ToolRegistry;
@@ -50,7 +51,8 @@ public final class TutorAgentCore {
 
             if (decision instanceof TutorModelDecision.Answer answer) {
                 steps.add(answerStep(steps.size() + 1, answer.content(), startedNanos));
-                return turn(request, answer.content(), steps, toolInvocations, AgentStopReason.COMPLETED);
+                return turn(request, answer.content(), steps, toolInvocations,
+                        AgentStopReason.COMPLETED, answer.issues());
             }
 
             TutorModelDecision.ToolCall call = (TutorModelDecision.ToolCall) decision;
@@ -161,7 +163,19 @@ public final class TutorAgentCore {
             List<ToolInvocation> toolInvocations,
             AgentStopReason stopReason
     ) {
-        return new AgentTurn(request.learnerMessage(), answer, steps, toolInvocations, stopReason);
+        return turn(request, answer, steps, toolInvocations, stopReason, List.of());
+    }
+
+    private static AgentTurn turn(
+            AgentTurnRequest request,
+            String answer,
+            List<AgentStep> steps,
+            List<ToolInvocation> toolInvocations,
+            AgentStopReason stopReason,
+            List<LearningIssue> issues
+    ) {
+        return new AgentTurn(
+                request.learnerMessage(), answer, steps, toolInvocations, stopReason, issues);
     }
 
     private static String unknownToolObservation(String toolName, Set<String> availableTools) {

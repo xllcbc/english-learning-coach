@@ -1,5 +1,8 @@
 package com.writelab.agent;
 
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -95,5 +98,37 @@ class MockTutorModelClientTest {
                 .contains("补充一个具体细节")
                 .doesNotContain("[依据")
                 .doesNotContain("没有可引用的依据");
+    }
+
+    @Test
+    void recordsAWordChoiceIssueForASpeakingTurn() {
+        TutorModelContext context = new TutorModelContext(
+                "I am very happy with my progress.",
+                List.of(),
+                Set.of("lookup_word"),
+                new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));
+
+        TutorModelDecision.Answer answer = (TutorModelDecision.Answer) client.next(context);
+
+        assertThat(answer.issues()).hasSize(1);
+        LearningIssue issue = answer.issues().getFirst();
+        assertThat(issue.category()).isEqualTo(IssueCategory.VOCABULARY);
+        assertThat(issue.severity()).isEqualTo(IssueSeverity.MINOR);
+        assertThat(issue.originalSentence()).isEqualTo("I am very happy with my progress.");
+        assertThat(issue.suggestion()).contains("particularly");
+        assertThat(issue.explanation()).contains("用词");
+    }
+
+    @Test
+    void leavesAWellFormedSpeakingTurnWithoutIssues() {
+        TutorModelContext context = new TutorModelContext(
+                "I went to the park yesterday.",
+                List.of(),
+                Set.of("lookup_word"),
+                new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));
+
+        TutorModelDecision.Answer answer = (TutorModelDecision.Answer) client.next(context);
+
+        assertThat(answer.issues()).isEmpty();
     }
 }

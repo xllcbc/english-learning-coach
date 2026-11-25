@@ -2254,6 +2254,42 @@ textarea {
   white-space: pre-wrap;
 }
 
+.speaking-issues {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #e5d6a8;
+  border-radius: 12px;
+  background: #fdfaf1;
+  list-style: none;
+}
+
+.speaking-issue {
+  display: grid;
+  gap: 6px;
+}
+
+.speaking-issue-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speaking-issue-sentence {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.speaking-issue-explanation {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .speaking-fallback {
   margin: 0;
   color: var(--muted);

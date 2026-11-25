@@ -31,6 +31,9 @@ public class SpeakingPracticeService {
     public static final String SYNTHESIS_FAILED_TEXT = "语音回复暂不可用，已用文字回答。";
     public static final String EMPTY_ANSWER_TEXT = "我暂时没有想到合适的回复，请再说一次。";
 
+    /** Model-reported issues are valuable, but one spoken turn must not flood the session. */
+    private static final int MAX_ISSUES_PER_TURN = 3;
+
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             LookupWordTool.NAME,
             // The parent spec gives Speaking Practice these tools too. Neither is wired into this
@@ -174,7 +177,8 @@ public class SpeakingPracticeService {
                 turn.stopReason(),
                 modelMode,
                 turn.steps(),
-                turn.toolInvocations()));
+                turn.toolInvocations(),
+                turn.issues().stream().limit(MAX_ISSUES_PER_TURN).toList()));
 
         if (audio == null) {
             return new TextReply(saved, reply, SpeechFailureReason.SYNTHESIS_FAILED);

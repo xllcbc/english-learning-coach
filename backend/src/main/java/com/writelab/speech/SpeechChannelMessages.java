@@ -1,5 +1,7 @@
 package com.writelab.speech;
 
+import java.util.List;
+
 /**
  * Wire shapes for the speech WebSocket. Client and server use JSON text frames so a text fallback
  * can travel over the same connection as audio.
@@ -12,15 +14,15 @@ package com.writelab.speech;
  * <pre>{@code
  * {"type":"text","text":"...","sessionId":"<uuid>"}
  * }</pre>
- * Audio reply:
+ * Audio reply, optionally with the spoken Learning Issues found in the learner's turn:
  * <pre>{@code
  * {"type":"audio","sessionId":"<uuid>","audio":"<base64>","mimeType":"audio/wav",
- *  "transcript":"...","reply":"..."}
+ *  "transcript":"...","reply":"...","issues":[...]}
  * }</pre>
  * Text degradation:
  * <pre>{@code
  * {"type":"text","sessionId":"<uuid>","text":"...","fallback":true,"reason":"timeout",
- *  "transcript":"..."}
+ *  "transcript":"...","issues":[]}
  * }</pre>
  * Barge-in: the learner started speaking, so the channel cancels the reply it is still producing.
  * The scope is the connection, not a session, so no session id is needed. The channel acknowledges
@@ -58,8 +60,13 @@ public final class SpeechChannelMessages {
             String reply,
             String inputMode,
             boolean mockMode,
-            Integer latencyMs
+            Integer latencyMs,
+            List<SpokenLearningIssue> issues
     ) implements OutgoingMessage {
+
+        public SpokenReplyMessage {
+            issues = issues == null ? List.of() : List.copyOf(issues);
+        }
     }
 
     public record TextReplyMessage(
@@ -71,8 +78,13 @@ public final class SpeechChannelMessages {
             String transcript,
             String inputMode,
             boolean mockMode,
-            Integer latencyMs
+            Integer latencyMs,
+            List<SpokenLearningIssue> issues
     ) implements OutgoingMessage {
+
+        public TextReplyMessage {
+            issues = issues == null ? List.of() : List.copyOf(issues);
+        }
     }
 
     public record InterruptedMessage(String type, String reason)

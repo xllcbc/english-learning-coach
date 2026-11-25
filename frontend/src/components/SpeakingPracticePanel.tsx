@@ -19,7 +19,9 @@ import type {
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
+  SpokenLearningIssue,
 } from '../types';
+import { categoryLabels, severityLabels } from '../labels';
 
 interface SpeakingPracticePanelProps {
   defaultMockMode: boolean;
@@ -31,6 +33,7 @@ interface DisplayTurn {
   transcript: string;
   reply: string;
   fallbackReason: SpeakingFallbackReason | null;
+  issues: SpokenLearningIssue[];
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -54,8 +57,9 @@ function displayTurn(
   transcript: string,
   reply: string,
   fallbackReason: SpeakingFallbackReason | null,
+  issues: SpokenLearningIssue[],
 ): DisplayTurn {
-  return { key, inputMode, transcript, reply, fallbackReason };
+  return { key, inputMode, transcript, reply, fallbackReason, issues };
 }
 
 function replayTurns(session: SpeakingSession): DisplayTurn[] {
@@ -65,6 +69,7 @@ function replayTurns(session: SpeakingSession): DisplayTurn[] {
     turn.transcript,
     turn.reply,
     turn.fallbackReason,
+    turn.issues,
   ));
 }
 
@@ -133,10 +138,14 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
     transcript: string,
     reply: string,
     reason: SpeakingFallbackReason | null,
+    issues: SpokenLearningIssue[],
   ) => {
     localTurnSequence.current += 1;
     const key = `local-${localTurnSequence.current}`;
-    setTurns((current) => [...current, displayTurn(key, inputMode, transcript, reply, reason)]);
+    setTurns((current) => [
+      ...current,
+      displayTurn(key, inputMode, transcript, reply, reason, issues),
+    ]);
   }, []);
 
   const loadSession = useCallback(async (id: string) => {
@@ -202,7 +211,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setFallbackNotice(null);
         setError(null);
         setThinking(false);
-        appendTurn(reply.inputMode, reply.transcript, reply.reply, null);
+        appendTurn(reply.inputMode, reply.transcript, reply.reply, null, reply.issues ?? []);
         if (!suppressPlaybackRef.current) {
           playSpeakingAudio(reply.audio, reply.mimeType);
         }
@@ -221,6 +230,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           reply.transcript,
           transcriptionFallback ? '' : reply.text,
           reply.reason,
+          reply.issues ?? [],
         );
         void refreshLatency();
       },
@@ -430,6 +440,24 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
                 </p>
               </div>
               {turn.reply && <div className="speaking-reply">{turn.reply}</div>}
+              {turn.issues.length > 0 && (
+                <ul className="speaking-issues" aria-label="口语学习问题">
+                  {turn.issues.map((issue) => (
+                    <li key={issue.id} className="speaking-issue">
+                      <div className="speaking-issue-heading">
+                        <span className="category-tag">{categoryLabels[issue.category]}</span>
+                        <span className="severity-tag">{severityLabels[issue.severity]}</span>
+                      </div>
+                      <p className="speaking-issue-sentence">
+                        <span>{issue.originalSentence}</span>
+                        <span aria-hidden="true"> → </span>
+                        <span>{issue.suggestion}</span>
+                      </p>
+                      <p className="speaking-issue-explanation">{issue.explanation}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {turn.fallbackReason && (
                 <p className="speaking-fallback">{fallbackLabels[turn.fallbackReason]}</p>
               )}

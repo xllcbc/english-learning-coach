@@ -8,6 +8,9 @@ import com.writelab.agent.TutorModelDecision;
 import com.writelab.agent.TutorScenario;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackResult;
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.ToolRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -157,6 +160,44 @@ class SpeechChannelContractTest {
         // Replay is a pure read: it must not ask the model for another decision.
         int callsAfterTurn = tutorModel.callCount();
         replay(UUID.fromString(reply.sessionId()));
+        assertThat(tutorModel.callCount()).isEqualTo(callsAfterTurn);
+    }
+
+    @Test
+    void recordsSpokenLearningIssuesOnTheTurnAndReplaysThemWithoutRecallingTheModel() throws Exception {
+        LearningIssue issue = new LearningIssue(
+                "I go to the park yesterday.",
+                "I went to the park yesterday.",
+                IssueCategory.GRAMMAR,
+                IssueSeverity.MINOR,
+                "句子里有过去时间 yesterday，动词要用过去式。");
+        tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY, List.of(issue)));
+
+        sendAudio(null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        UUID sessionId = UUID.fromString(reply.sessionId());
+        assertThat(reply.issues()).hasSize(1);
+        assertThat(reply.issues().getFirst().category()).isEqualTo(IssueCategory.GRAMMAR);
+
+        SpeakingSessionResponse replayed = replay(sessionId);
+        assertThat(replayed.id()).isEqualTo(sessionId);
+        SpeakingTurn turn = replayed.turns().getFirst();
+        assertThat(turn.issues()).hasSize(1);
+
+        SpokenLearningIssue stored = turn.issues().getFirst();
+        assertThat(stored.sessionId()).isEqualTo(sessionId);
+        assertThat(stored.turnId()).isEqualTo(turn.id());
+        assertThat(stored.position()).isEqualTo(1);
+        assertThat(stored.originalSentence()).isEqualTo("I go to the park yesterday.");
+        assertThat(stored.suggestion()).isEqualTo("I went to the park yesterday.");
+        assertThat(stored.category()).isEqualTo(IssueCategory.GRAMMAR);
+        assertThat(stored.severity()).isEqualTo(IssueSeverity.MINOR);
+        assertThat(stored.explanation()).contains("过去式");
+
+        int callsAfterTurn = tutorModel.callCount();
+        assertThat(replay(sessionId).turns()).isEqualTo(replayed.turns());
         assertThat(tutorModel.callCount()).isEqualTo(callsAfterTurn);
     }
 
@@ -566,8 +607,23 @@ class SpeechChannelContractTest {
         public SpeakingTurn saveTurn(SpeakingTurnDraft draft) {
             SpeakingSession session = requireSession(draft.sessionId());
             List<SpeakingTurn> existing = turns.get(draft.sessionId());
+            UUID turnId = UUID.randomUUID();
+            List<SpokenLearningIssue> issues = new java.util.ArrayList<>();
+            int position = 1;
+            for (LearningIssue issue : draft.issues()) {
+                issues.add(new SpokenLearningIssue(
+                        UUID.randomUUID(),
+                        draft.sessionId(),
+                        turnId,
+                        position++,
+                        issue.originalSentence(),
+                        issue.suggestion(),
+                        issue.category(),
+                        issue.severity(),
+                        issue.explanation()));
+            }
             SpeakingTurn turn = new SpeakingTurn(
-                    UUID.randomUUID(),
+                    turnId,
                     draft.sessionId(),
                     existing.size() + 1,
                     draft.inputMode(),
@@ -579,7 +635,8 @@ class SpeechChannelContractTest {
                     draft.modelMode(),
                     Instant.now(),
                     draft.steps(),
-                    draft.toolInvocations());
+                    draft.toolInvocations(),
+                    issues);
             existing.add(turn);
             sessions.put(session.id(), new SpeakingSession(
                     session.id(), session.modelMode(), session.createdAt(), turn.createdAt()));
