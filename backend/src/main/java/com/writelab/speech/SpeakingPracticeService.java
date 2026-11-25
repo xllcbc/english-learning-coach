@@ -67,6 +67,7 @@ public class SpeakingPracticeService {
             BooleanSupplier cancelled
     ) {
         long startedAtNanos = System.nanoTime();
+        ensureNotCancelled(cancelled);
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
 
@@ -95,6 +96,7 @@ public class SpeakingPracticeService {
             BooleanSupplier cancelled
     ) {
         long startedAtNanos = System.nanoTime();
+        ensureNotCancelled(cancelled);
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
         String learnerText = text == null ? "" : text.strip();
