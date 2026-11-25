@@ -9,6 +9,9 @@ import com.writelab.feedback.InvalidFeedbackException;
 import com.writelab.feedback.ModelCallException;
 import com.writelab.feedback.ModelGenerationException;
 import com.writelab.speech.SpeakingSessionNotFoundException;
+import com.writelab.targeted.TargetedPracticeAlreadySubmittedException;
+import com.writelab.targeted.TargetedPracticeNotFoundException;
+import com.writelab.targeted.TargetedPracticeUnavailableException;
 import com.writelab.vocabulary.SavedVocabularyNotFoundException;
 import com.writelab.vocabulary.VocabularyAlreadySavedException;
 import com.writelab.vocabulary.VocabularySuggestionNotFoundException;
@@ -82,6 +85,26 @@ public class ApiExceptionHandler {
                 .body(new ApiError(
                         "SPEAKING_SESSION_NOT_FOUND",
                         "找不到对应的 Speaking Session，请开始新的练习。"));
+    }
+
+    @ExceptionHandler(TargetedPracticeNotFoundException.class)
+    ResponseEntity<ApiError> handleTargetedPracticeNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(
+                        "TARGETED_PRACTICE_NOT_FOUND",
+                        "找不到对应的 Targeted Practice，请从 Study Plan 重新发起。"));
+    }
+
+    @ExceptionHandler(TargetedPracticeAlreadySubmittedException.class)
+    ResponseEntity<ApiError> handleTargetedPracticeAlreadySubmitted(TargetedPracticeAlreadySubmittedException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("TARGETED_PRACTICE_ALREADY_SUBMITTED", exception.getMessage()));
+    }
+
+    @ExceptionHandler(TargetedPracticeUnavailableException.class)
+    ResponseEntity<ApiError> handleTargetedPracticeUnavailable(TargetedPracticeUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("TARGETED_PRACTICE_UNAVAILABLE", exception.getMessage()));
     }
 
     @ExceptionHandler(DictionaryEntryNotFoundException.class)

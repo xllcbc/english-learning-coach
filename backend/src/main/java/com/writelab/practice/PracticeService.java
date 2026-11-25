@@ -19,6 +19,7 @@ import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.retrieval.RetrievalHit;
 import com.writelab.persistence.ToolInvocationRows;
+import com.writelab.targeted.TargetedPracticeStore;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.writing.WordCounter;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -52,6 +53,7 @@ public class PracticeService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final CorpusSentenceResolver corpusSentenceResolver;
+    private final TargetedPracticeStore targetedPracticeStore;
 
     public PracticeService(
             FeedbackModel feedbackModel,
@@ -60,7 +62,8 @@ public class PracticeService {
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
-            CorpusSentenceResolver corpusSentenceResolver
+            CorpusSentenceResolver corpusSentenceResolver,
+            TargetedPracticeStore targetedPracticeStore
     ) {
         this.feedbackModel = feedbackModel;
         this.jdbcAggregateTemplate = jdbcAggregateTemplate;
@@ -69,12 +72,21 @@ public class PracticeService {
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
         this.corpusSentenceResolver = corpusSentenceResolver;
+        this.targetedPracticeStore = targetedPracticeStore;
     }
 
     public PracticeResponse create(String writingText) {
+        return create(writingText, null);
+    }
+
+    public PracticeResponse create(String writingText, UUID targetedPracticeId) {
         int wordCount = WordCounter.count(writingText);
         if (wordCount < MIN_WORDS || wordCount > MAX_WORDS) {
             throw new WordCountOutOfRangeException(wordCount);
+        }
+        if (targetedPracticeId != null) {
+            // Check before the model call so an already-submitted target never pays for grading.
+            targetedPracticeStore.requirePending(targetedPracticeId);
         }
 
         // The model call can block for minutes; keep it outside the transaction so it never pins a pooled connection.
@@ -112,7 +124,13 @@ public class PracticeService {
                 toToolInvocationEntities(result.toolInvocations()),
                 toRetrievalHitEntities(resolved)
         );
-        transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
+        transactionTemplate.executeWithoutResult(status -> {
+            jdbcAggregateTemplate.insert(entity);
+            if (targetedPracticeId != null) {
+                targetedPracticeStore.complete(
+                        targetedPracticeId, id, createdAt, resolvedFeedback.learningIssues());
+            }
+        });
 
         return toResponse(
                 entity,

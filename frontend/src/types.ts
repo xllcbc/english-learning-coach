@@ -244,6 +244,43 @@ export interface LearningReview {
   studyPlan: StudyPlanRecommendation[];
 }
 
+export type TargetedPracticeStatus = 'PENDING' | 'SUBMITTED';
+
+export type TargetedPracticeTrend = 'IMPROVED' | 'UNCHANGED' | 'WORSENED';
+
+export interface TargetedPracticeComparison {
+  beforePracticeAttemptId: string;
+  beforeCreatedAt: string;
+  beforeCount: number;
+  afterPracticeAttemptId: string;
+  afterCreatedAt: string;
+  afterCount: number;
+  change: number;
+  trend: TargetedPracticeTrend;
+}
+
+export interface TargetedPractice {
+  id: string;
+  createdAt: string;
+  priority: number;
+  category: IssueCategory;
+  categoryLabel: string;
+  severity: IssueSeverity;
+  focus: string;
+  prompt: string;
+  evidence: LearningIssueEvidence[];
+  groundingMaterials: GroundingMaterial[];
+  occurrenceCount: number;
+  attemptCount: number;
+  beforePracticeAttemptId: string;
+  beforeCreatedAt: string;
+  beforeCount: number;
+  status: TargetedPracticeStatus;
+  practiceAttemptId: string | null;
+  completedAt: string | null;
+  comparison: TargetedPracticeComparison | null;
+}
+
 export interface PracticeResponse {
   id: string;
   writingText: string;

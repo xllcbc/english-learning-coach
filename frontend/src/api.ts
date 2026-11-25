@@ -3,6 +3,8 @@ import type {
   DictionaryEntry,
   DocumentCitation,
   GroundingCitation,
+  IssueCategory,
+  IssueSeverity,
   LearningReview,
   PracticeResponse,
   PracticeSummary,
@@ -14,6 +16,7 @@ import type {
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
+  TargetedPractice,
   TeacherConversation,
   TeacherConversationTurn,
   UserDocumentSummary,
@@ -74,13 +77,19 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs?: number):
 // Backend worst case is 2 x 120s calls plus backoff; abort only after the backend could have answered.
 const PRACTICE_TIMEOUT_MS = 250_000;
 
-export function createPractice(text: string): Promise<PracticeResponse> {
+export function createPractice(
+  text: string,
+  targetedPracticeId?: string,
+): Promise<PracticeResponse> {
   return request<PracticeResponse>('/api/practices', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      ...(targetedPracticeId ? { targetedPracticeId } : {}),
+    }),
   }, PRACTICE_TIMEOUT_MS);
 }
 
@@ -121,6 +130,23 @@ export function getPractice(id: string): Promise<PracticeResponse> {
 
 export function getLearningReview(): Promise<LearningReview> {
   return request<LearningReview>('/api/learning-review');
+}
+
+export function createTargetedPractice(
+  category: IssueCategory,
+  severity: IssueSeverity,
+): Promise<TargetedPractice> {
+  return request<TargetedPractice>('/api/targeted-practices', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ category, severity }),
+  });
+}
+
+export function getTargetedPractice(id: string): Promise<TargetedPractice> {
+  return request<TargetedPractice>(`/api/targeted-practices/${encodeURIComponent(id)}`);
 }
 
 export function listUserDocuments(): Promise<UserDocumentSummary[]> {

@@ -6,6 +6,7 @@ import {
   deleteSavedVocabulary,
   getModelMode,
   getPractice,
+  getTargetedPractice,
   listPractices,
   listSavedVocabulary,
   saveVocabulary,
@@ -20,6 +21,7 @@ import { LearningReviewPanel } from './components/LearningReviewPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
 import { SpeakingPracticePanel } from './components/SpeakingPracticePanel';
+import { TargetedPracticePanel } from './components/TargetedPracticePanel';
 import { TeacherConversationPanel } from './components/TeacherConversationPanel';
 import { UserDocumentsPanel } from './components/UserDocumentsPanel';
 import { formatTimestamp } from './format';
@@ -30,6 +32,7 @@ import type {
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
+  TargetedPractice,
 } from './types';
 import { countWords, MAX_WORDS, MIN_WORDS } from './wordCount';
 
@@ -85,6 +88,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailStatus, setDetailStatus] = useState<DetailStatus>('idle');
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [targetedPractice, setTargetedPractice] = useState<TargetedPractice | null>(null);
   const detailRequest = useRef(0);
   const feedbackHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -236,6 +240,7 @@ export default function App() {
 
     cancelExplanation();
     resetExplanation('idle');
+    setTargetedPractice(null);
     setSelectedId(id);
     setDetailStatus('loading');
     setDetailError(null);
@@ -274,6 +279,10 @@ export default function App() {
       return;
     }
 
+    const targetedPracticeId = targetedPractice?.status === 'PENDING'
+      ? targetedPractice.id
+      : undefined;
+
     cancelExplanation();
     setStatus('submitting');
     setErrorMessage(null);
@@ -283,16 +292,40 @@ export default function App() {
     setDetailError(null);
 
     try {
-      const practice = await createPractice(writingText);
+      const practice = await createPractice(writingText, targetedPracticeId);
       setResult(practice);
       setSelectedId(practice.id);
       setStatus('idle');
+      if (targetedPracticeId) {
+        try {
+          setTargetedPractice(await getTargetedPractice(targetedPracticeId));
+        } catch {
+          // The Practice Attempt is already graded and shown; only the comparison refresh failed.
+        }
+      }
       void startExplanation(practice.id);
       void refreshHistory();
     } catch (error) {
       setStatus('error');
       setErrorMessage(toErrorMessage(error));
     }
+  }
+
+  function handleStartTargetedPractice(practice: TargetedPractice) {
+    cancelExplanation();
+    resetExplanation('idle');
+    setTargetedPractice(practice);
+    setWritingText('');
+    setResult(null);
+    setSelectedId(null);
+    setStatus('idle');
+    setErrorMessage(null);
+    setDetailStatus('idle');
+    setDetailError(null);
+  }
+
+  function handleDismissTargetedPractice() {
+    setTargetedPractice(null);
   }
 
   async function handleSaveVocabulary(practiceAttemptId: string, word: string): Promise<void> {
@@ -372,6 +405,13 @@ export default function App() {
             </div>
             <span className={`count-pill count-${currentCountState}`}>{wordCount} 词</span>
           </div>
+
+          {targetedPractice?.status === 'PENDING' && (
+            <TargetedPracticePanel
+              practice={targetedPractice}
+              onDismiss={handleDismissTargetedPractice}
+            />
+          )}
 
           <form onSubmit={handleSubmit} noValidate>
             <label className="sr-only" htmlFor="writing-text">
@@ -460,6 +500,12 @@ export default function App() {
             </div>
           )}
 
+          {status !== 'submitting' && detailStatus !== 'loading' && result
+            && targetedPractice?.status === 'SUBMITTED'
+            && targetedPractice.practiceAttemptId === result.id && (
+              <TargetedPracticePanel practice={targetedPractice} />
+            )}
+
           {status !== 'submitting' && detailStatus !== 'loading' && result && (
             <FeedbackView
               result={result}
@@ -487,7 +533,7 @@ export default function App() {
       </main>
 
       <div className="library-grid">
-        <LearningReviewPanel />
+        <LearningReviewPanel onStartTargetedPractice={handleStartTargetedPractice} />
         <SavedVocabularyPanel
           entries={savedVocabulary}
           status={savedStatus}

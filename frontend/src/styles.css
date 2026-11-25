@@ -2280,6 +2280,126 @@ textarea {
   background: #b34233;
 }
 
+/* Targeted Practice */
+
+.targeted-start {
+  margin-left: auto;
+}
+
+.targeted-practice-panel {
+  margin: 14px 0 18px;
+  padding: 16px 18px;
+  border-left: 5px solid var(--accent);
+  background: var(--panel-alt);
+}
+
+.targeted-practice-panel .panel-heading {
+  margin-bottom: 10px;
+}
+
+.targeted-heading-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.targeted-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.targeted-focus p {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.targeted-prompt {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.targeted-prompt h3,
+.targeted-comparison h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.targeted-prompt p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.targeted-before {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.targeted-comparison {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.targeted-comparison-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+
+.targeted-count {
+  display: grid;
+  gap: 2px;
+  min-width: 96px;
+}
+
+.targeted-count span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.targeted-count strong {
+  font-size: 22px;
+  color: var(--accent-strong);
+}
+
+.targeted-arrow {
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.targeted-change {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.trend-improved {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.trend-unchanged {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.trend-worsened {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
 @media (max-width: 720px) {
   .speaking-transcript-row {
     flex-direction: column;
