@@ -1,11 +1,9 @@
 package com.writelab.conversation;
 
-import com.writelab.agent.AgentStep;
-import com.writelab.agent.AgentStepKind;
-import com.writelab.agent.AgentStepStatus;
 import com.writelab.agent.AgentStopReason;
 import com.writelab.agent.AgentTurn;
 import com.writelab.feedback.ModelMode;
+import com.writelab.persistence.AgentStepRows;
 import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.practice.PracticeNotFoundException;
 import com.writelab.tools.ToolInvocation;
@@ -133,9 +131,13 @@ class TeacherConversationStore {
                     row.stopReason(),
                     row.modelMode(),
                     row.createdAt(),
-                    readSteps(row.id()),
+                    AgentStepRows.read(
+                            jdbcClient, objectMapper,
+                            AgentStepRows.TEACHER_AGENT_STEP_TURN, row.id()),
                     readCitations(row.id()),
-                    readToolInvocations(row.id())));
+                    AgentStepRows.readToolInvocations(
+                            jdbcClient, objectMapper,
+                            AgentStepRows.TEACHER_TOOL_INVOCATION_TURN, row.id())));
         }
         return List.copyOf(turns);
     }
@@ -180,7 +182,9 @@ class TeacherConversationStore {
                     .param("createdAt", Timestamp.from(createdAt))
                     .update();
 
-            saveSteps(turnId, turn.steps());
+            AgentStepRows.save(
+                    jdbcClient, objectMapper,
+                    AgentStepRows.TEACHER_AGENT_STEP_TURN, turnId, turn.steps());
             saveCitations(turnId, citations);
             saveToolInvocations(practiceId, turnId, turn.toolInvocations());
 
@@ -207,25 +211,6 @@ class TeacherConversationStore {
                 .single();
     }
 
-    private List<AgentStep> readSteps(UUID turnId) {
-        return jdbcClient.sql("""
-                        SELECT position, kind, tool_name, arguments, result_status, output, duration_millis
-                        FROM agent_step
-                        WHERE turn_id = :turnId
-                        ORDER BY position
-                        """)
-                .param("turnId", turnId)
-                .query((resultSet, rowNum) -> new AgentStep(
-                        resultSet.getInt("position"),
-                        AgentStepKind.valueOf(resultSet.getString("kind")),
-                        resultSet.getString("tool_name"),
-                        ToolInvocationRows.readArguments(resultSet.getString("arguments"), objectMapper),
-                        AgentStepStatus.valueOf(resultSet.getString("result_status")),
-                        resultSet.getString("output"),
-                        resultSet.getLong("duration_millis")))
-                .list();
-    }
-
     private List<ConversationCitation> readCitations(UUID turnId) {
         return jdbcClient.sql("""
                         SELECT reference, kind, title, content, source, license
@@ -242,42 +227,6 @@ class TeacherConversationStore {
                         resultSet.getString("source"),
                         resultSet.getString("license")))
                 .list();
-    }
-
-    private List<ToolInvocation> readToolInvocations(UUID turnId) {
-        return jdbcClient.sql("""
-                        SELECT tool_name, arguments, result_status, duration_millis
-                        FROM tool_invocation
-                        WHERE teacher_conversation_turn_id = :turnId
-                        ORDER BY position
-                        """)
-                .param("turnId", turnId)
-                .query((resultSet, rowNum) -> ToolInvocationRows.map(resultSet, objectMapper))
-                .list();
-    }
-
-    private void saveSteps(UUID turnId, List<AgentStep> steps) {
-        for (AgentStep step : steps) {
-            jdbcClient.sql("""
-                            INSERT INTO agent_step (
-                                id, turn_id, position, kind, tool_name, arguments,
-                                result_status, output, duration_millis
-                            ) VALUES (
-                                :id, :turnId, :position, :kind, :toolName, CAST(:arguments AS jsonb),
-                                :resultStatus, :output, :durationMillis
-                            )
-                            """)
-                    .param("id", UUID.randomUUID())
-                    .param("turnId", turnId)
-                    .param("position", step.position())
-                    .param("kind", step.kind().name())
-                    .param("toolName", step.toolName())
-                    .param("arguments", objectMapper.writeValueAsString(step.arguments()))
-                    .param("resultStatus", step.status().name())
-                    .param("output", step.output())
-                    .param("durationMillis", step.durationMillis())
-                    .update();
-        }
     }
 
     private void saveCitations(UUID turnId, List<ConversationCitation> citations) {

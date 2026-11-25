@@ -178,6 +178,7 @@ class SpeechChannelContractTest {
         SpeakingTurn fallbackTurn = replay(sessionId).turns().getFirst();
         assertThat(fallbackTurn.fallbackReason()).isEqualTo(SpeechFailureReason.TIMEOUT);
         assertThat(fallbackTurn.stopReason()).isNull();
+        assertThat(fallbackTurn.reply()).isEmpty();
         assertThat(fallbackTurn.steps()).isEmpty();
 
         tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));

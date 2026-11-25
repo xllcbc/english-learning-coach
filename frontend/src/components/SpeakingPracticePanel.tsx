@@ -6,6 +6,7 @@ import {
   listSpeakingSessions,
   openSpeakingChannel,
   playSpeakingAudio,
+  stopSpeakingAudio,
   toErrorMessage,
 } from '../api';
 import type { SpeakingChannelConnection, SpeakingChannelHandlers } from '../api';
@@ -84,6 +85,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const [mockMode, setMockMode] = useState(defaultMockMode);
   const [turns, setTurns] = useState<DisplayTurn[]>([]);
   const [fallbackReason, setFallbackReason] = useState<SpeakingFallbackReason | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +123,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       setMockMode(session.mockMode);
       setTurns(replayTurns(session));
       setFallbackReason(null);
+      setFallbackNotice(null);
       setError(null);
     } catch (loadFailure) {
       setError(toErrorMessage(loadFailure));
@@ -138,13 +141,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setSessions(summaries);
         setLoadStatus('ready');
         if (summaries.length > 0) {
-          const session = await getSpeakingSession(summaries[0].id);
-          if (!active) {
-            return;
-          }
-          rememberSession(session.id);
-          setMockMode(session.mockMode);
-          setTurns(replayTurns(session));
+          await loadSession(summaries[0].id);
         }
       } catch (loadFailure) {
         if (active) {
@@ -157,7 +154,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
     return () => {
       active = false;
     };
-  }, [rememberSession]);
+  }, [loadSession]);
 
   useEffect(() => {
     const handlers: SpeakingChannelHandlers = {
@@ -166,6 +163,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         rememberSession(reply.sessionId);
         setMockMode(reply.mockMode);
         setFallbackReason(null);
+        setFallbackNotice(null);
         setError(null);
         setThinking(false);
         appendTurn(reply.inputMode, reply.transcript, reply.reply, null);
@@ -177,7 +175,14 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setError(null);
         setThinking(false);
         setFallbackReason(reply.reason);
-        appendTurn(reply.inputMode, reply.transcript, reply.text, reply.reason);
+        const transcriptionFallback = reply.reason !== 'synthesis_failed';
+        setFallbackNotice(transcriptionFallback ? reply.text : null);
+        appendTurn(
+          reply.inputMode,
+          reply.transcript,
+          transcriptionFallback ? '' : reply.text,
+          reply.reason,
+        );
       },
       onError: (channelError) => {
         setError(channelError.message);
@@ -196,6 +201,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       connection.close();
       connectionRef.current = null;
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      stopSpeakingAudio();
     };
   }, [appendTurn, rememberSession]);
 
@@ -218,6 +224,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       return;
     }
 
+    stopSpeakingAudio();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -243,6 +250,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         void blobToBase64(blob).then((base64) => {
           setThinking(true);
           setFallbackReason(null);
+          setFallbackNotice(null);
           setError(null);
           connectionRef.current?.sendAudio(base64, mimeType, sessionIdRef.current);
         }).catch(() => {
@@ -269,11 +277,25 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       return;
     }
 
+    stopSpeakingAudio();
     connectionRef.current.sendText(message, sessionIdRef.current);
     setDraft('');
     setThinking(true);
     setFallbackReason(null);
+    setFallbackNotice(null);
     setError(null);
+  }
+
+  function startNewPractice() {
+    stopSpeakingAudio();
+    rememberSession(null);
+    setTurns([]);
+    setFallbackReason(null);
+    setFallbackNotice(null);
+    setDraft('');
+    setThinking(false);
+    setError(null);
+    setMicError(null);
   }
 
   return (
@@ -298,7 +320,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
 
       {sessions.length > 0 && (
         <div className="speaking-history" aria-label="历史 Speaking Session">
-          <span className="muted">历史会话</span>
+          <span className="muted">历史 Speaking Session</span>
           {sessions.map((item, index) => (
             <button
               key={item.id}
@@ -306,7 +328,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
               className={`text-button ${item.id === sessionId ? 'is-current' : ''}`}
               onClick={() => void loadSession(item.id)}
             >
-              历史会话 {index + 1}
+              Speaking Session {index + 1}
             </button>
           ))}
         </div>
@@ -342,7 +364,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
                   {turn.transcript || '（没有识别到语音）'}
                 </p>
               </div>
-              <div className="speaking-reply">{turn.reply}</div>
+              {turn.reply && <div className="speaking-reply">{turn.reply}</div>}
               {turn.fallbackReason && (
                 <p className="speaking-fallback">{fallbackLabels[turn.fallbackReason]}</p>
               )}
@@ -357,9 +379,9 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         </ol>
       )}
 
-      {fallbackReason && (
+      {(fallbackNotice || fallbackReason) && (
         <div className="speaking-fallback-banner" role="status">
-          {fallbackLabels[fallbackReason]}
+          {fallbackNotice ?? (fallbackReason ? fallbackLabels[fallbackReason] : null)}
         </div>
       )}
 
@@ -376,6 +398,14 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       )}
 
       <div className="speaking-controls">
+        <button
+          type="button"
+          className="text-button"
+          onClick={startNewPractice}
+          disabled={thinking || isRecording}
+        >
+          新的练习
+        </button>
         <button
           type="button"
           className={isRecording ? 'retry-button is-recording' : 'retry-button'}

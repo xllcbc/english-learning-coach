@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   getSpeakingSession: vi.fn(),
   openSpeakingChannel: vi.fn(),
   playSpeakingAudio: vi.fn(),
+  stopSpeakingAudio: vi.fn(),
 }));
 
 vi.mock('../api', () => ({
@@ -23,6 +24,7 @@ vi.mock('../api', () => ({
   getSpeakingSession: api.getSpeakingSession,
   openSpeakingChannel: api.openSpeakingChannel,
   playSpeakingAudio: api.playSpeakingAudio,
+  stopSpeakingAudio: api.stopSpeakingAudio,
   toErrorMessage: (error: unknown) =>
     error instanceof Error ? error.message : '无法连接后端服务，请确认服务已启动。',
 }));
@@ -88,6 +90,7 @@ describe('SpeakingPracticePanel', () => {
     api.getSpeakingSession.mockReset();
     api.openSpeakingChannel.mockReset();
     api.playSpeakingAudio.mockReset();
+    api.stopSpeakingAudio.mockReset();
   });
 
   it('replays the latest Speaking Session and labels Mock mode', async () => {
@@ -186,6 +189,24 @@ describe('SpeakingPracticePanel', () => {
     );
   });
 
+  it('starts a new Speaking Session instead of appending to the replayed one', async () => {
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([summary()]);
+    api.getSpeakingSession.mockResolvedValue(session());
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+    await screen.findByText('I went to the park yesterday.');
+    captured.getHandlers().onOpen?.();
+
+    await userEvent.click(screen.getByRole('button', { name: '新的练习' }));
+    expect(screen.queryByText('I went to the park yesterday.')).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('说或输入一句英语'), 'A fresh practice.');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(captured.connection.sendText).toHaveBeenCalledWith('A fresh practice.', null);
+  });
+
   it('reopens a past session chosen by the learner', async () => {
     api.listSpeakingSessions.mockResolvedValue([
       summary({ id: 'session-1' }),
@@ -214,7 +235,7 @@ describe('SpeakingPracticePanel', () => {
     render(<SpeakingPracticePanel defaultMockMode />);
     await screen.findByText('I went to the park yesterday.');
 
-    const historyButtons = await screen.findAllByRole('button', { name: /会话/ });
+    const historyButtons = await screen.findAllByRole('button', { name: /Speaking Session/ });
     await userEvent.click(historyButtons[1]);
 
     expect(await screen.findByText('A different saved session.')).toBeInTheDocument();

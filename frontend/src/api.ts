@@ -439,14 +439,39 @@ export function openSpeakingChannel(
   };
 }
 
+let activeSpeakingAudio: HTMLAudioElement | null = null;
+
+/**
+ * Stops the reply currently being spoken. Starting a new turn calls this first so the learner can
+ * barge in without two synthesized replies overlapping (ADR-0011).
+ */
+export function stopSpeakingAudio(): void {
+  if (activeSpeakingAudio) {
+    activeSpeakingAudio.pause();
+    activeSpeakingAudio.currentTime = 0;
+    activeSpeakingAudio = null;
+  }
+}
+
 /**
  * Attempts automatic playback of a synthesized reply. Browsers can block autoplay; the panel still
  * renders the text reply, so a rejected play() is not an error the learner must handle.
  */
 export function playSpeakingAudio(base64Audio: string, mimeType: string): void {
+  stopSpeakingAudio();
   try {
     const audio = new Audio(`data:${mimeType};base64,${base64Audio}`);
-    void audio.play().catch(() => undefined);
+    activeSpeakingAudio = audio;
+    audio.onended = () => {
+      if (activeSpeakingAudio === audio) {
+        activeSpeakingAudio = null;
+      }
+    };
+    void audio.play().catch(() => {
+      if (activeSpeakingAudio === audio) {
+        activeSpeakingAudio = null;
+      }
+    });
   } catch {
     // Audio is an enhancement; the text reply remains visible.
   }

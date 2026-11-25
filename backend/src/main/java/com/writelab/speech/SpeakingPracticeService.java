@@ -29,7 +29,12 @@ public class SpeakingPracticeService {
     public static final String SYNTHESIS_FAILED_TEXT = "语音回复暂不可用，已用文字回答。";
     public static final String EMPTY_ANSWER_TEXT = "我暂时没有想到合适的回复，请再说一次。";
 
-    private static final Set<String> ALLOWED_TOOLS = Set.of(LookupWordTool.NAME);
+    private static final Set<String> ALLOWED_TOOLS = Set.of(
+            LookupWordTool.NAME,
+            // The parent spec gives Speaking Practice these tools too. They are not registered yet,
+            // so ToolRegistry filters them out of the model context until the workflows land.
+            "search_user_documents",
+            "save_vocabulary");
     private static final TutorBriefing BRIEFING = new TutorBriefing("""
             这是一次 Speaking Practice 的单个回合。学习者用英语说出或输入一句话，你要给出适合朗读的简短反馈。
             回答用中文，保持鼓励和具体；不要使用 [依据N] 引用标记。
@@ -120,6 +125,9 @@ public class SpeakingPracticeService {
         } catch (SpeechSynthesisException failure) {
             fallbackReason = SpeechFailureReason.SYNTHESIS_FAILED;
         }
+        if (audio == null) {
+            fallbackReason = SpeechFailureReason.SYNTHESIS_FAILED;
+        }
 
         SpeakingTurn saved = repository.saveTurn(new SpeakingSessionRepository.SpeakingTurnDraft(
                 session.id(),
@@ -144,11 +152,14 @@ public class SpeakingPracticeService {
             ModelMode modelMode
     ) {
         String text = textFor(reason);
+        // The fallback hint belongs to the channel, not to the tutor. Persist an empty reply so
+        // replay never renders the hint as something the tutor said; fallback_reason carries the
+        // degradation instead.
         SpeakingTurn saved = repository.saveTurn(new SpeakingSessionRepository.SpeakingTurnDraft(
                 session.id(),
                 SpeakingInputMode.VOICE,
                 "",
-                text,
+                "",
                 reason,
                 null,
                 modelMode,

@@ -1,8 +1,6 @@
 package com.writelab.persistence;
 
 import com.writelab.agent.AgentStep;
-import com.writelab.agent.AgentStepKind;
-import com.writelab.agent.AgentStepStatus;
 import com.writelab.agent.AgentStopReason;
 import com.writelab.feedback.ModelMode;
 import com.writelab.speech.SpeakingInputMode;
@@ -137,8 +135,11 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     row.stopReason(),
                     row.modelMode(),
                     row.createdAt(),
-                    readSteps(row.id()),
-                    readToolInvocations(row.id())));
+                    AgentStepRows.read(
+                            jdbcClient, objectMapper, AgentStepRows.SPEAKING_AGENT_STEP_TURN, row.id()),
+                    AgentStepRows.readToolInvocations(
+                            jdbcClient, objectMapper,
+                            AgentStepRows.SPEAKING_TOOL_INVOCATION_TURN, row.id())));
         }
         return List.copyOf(turns);
     }
@@ -175,7 +176,9 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     .param("createdAt", Timestamp.from(createdAt))
                     .update();
 
-            saveSteps(turnId, draft.steps());
+            AgentStepRows.save(
+                    jdbcClient, objectMapper,
+                    AgentStepRows.SPEAKING_AGENT_STEP_TURN, turnId, draft.steps());
             saveToolInvocations(turnId, draft.toolInvocations());
 
             jdbcClient.sql("""
@@ -219,61 +222,6 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                 .param("sessionId", sessionId)
                 .query(Integer.class)
                 .single();
-    }
-
-    private List<AgentStep> readSteps(UUID turnId) {
-        return jdbcClient.sql("""
-                        SELECT position, kind, tool_name, arguments, result_status, output, duration_millis
-                        FROM agent_step
-                        WHERE speaking_session_turn_id = :turnId
-                        ORDER BY position
-                        """)
-                .param("turnId", turnId)
-                .query((resultSet, rowNum) -> new AgentStep(
-                        resultSet.getInt("position"),
-                        AgentStepKind.valueOf(resultSet.getString("kind")),
-                        resultSet.getString("tool_name"),
-                        ToolInvocationRows.readArguments(resultSet.getString("arguments"), objectMapper),
-                        AgentStepStatus.valueOf(resultSet.getString("result_status")),
-                        resultSet.getString("output"),
-                        resultSet.getLong("duration_millis")))
-                .list();
-    }
-
-    private List<ToolInvocation> readToolInvocations(UUID turnId) {
-        return jdbcClient.sql("""
-                        SELECT tool_name, arguments, result_status, duration_millis
-                        FROM tool_invocation
-                        WHERE speaking_session_turn_id = :turnId
-                        ORDER BY position
-                        """)
-                .param("turnId", turnId)
-                .query((resultSet, rowNum) -> ToolInvocationRows.map(resultSet, objectMapper))
-                .list();
-    }
-
-    private void saveSteps(UUID turnId, List<AgentStep> steps) {
-        for (AgentStep step : steps) {
-            jdbcClient.sql("""
-                            INSERT INTO agent_step (
-                                id, speaking_session_turn_id, position, kind, tool_name, arguments,
-                                result_status, output, duration_millis
-                            ) VALUES (
-                                :id, :turnId, :position, :kind, :toolName, CAST(:arguments AS jsonb),
-                                :resultStatus, :output, :durationMillis
-                            )
-                            """)
-                    .param("id", UUID.randomUUID())
-                    .param("turnId", turnId)
-                    .param("position", step.position())
-                    .param("kind", step.kind().name())
-                    .param("toolName", step.toolName())
-                    .param("arguments", objectMapper.writeValueAsString(step.arguments()))
-                    .param("resultStatus", step.status().name())
-                    .param("output", step.output())
-                    .param("durationMillis", step.durationMillis())
-                    .update();
-        }
     }
 
     private void saveToolInvocations(UUID turnId, List<ToolInvocation> invocations) {
