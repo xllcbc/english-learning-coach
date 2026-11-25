@@ -28,8 +28,8 @@ public final class QueryLearningProgressToolDefinition implements ToolDefinition
             Look up whether a Learning Issue has recurred in the learner's past Practice Attempts. \
             Pass {"query": "<the current question or grammar point>"}. Only a pattern that appears \
             in at least two different Practice Attempts is returned. Cite each returned source by its \
-            reference number and state its attemptCount; when the result is NOT_FOUND, say there is \
-            not enough history instead of guessing a pattern.""";
+            reference number and state its attemptCount. When the result is NOT_FOUND, use its \
+            message to say that history is insufficient or that no pattern matches; never guess one.""";
 
     public static final int RECENT_ATTEMPT_LIMIT = 20;
     public static final String SOURCE = "历史练习记录";
