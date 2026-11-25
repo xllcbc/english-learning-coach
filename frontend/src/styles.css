@@ -2268,6 +2268,12 @@ textarea {
   font-size: 14px;
 }
 
+.speaking-thinking.is-over-budget {
+  border-color: #e5d6a8;
+  background: #fbf6e6;
+  color: #7a5d1c;
+}
+
 .speaking-thinking .spinner {
   width: 14px;
   height: 14px;

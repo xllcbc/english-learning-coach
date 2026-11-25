@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -113,6 +113,7 @@ describe('SpeakingPracticePanel', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     delete (navigator as { mediaDevices?: unknown }).mediaDevices;
   });
@@ -153,7 +154,7 @@ describe('SpeakingPracticePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
 
     expect(captured.connection.sendText).toHaveBeenCalledWith('I like reading books.', null);
-    expect(await screen.findByText('正在思考…')).toBeInTheDocument();
+    expect(await screen.findByText('正在等待回复…')).toBeInTheDocument();
 
     const audioReply: SpeakingAudioReply = {
       type: 'audio',
@@ -200,6 +201,32 @@ describe('SpeakingPracticePanel', () => {
       await screen.findByText('说完到开始播放 p95 1.2 秒（目标 2.5 秒）'),
     ).toBeInTheDocument();
     expect(api.getSpeakingLatency).toHaveBeenCalled();
+  });
+
+  it('switches to the thinking state only after the latency budget is exceeded', async () => {
+    vi.useFakeTimers();
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([]);
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+    await act(async () => {});
+    act(() => captured.getHandlers().onOpen?.());
+
+    fireEvent.change(screen.getByLabelText('说或输入一句英语'), {
+      target: { value: 'A reply that takes too long.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(screen.getByText('正在等待回复…')).toBeInTheDocument();
+    expect(screen.queryByText('思考中…')).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(2499));
+    expect(screen.queryByText('思考中…')).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText('思考中…')).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it('barges in and stops waiting when the learner starts a new recording', async () => {

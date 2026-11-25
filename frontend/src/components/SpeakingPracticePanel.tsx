@@ -36,6 +36,12 @@ interface DisplayTurn {
 type LoadStatus = 'loading' | 'ready' | 'error';
 type ChannelStatus = 'connecting' | 'ready' | 'closed' | 'error';
 
+/**
+ * ADR-0011 latency budget: if a reply has not started playing after this long, the panel must say
+ * it is thinking instead of leaving the learner in silence.
+ */
+export const SPEAKING_THINKING_BUDGET_MS = 2500;
+
 const fallbackLabels: Record<SpeakingFallbackReason, string> = {
   failed: '语音识别失败，已退回文字输入。',
   timeout: '语音识别超时，已退回文字输入。',
@@ -95,6 +101,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const [latencyStats, setLatencyStats] = useState<SpeakingLatencyStats | null>(null);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [thinkingOverBudget, setThinkingOverBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [channelStatus, setChannelStatus] = useState<ChannelStatus>('connecting');
   const [isRecording, setIsRecording] = useState(false);
@@ -174,6 +181,15 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   useEffect(() => {
     void refreshLatency();
   }, [refreshLatency]);
+
+  useEffect(() => {
+    if (!thinking) {
+      setThinkingOverBudget(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setThinkingOverBudget(true), SPEAKING_THINKING_BUDGET_MS);
+    return () => clearTimeout(timer);
+  }, [thinking]);
 
   useEffect(() => {
     const handlers: SpeakingChannelHandlers = {
@@ -411,9 +427,12 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
             </li>
           ))}
           {thinking && (
-            <li className="speaking-turn speaking-thinking" aria-live="polite">
+            <li
+              className={`speaking-turn speaking-thinking ${thinkingOverBudget ? 'is-over-budget' : ''}`}
+              aria-live="polite"
+            >
               <span className="spinner" aria-hidden="true" />
-              <span>正在思考…</span>
+              <span>{thinkingOverBudget ? '思考中…' : '正在等待回复…'}</span>
             </li>
           )}
         </ol>
