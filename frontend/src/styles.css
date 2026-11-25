@@ -1939,3 +1939,134 @@ textarea {
   justify-content: space-between;
   gap: 10px;
 }
+
+/* Speaking Practice */
+
+.speaking-panel {
+  margin-top: 22px;
+}
+
+.speaking-anchor {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.speaking-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--panel-alt);
+}
+
+.speaking-history .text-button.is-current {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.speaking-turns {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.speaking-turn {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.speaking-transcript-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.speaking-input-kind {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f3efe2;
+  color: #8a6d24;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.speaking-transcript {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.speaking-reply {
+  padding-left: 10px;
+  border-left: 3px solid var(--accent-soft);
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.speaking-fallback {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.speaking-thinking {
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: start;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.speaking-thinking .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.speaking-fallback-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5d6a8;
+  border-radius: 12px;
+  background: #fbf6e6;
+  color: #7a5d1c;
+  font-size: 13px;
+}
+
+.speaking-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.retry-button.is-recording {
+  background: #b34233;
+}
+
+@media (max-width: 720px) {
+  .speaking-transcript-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

@@ -25,6 +25,10 @@ public class MockTutorModelClient implements TutorModelClient {
 
     @Override
     public TutorModelDecision next(TutorModelContext context) {
+        if (context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE) {
+            return speakingAnswer(context);
+        }
+
         List<TutorCitableSource> sources = context.briefing().sources();
         List<AgentStep> lookups = LookupWordSteps.successful(context.steps());
 
@@ -58,6 +62,28 @@ public class MockTutorModelClient implements TutorModelClient {
         }
 
         answer.append("以上依据已随回答保存，重开这份 Practice Attempt 可以原样回看。");
+        return TutorModelDecision.answer(answer.toString());
+    }
+
+    /**
+     * Speaking Practice has no written Practice Attempt to cite, so the offline coach replies to
+     * what the learner actually said and stays encouraging. Lookups, when the learner asked for
+     * one explicitly in a scripted turn, are still surfaced without citation markers.
+     */
+    private TutorModelDecision speakingAnswer(TutorModelContext context) {
+        StringBuilder answer = new StringBuilder("我听到你说：「")
+                .append(context.learnerMessage())
+                .append("」。\n");
+        answer.append("这句话表达得很清楚。可以再补充一个具体细节，例如原因或结果，让回答更完整。");
+
+        for (AgentStep lookup : LookupWordSteps.successful(context.steps())) {
+            Map<String, Object> observation = LookupWordSteps.observation(lookup, objectMapper);
+            String word = LookupWordSteps.text(observation, "word", lookup.arguments().get("word"));
+            String meaning = LookupWordSteps.text(observation, "meaningZh", "");
+            if (!meaning.isBlank()) {
+                answer.append("\n关于「").append(word).append("」：").append(meaning);
+            }
+        }
         return TutorModelDecision.answer(answer.toString());
     }
 }

@@ -1,5 +1,8 @@
 package com.writelab.speech;
 
+import com.writelab.agent.TutorModelClient;
+import com.writelab.feedback.FeedbackModel;
+import com.writelab.tools.ToolRegistry;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletContextEvent;
 import jakarta.servlet.ServletContextListener;
@@ -25,26 +28,37 @@ public class SpeechChannelConfiguration {
     public static final String PATH = "/ws/speaking";
 
     @Bean
-    SpeechTurnService speechTurnService(SpeechModel speechModel) {
-        return new SpeechTurnService(speechModel);
+    SpeakingPracticeService speakingPracticeService(
+            SpeechModel speechModel,
+            SpeakingSessionRepository speakingSessionRepository,
+            TutorModelClient tutorModelClient,
+            ToolRegistry toolRegistry,
+            FeedbackModel feedbackModel
+    ) {
+        return new SpeakingPracticeService(
+                speechModel,
+                speakingSessionRepository,
+                tutorModelClient,
+                toolRegistry,
+                feedbackModel);
     }
 
     @Bean
     ServletContextInitializer speechEndpointRegistrar(
-            SpeechTurnService speechTurnService,
+            SpeakingPracticeService speakingPracticeService,
             ObjectMapper objectMapper
     ) {
         return servletContext -> servletContext.addListener(new ServletContextListener() {
             @Override
             public void contextInitialized(ServletContextEvent event) {
-                registerEndpoint(event.getServletContext(), speechTurnService, objectMapper);
+                registerEndpoint(event.getServletContext(), speakingPracticeService, objectMapper);
             }
         });
     }
 
     private static void registerEndpoint(
             ServletContext servletContext,
-            SpeechTurnService speechTurnService,
+            SpeakingPracticeService speakingPracticeService,
             ObjectMapper objectMapper
     ) {
         ServerContainer container = (ServerContainer) servletContext.getAttribute(
@@ -55,7 +69,7 @@ public class SpeechChannelConfiguration {
         }
         try {
             container.addEndpoint(SpeechEndpoint.serverEndpointConfig(
-                    speechTurnService, objectMapper, PATH));
+                    speakingPracticeService, objectMapper, PATH));
         } catch (DeploymentException deploymentFailure) {
             throw new IllegalStateException("Cannot register the voice endpoint at " + PATH,
                     deploymentFailure);

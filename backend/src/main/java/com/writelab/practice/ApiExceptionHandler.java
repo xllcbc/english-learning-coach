@@ -8,6 +8,7 @@ import com.writelab.document.UserDocumentException;
 import com.writelab.feedback.InvalidFeedbackException;
 import com.writelab.feedback.ModelCallException;
 import com.writelab.feedback.ModelGenerationException;
+import com.writelab.speech.SpeakingSessionNotFoundException;
 import com.writelab.vocabulary.SavedVocabularyNotFoundException;
 import com.writelab.vocabulary.VocabularyAlreadySavedException;
 import com.writelab.vocabulary.VocabularySuggestionNotFoundException;
@@ -73,6 +74,14 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> handlePracticeNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiError("PRACTICE_NOT_FOUND", "找不到对应的练习记录，请刷新后重试。"));
+    }
+
+    @ExceptionHandler(SpeakingSessionNotFoundException.class)
+    ResponseEntity<ApiError> handleSpeakingSessionNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError(
+                        "SPEAKING_SESSION_NOT_FOUND",
+                        "找不到对应的 Speaking Session，请开始新的练习。"));
     }
 
     @ExceptionHandler(DictionaryEntryNotFoundException.class)

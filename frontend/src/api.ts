@@ -6,6 +6,13 @@ import type {
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
+  SpeakingAudioReply,
+  SpeakingChannelError,
+  SpeakingInputMode,
+  SpeakingServerMessage,
+  SpeakingSession,
+  SpeakingSessionSummary,
+  SpeakingTextReply,
   TeacherConversation,
   TeacherConversationTurn,
   UserDocumentSummary,
@@ -352,3 +359,122 @@ async function readSse(
   }
 }
 
+
+export function listSpeakingSessions(): Promise<SpeakingSessionSummary[]> {
+  return request<SpeakingSessionSummary[]>('/api/speaking/sessions');
+}
+
+export function getSpeakingSession(id: string): Promise<SpeakingSession> {
+  return request<SpeakingSession>(`/api/speaking/sessions/${encodeURIComponent(id)}`);
+}
+
+export interface SpeakingChannelHandlers {
+  onOpen?: () => void;
+  onAudio?: (reply: SpeakingAudioReply) => void;
+  onText?: (reply: SpeakingTextReply) => void;
+  onError?: (error: SpeakingChannelError) => void;
+  onClose?: () => void;
+}
+
+export interface SpeakingChannelConnection {
+  sendAudio(base64Audio: string, mimeType: string, sessionId: string | null): void;
+  sendText(text: string, sessionId: string | null): void;
+  close(): void;
+}
+
+/**
+ * The voice channel is the only WebSocket surface in the app. A typed message uses the same socket
+ * as audio, so a failed transcription can continue on the same Speaking Session (ADR-0011).
+ */
+export function openSpeakingChannel(
+  handlers: SpeakingChannelHandlers,
+): SpeakingChannelConnection {
+  const socketUrl = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/speaking`;
+  const socket = new WebSocket(socketUrl);
+
+  socket.onopen = () => handlers.onOpen?.();
+  socket.onclose = () => handlers.onClose?.();
+  socket.onerror = () => handlers.onError?.({
+    code: 'SPEAKING_CHANNEL_ERROR',
+    message: '无法连接口语服务，请确认服务已启动。',
+  });
+  socket.onmessage = (event: MessageEvent<string>) => {
+    let payload: SpeakingServerMessage | SpeakingChannelError & { type: string };
+    try {
+      payload = JSON.parse(event.data) as SpeakingServerMessage | SpeakingChannelError & { type: string };
+    } catch {
+      handlers.onError?.({ code: 'INVALID_MESSAGE', message: '口语服务返回了无法识别的消息。' });
+      return;
+    }
+
+    if (payload.type === 'audio') {
+      handlers.onAudio?.(payload as SpeakingAudioReply);
+    } else if (payload.type === 'text') {
+      handlers.onText?.(payload as SpeakingTextReply);
+    } else if (payload.type === 'error') {
+      const error = payload as SpeakingChannelError;
+      handlers.onError?.({ code: error.code, message: error.message });
+    }
+  };
+
+  return {
+    sendAudio(base64Audio, mimeType, sessionId) {
+      socket.send(JSON.stringify({
+        type: 'audio',
+        audio: base64Audio,
+        mimeType,
+        sessionId: sessionId ?? undefined,
+      }));
+    },
+    sendText(text, sessionId) {
+      socket.send(JSON.stringify({
+        type: 'text',
+        text,
+        sessionId: sessionId ?? undefined,
+      }));
+    },
+    close() {
+      socket.close();
+    },
+  };
+}
+
+let activeSpeakingAudio: HTMLAudioElement | null = null;
+
+/**
+ * Stops the reply currently being spoken. Starting a new turn calls this first so the learner can
+ * barge in without two synthesized replies overlapping (ADR-0011).
+ */
+export function stopSpeakingAudio(): void {
+  if (activeSpeakingAudio) {
+    activeSpeakingAudio.pause();
+    activeSpeakingAudio.currentTime = 0;
+    activeSpeakingAudio = null;
+  }
+}
+
+/**
+ * Attempts automatic playback of a synthesized reply. Browsers can block autoplay; the panel still
+ * renders the text reply, so a rejected play() is not an error the learner must handle.
+ */
+export function playSpeakingAudio(base64Audio: string, mimeType: string): void {
+  stopSpeakingAudio();
+  try {
+    const audio = new Audio(`data:${mimeType};base64,${base64Audio}`);
+    activeSpeakingAudio = audio;
+    audio.onended = () => {
+      if (activeSpeakingAudio === audio) {
+        activeSpeakingAudio = null;
+      }
+    };
+    void audio.play().catch(() => {
+      if (activeSpeakingAudio === audio) {
+        activeSpeakingAudio = null;
+      }
+    });
+  } catch {
+    // Audio is an enhancement; the text reply remains visible.
+  }
+}
+
+export type { SpeakingInputMode };

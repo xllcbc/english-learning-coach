@@ -4,21 +4,23 @@ package com.writelab.speech;
  * Wire shapes for the speech WebSocket. Client and server use JSON text frames so a text fallback
  * can travel over the same connection as audio.
  *
- * <p>Audio request:
+ * <p>Audio request with an optional session id ({@code sessionId} is absent on the first turn):
  * <pre>{@code
- * {"type":"audio","audio":"<base64>","mimeType":"audio/webm"}
+ * {"type":"audio","audio":"<base64>","mimeType":"audio/webm","sessionId":"<uuid>"}
  * }</pre>
- * Text input after a fallback:
+ * Text input after a fallback, on the same session:
  * <pre>{@code
- * {"type":"text","text":"..."}
+ * {"type":"text","text":"...","sessionId":"<uuid>"}
  * }</pre>
  * Audio reply:
  * <pre>{@code
- * {"type":"audio","audio":"<base64>","mimeType":"audio/wav","transcript":"..."}
+ * {"type":"audio","sessionId":"<uuid>","audio":"<base64>","mimeType":"audio/wav",
+ *  "transcript":"...","reply":"..."}
  * }</pre>
  * Text degradation:
  * <pre>{@code
- * {"type":"text","text":"...","fallback":true,"reason":"timeout"}
+ * {"type":"text","sessionId":"<uuid>","text":"...","fallback":true,"reason":"timeout",
+ *  "transcript":"..."}
  * }</pre>
  */
 public final class SpeechChannelMessages {
@@ -30,19 +32,35 @@ public final class SpeechChannelMessages {
     private SpeechChannelMessages() {
     }
 
-    public record SpeechInput(String type, String audio, String mimeType, String text) {
+    public record SpeechInput(String type, String audio, String mimeType, String text, String sessionId) {
     }
 
     public sealed interface OutgoingMessage
             permits SpokenReplyMessage, TextReplyMessage, ErrorMessage {
     }
 
-    public record SpokenReplyMessage(String type, String audio, String mimeType, String transcript)
-            implements OutgoingMessage {
+    public record SpokenReplyMessage(
+            String type,
+            String sessionId,
+            String audio,
+            String mimeType,
+            String transcript,
+            String reply,
+            String inputMode,
+            boolean mockMode
+    ) implements OutgoingMessage {
     }
 
-    public record TextReplyMessage(String type, String text, boolean fallback, String reason)
-            implements OutgoingMessage {
+    public record TextReplyMessage(
+            String type,
+            String sessionId,
+            String text,
+            boolean fallback,
+            String reason,
+            String transcript,
+            String inputMode,
+            boolean mockMode
+    ) implements OutgoingMessage {
     }
 
     public record ErrorMessage(String type, String code, String message)

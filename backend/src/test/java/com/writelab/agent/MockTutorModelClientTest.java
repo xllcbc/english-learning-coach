@@ -55,4 +55,23 @@ class MockTutorModelClientTest {
         String answer = ((TutorModelDecision.Answer) decision).content();
         assertThat(answer).contains("没有可引用的依据").doesNotContain("[依据");
     }
+
+    @Test
+    void answersASpeakingTurnWithCoachingInsteadOfRequiringGrounding() {
+        TutorModelContext context = new TutorModelContext(
+                "I went to the park yesterday.",
+                List.of(),
+                Set.of("lookup_word"),
+                new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));
+
+        TutorModelDecision decision = client.next(context);
+
+        assertThat(decision).isInstanceOf(TutorModelDecision.Answer.class);
+        String answer = ((TutorModelDecision.Answer) decision).content();
+        assertThat(answer)
+                .contains("I went to the park yesterday.")
+                .contains("补充一个具体细节")
+                .doesNotContain("[依据")
+                .doesNotContain("没有可引用的依据");
+    }
 }

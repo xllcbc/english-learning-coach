@@ -7,14 +7,19 @@ import java.util.List;
  * in {@code text} and the numbered sources the answer may cite. The core only passes it through, so
  * it stays independent of any particular scenario or channel.
  */
-public record TutorBriefing(String text, List<TutorCitableSource> sources) {
+public record TutorBriefing(String text, List<TutorCitableSource> sources, TutorScenario scenario) {
 
     public TutorBriefing {
         text = text == null ? "" : text;
         sources = sources == null ? List.of() : List.copyOf(sources);
+        scenario = scenario == null ? TutorScenario.TEACHER_CONVERSATION : scenario;
+    }
+
+    public TutorBriefing(String text, List<TutorCitableSource> sources) {
+        this(text, sources, TutorScenario.TEACHER_CONVERSATION);
     }
 
     public static TutorBriefing empty() {
-        return new TutorBriefing("", List.of());
+        return new TutorBriefing("", List.of(), TutorScenario.TEACHER_CONVERSATION);
     }
 }
