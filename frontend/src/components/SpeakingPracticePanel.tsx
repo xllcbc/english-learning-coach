@@ -225,10 +225,10 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         void refreshLatency();
       },
       onInterrupted: () => {
-        // The server abandoned the reply in flight. Local playback was already stopped when the
-        // learner started speaking; this acknowledgement only re-enables playback for future
-        // replies. It must not clear `thinking`, which may already belong to a newer turn.
-        suppressPlaybackRef.current = false;
+        // The server abandoned the reply in flight. Local playback was already stopped and
+        // suppressed when the learner started speaking. This acknowledgement must not clear
+        // `thinking` (it may already belong to a newer turn) nor re-enable playback (a reply that
+        // was in transit may still arrive); sending the new turn re-enables playback.
       },
       onError: (channelError) => {
         setError(channelError.message);

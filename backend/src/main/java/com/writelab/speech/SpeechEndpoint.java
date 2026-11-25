@@ -171,25 +171,39 @@ public class SpeechEndpoint extends Endpoint {
                 // The learner took the floor; nothing was synthesized or persisted.
                 return;
             } catch (SpeakingSessionNotFoundException missing) {
-                if (isCurrent(generation)) {
-                    sendError(session, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND_TEXT);
-                }
+                sendErrorIfCurrent(
+                        session, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND_TEXT, generation);
                 return;
             } catch (RuntimeException failure) {
                 log.warn("口语回合生成失败: {}", failure.getMessage());
-                if (isCurrent(generation)) {
-                    sendError(session, TURN_FAILED_CODE, TURN_FAILED_TEXT);
-                }
+                sendErrorIfCurrent(session, TURN_FAILED_CODE, TURN_FAILED_TEXT, generation);
                 return;
             }
-            if (isCurrent(generation)) {
-                send(session, toMessage(result));
+            // Check and send under the send lock so a barge-in acknowledgement can never be
+            // overtaken by the reply it was meant to cancel.
+            synchronized (sendLock) {
+                if (isCurrent(generation)) {
+                    send(session, toMessage(result));
+                }
             }
         });
     }
 
     private boolean isCurrent(long generation) {
         return turnGeneration.get() == generation;
+    }
+
+    private void sendErrorIfCurrent(
+            Session session,
+            String code,
+            String message,
+            long generation
+    ) {
+        synchronized (sendLock) {
+            if (isCurrent(generation)) {
+                sendError(session, code, message);
+            }
+        }
     }
 
     private SpeechChannelMessages.OutgoingMessage toMessage(
