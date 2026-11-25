@@ -32,12 +32,20 @@ public final class LookupWordToolDefinition implements ToolDefinition {
 
     @Override
     public ToolSession openSession() {
+        return openSession(ToolTurnContext.empty());
+    }
+
+    @Override
+    public ToolSession openSession(ToolTurnContext context) {
         LookupWordRecorder recorder = lookupWordTool.newRecorder();
         return arguments -> {
             Object word = arguments.get("word");
             String rawWord = word == null ? "" : word.toString();
             LookupResult result = recorder.lookup(rawWord);
-            return new ToolResult(result.status(), LookupWordObservation.toJson(result, objectMapper));
+            Integer reference = result.found() ? context.references().reserve(1) : null;
+            return new ToolResult(
+                    result.status(),
+                    LookupWordObservation.toJson(result, objectMapper, reference));
         };
     }
 }

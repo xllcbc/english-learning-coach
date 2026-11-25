@@ -31,14 +31,18 @@ public class MockTutorModelClient implements TutorModelClient {
 
         List<TutorCitableSource> sources = context.briefing().sources();
         List<AgentStep> lookups = LookupWordSteps.successful(context.steps());
+        List<TutorCitableSource> retrieved = TutorToolSources.successful(context.steps(), objectMapper);
 
-        if (sources.isEmpty() && lookups.isEmpty()) {
+        if (sources.isEmpty() && lookups.isEmpty() && retrieved.isEmpty()) {
             return TutorModelDecision.answer(NO_GROUNDING_ANSWER);
         }
 
-        StringBuilder answer = new StringBuilder("关于你的问题「")
-                .append(context.learnerMessage())
-                .append("」：\n");
+        StringBuilder answer = new StringBuilder();
+        if (!context.history().isEmpty()) {
+            TutorTurnMemory previous = context.history().getLast();
+            answer.append("接着上一轮你问的「").append(previous.learnerMessage()).append("」：\n");
+        }
+        answer.append("关于你的问题「").append(context.learnerMessage()).append("」：\n");
 
         int shown = Math.min(MAX_GROUNDING_CITATIONS, sources.size());
         for (int index = 0; index < shown; index++) {
@@ -57,8 +61,16 @@ public class MockTutorModelClient implements TutorModelClient {
             if (!partOfSpeech.isBlank()) {
                 answer.append(partOfSpeech).append(' ');
             }
+            Integer reference = LookupWordSteps.reference(lookup, objectMapper);
             answer.append(meaning)
-                    .append(" [依据").append(TutorCitationPlan.dictionaryReference(sources, index)).append("]\n");
+                    .append(" [依据")
+                    .append(reference == null ? TutorCitationPlan.dictionaryReference(sources, index) : reference)
+                    .append("]\n");
+        }
+
+        for (TutorCitableSource source : retrieved) {
+            answer.append("- ").append(source.title()).append('：').append(source.content())
+                    .append(" [依据").append(source.reference()).append("]\n");
         }
 
         answer.append("以上依据已随回答保存，重开这份 Practice Attempt 可以原样回看。");

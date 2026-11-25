@@ -19,6 +19,18 @@ public final class LookupWordObservation {
         return objectMapper.writeValueAsString(payload(result));
     }
 
+    /**
+     * Agent turns add the citation number the lookup just reserved. The grading workflow has no
+     * {@code [依据N]} channel, so its adapter keeps the original shape.
+     */
+    public static String toJson(LookupResult result, ObjectMapper objectMapper, Integer reference) {
+        Map<String, Object> payload = payload(result);
+        if (reference != null) {
+            payload.put("reference", reference);
+        }
+        return objectMapper.writeValueAsString(payload);
+    }
+
     static Map<String, Object> payload(LookupResult result) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", result.status().name());

@@ -12,4 +12,12 @@ public interface ToolDefinition {
     String description();
 
     ToolSession openSession();
+
+    /**
+     * Opens a session that participates in one agent turn's citation numbering. Tools that never
+     * produce citable material keep the default; retrieval and dictionary tools override it.
+     */
+    default ToolSession openSession(ToolTurnContext context) {
+        return openSession();
+    }
 }

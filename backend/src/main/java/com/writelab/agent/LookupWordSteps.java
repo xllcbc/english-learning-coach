@@ -40,6 +40,25 @@ public final class LookupWordSteps {
         }
     }
 
+    /**
+     * The citation number the lookup reserved in this turn, or {@code null} for observations
+     * written before Agent Turns allocated tool references (and for the grading workflow's shape).
+     */
+    public static Integer reference(AgentStep step, ObjectMapper objectMapper) {
+        Object value = observation(step, objectMapper).get("reference");
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value.toString());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public static String text(Map<String, Object> observation, String key, Object fallback) {
         Object value = observation.get(key);
         if (value == null || value.toString().isBlank()) {

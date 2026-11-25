@@ -5,6 +5,7 @@ import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.tools.ToolRegistry;
 import com.writelab.tools.ToolResult;
 import com.writelab.tools.ToolSession;
+import com.writelab.tools.ToolTurnContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,15 +36,17 @@ public final class TutorAgentCore {
 
     public AgentTurn run(AgentTurnRequest request) {
         Set<String> availableTools = toolRegistry.availableNames(request.allowedTools());
-        Map<String, ToolSession> sessions = toolRegistry.openSessions(request.allowedTools());
+        Map<String, ToolSession> sessions = toolRegistry.openSessions(
+                request.allowedTools(), turnToolContext(request.briefing()));
         List<AgentStep> steps = new ArrayList<>();
         List<ToolInvocation> toolInvocations = new ArrayList<>();
         int toolCalls = 0;
 
         while (steps.size() < request.budget().maxSteps()) {
             long startedNanos = System.nanoTime();
-            TutorModelDecision decision = modelClient.next(
-                    new TutorModelContext(request.learnerMessage(), steps, availableTools, request.briefing()));
+            TutorModelDecision decision = modelClient.next(new TutorModelContext(
+                    request.learnerMessage(), steps, availableTools,
+                    request.briefing(), request.history()));
 
             if (decision instanceof TutorModelDecision.Answer answer) {
                 steps.add(answerStep(steps.size() + 1, answer.content(), startedNanos));
@@ -101,6 +104,14 @@ public final class TutorAgentCore {
         return turn(
                 request, STEP_BUDGET_ANSWER, steps, toolInvocations,
                 AgentStopReason.STEP_BUDGET_EXHAUSTED);
+    }
+
+    private static ToolTurnContext turnToolContext(TutorBriefing briefing) {
+        int firstReference = briefing.sources().stream()
+                .mapToInt(TutorCitableSource::reference)
+                .max()
+                .orElse(0) + 1;
+        return ToolTurnContext.startingAt(firstReference);
     }
 
     private static AgentStep answerStep(int position, String answer, long startedNanos) {

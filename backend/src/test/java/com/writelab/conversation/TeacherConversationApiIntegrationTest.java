@@ -7,6 +7,7 @@ import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
 import com.writelab.agent.TutorSourceKind;
+import com.writelab.agent.TutorTurnMemory;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.ToolInvocation;
 import org.junit.jupiter.api.BeforeEach;
@@ -188,6 +189,124 @@ class TeacherConversationApiIntegrationTest {
     }
 
     @Test
+    void remembersEarlierTurnsSoTheLearnerCanAskAShortFollowUp() throws Exception {
+        UUID practiceId = createPractice();
+        model.script(context -> TutorModelDecision.answer("先解释 moreover 的递进作用 [依据1]。"));
+        CompleteBody first = readEvent(
+                ask(practiceId, "为什么这里用 moreover？").events().getLast(),
+                CompleteBody.class);
+
+        model.script(context -> TutorModelDecision.answer("沿着上一轮的讨论，这里还缺一个冠词 [依据1]。"));
+        CompleteBody second = readEvent(
+                ask(practiceId, "那这一句呢？").events().getLast(),
+                CompleteBody.class);
+
+        assertThat(model.contexts().getLast().history()).containsExactly(
+                new TutorTurnMemory(1, "为什么这里用 moreover？", first.turn().answer()));
+        assertThat(second.turn().position()).isEqualTo(2);
+        assertThat(second.turn().learnerMessage()).isEqualTo("那这一句呢？");
+        assertThat(second.turn().answer()).contains("上一轮");
+
+        assertThat(getConversation(practiceId).turns())
+                .extracting(ConversationTurnBody::answer)
+                .containsExactly(first.turn().answer(), second.turn().answer());
+    }
+
+    @Test
+    void runsSeveralAllowlistedToolsInOneTurnAndKeepsEveryCitation() throws Exception {
+        UUID practiceId = createPractice();
+        uploadAndWaitReady("grammar.md", relevantDocument());
+        model.script(
+                context -> TutorModelDecision.toolCall("lookup_word", Map.of("word", "moreover")),
+                context -> TutorModelDecision.toolCall("retrieve_grounding_material", Map.of(
+                        "query", "I have a problem with this sentence.",
+                        "categories", List.of("GRAMMAR"))),
+                context -> TutorModelDecision.toolCall("search_user_documents", Map.of(
+                        "query", "I have a problem with this sentence.")),
+                context -> TutorModelDecision.toolCall("query_learning_progress", Map.of()),
+                context -> {
+                    int briefingSize = context.briefing().sources().size();
+                    return TutorModelDecision.answer(
+                            "moreover 是递进连接词 [依据" + (briefingSize + 1) + "]，"
+                                    + "主谓要一致 [依据" + (briefingSize + 2) + "]，"
+                                    + "我的文档也提到这句 [依据" + (briefingSize + 4) + "]。");
+                });
+
+        CompleteBody complete = readEvent(
+                ask(practiceId, "结合规则、我的文档和词义解释这句。").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.stopReason()).isEqualTo(AgentStopReason.COMPLETED);
+        assertThat(turn.steps()).extracting(AgentStepBody::toolName).containsExactly(
+                "lookup_word",
+                "retrieve_grounding_material",
+                "search_user_documents",
+                "query_learning_progress",
+                null);
+        assertThat(turn.steps().get(3).status()).isEqualTo(AgentStepStatus.UNKNOWN_TOOL);
+        assertThat(turn.toolInvocations()).extracting(ToolInvocation::toolName)
+                .containsExactly("lookup_word", "retrieve_grounding_material",
+                        "search_user_documents", "query_learning_progress");
+        assertThat(turn.citations()).extracting(CitationBody::kind).containsExactly(
+                ConversationCitationKind.GROUNDING_MATERIAL,
+                ConversationCitationKind.DICTIONARY_ENTRY,
+                ConversationCitationKind.USER_DOCUMENT);
+
+        assertThat(model.contexts()).allSatisfy(context -> assertThat(context.availableTools())
+                .containsExactly("lookup_word", "retrieve_grounding_material", "search_user_documents"));
+
+        ConversationTurnBody replayed = getConversation(practiceId).turns().getFirst();
+        assertThat(replayed.citations()).isEqualTo(turn.citations());
+        assertThat(replayed.steps()).isEqualTo(turn.steps());
+    }
+
+    @Test
+    void stopsAtTheToolBudgetWithoutExecutingTheOverflowCall() throws Exception {
+        UUID practiceId = createPractice();
+        for (int index = 0; index < 5; index++) {
+            model.script(context -> TutorModelDecision.toolCall(
+                    "retrieve_grounding_material", Map.of(
+                            "query", "I have a problem with this sentence.",
+                            "categories", List.of("GRAMMAR"))));
+        }
+
+        CompleteBody complete = readEvent(
+                ask(practiceId, "一直检索下去。").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.stopReason()).isEqualTo(AgentStopReason.TOOL_BUDGET_EXHAUSTED);
+        assertThat(turn.answer()).isEqualTo("本回合已达到工具预算，已停止继续处理。");
+        assertThat(turn.steps()).hasSize(5);
+        assertThat(turn.steps().subList(0, 4))
+                .allSatisfy(step -> assertThat(step.status()).isEqualTo(AgentStepStatus.SUCCESS));
+        assertThat(turn.steps().getLast().status()).isEqualTo(AgentStepStatus.BLOCKED);
+        assertThat(turn.toolInvocations()).hasSize(5);
+        assertThat(turn.toolInvocations().getLast().status().name()).isEqualTo("BLOCKED");
+    }
+
+    @Test
+    void stopsAtTheStepBudgetWhenTheModelKeepsChoosingTools() throws Exception {
+        UUID practiceId = createPractice();
+        for (int index = 0; index < 6; index++) {
+            model.script(context -> TutorModelDecision.toolCall("query_learning_progress", Map.of()));
+        }
+
+        CompleteBody complete = readEvent(
+                ask(practiceId, "一直尝试工具。").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.stopReason()).isEqualTo(AgentStopReason.STEP_BUDGET_EXHAUSTED);
+        assertThat(turn.answer()).isEqualTo("本回合已达到步数预算，已停止继续处理。");
+        assertThat(turn.steps()).hasSize(6)
+                .allSatisfy(step -> assertThat(step.status()).isEqualTo(AgentStepStatus.UNKNOWN_TOOL));
+        assertThat(turn.toolInvocations()).hasSize(6)
+                .allSatisfy(invocation -> assertThat(invocation.status().name()).isEqualTo("BLOCKED"));
+    }
+
+    @Test
     void citesADictionaryEntryWhenTheAnswerUsesAWordLookup() throws Exception {
         UUID practiceId = createPractice();
         model.script(
@@ -332,11 +451,19 @@ class TeacherConversationApiIntegrationTest {
     static final class ScriptedTutorModelClient implements TutorModelClient {
 
         private final Deque<Function<TutorModelContext, TutorModelDecision>> script = new LinkedList<>();
+        private final List<TutorModelContext> contexts = Collections.synchronizedList(new ArrayList<>());
         private final AtomicInteger calls = new AtomicInteger();
 
         void reset() {
             script.clear();
+            contexts.clear();
             calls.set(0);
+        }
+
+        List<TutorModelContext> contexts() {
+            synchronized (contexts) {
+                return List.copyOf(contexts);
+            }
         }
 
         void resetCalls() {
@@ -361,6 +488,7 @@ class TeacherConversationApiIntegrationTest {
         @Override
         public TutorModelDecision next(TutorModelContext context) {
             calls.incrementAndGet();
+            contexts.add(context);
             Function<TutorModelContext, TutorModelDecision> step = script.pollFirst();
             if (step == null) {
                 throw new AssertionError("Model was called beyond the scripted decisions");

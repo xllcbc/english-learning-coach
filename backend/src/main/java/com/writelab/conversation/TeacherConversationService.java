@@ -7,6 +7,7 @@ import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorAgentCore;
 import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorModelClient;
+import com.writelab.agent.TutorTurnMemory;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.ModelMode;
 import com.writelab.feedback.StructuredFeedback;
@@ -14,6 +15,8 @@ import com.writelab.practice.ApiError;
 import com.writelab.retrieval.ExplanationMaterialResolver;
 import com.writelab.streaming.TextChunker;
 import com.writelab.tools.LookupWordTool;
+import com.writelab.tools.RetrieveGroundingMaterialToolDefinition;
+import com.writelab.tools.SearchUserDocumentsToolDefinition;
 import com.writelab.tools.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +45,10 @@ public class TeacherConversationService {
     private static final long STREAM_TIMEOUT_MILLIS = 120_000L;
     private static final String ERROR_CODE = "CONVERSATION_GENERATION_FAILED";
     private static final String ERROR_MESSAGE = "教师回答生成失败，请重试。";
-    private static final Set<String> ALLOWED_TOOLS = Set.of(LookupWordTool.NAME);
+    private static final Set<String> ALLOWED_TOOLS = Set.of(
+            LookupWordTool.NAME,
+            RetrieveGroundingMaterialToolDefinition.NAME,
+            SearchUserDocumentsToolDefinition.NAME);
 
     private final TeacherConversationStore store;
     private final ObjectMapper objectMapper;
@@ -112,8 +118,12 @@ public class TeacherConversationService {
                     practice.structuredResponse(), StructuredFeedback.class);
             ExplanationMaterialResolver.ResolvedMaterials materials = materialResolver.resolve(feedback);
             TutorBriefing briefing = TeacherConversationBriefing.create(practice, feedback, materials);
+            List<TutorTurnMemory> history = store.readHistory(conversation.id()).stream()
+                    .map(row -> new TutorTurnMemory(
+                            row.position(), row.learnerMessage(), row.answer()))
+                    .toList();
             AgentTurn turn = tutorAgentCore.run(new AgentTurnRequest(
-                    message, ALLOWED_TOOLS, AgentLoopBudget.defaults(), briefing));
+                    message, ALLOWED_TOOLS, AgentLoopBudget.defaults(), briefing, history));
 
             if (turn.answer().isBlank()) {
                 throw new IllegalStateException("教师回答为空");

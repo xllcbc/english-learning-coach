@@ -43,6 +43,42 @@ class ConversationCitationsTest {
     }
 
     @Test
+    void numbersRetrievalToolSourcesAndLookupsByTheirTurnReferences() {
+        List<TutorCitableSource> sources = List.of(
+                new TutorCitableSource(
+                        1, TutorSourceKind.GROUNDING_MATERIAL, "连贯性",
+                        "用连接词显式标明逻辑关系。", "WriteLab 自建依据材料", "CC BY 4.0"));
+        List<AgentStep> steps = List.of(
+                toolStep("lookup_word", AgentStepStatus.SUCCESS, """
+                        {"status":"SUCCESS","reference":2,"word":"moreover","partOfSpeech":"副词","meaningZh":"此外；而且。"}
+                        """),
+                toolStep("retrieve_grounding_material", AgentStepStatus.SUCCESS, """
+                        {"status":"SUCCESS","sources":[
+                          {"reference":3,"kind":"GROUNDING_MATERIAL","title":"语法","content":"主谓一致。","source":"WriteLab 自建依据材料","license":"CC BY 4.0"},
+                          {"reference":4,"kind":"GROUNDING_MATERIAL","title":"词汇","content":"搭配要地道。","source":"WriteLab 自建依据材料","license":"CC BY 4.0"}
+                        ]}
+                        """),
+                toolStep("search_user_documents", AgentStepStatus.SUCCESS, """
+                        {"status":"SUCCESS","sources":[
+                          {"reference":5,"kind":"USER_DOCUMENT","title":"grammar.md · Agreement","content":"I have a problem with this sentence.","source":"我的文档","license":null}
+                        ]}
+                        """),
+                toolStep("search_user_documents", AgentStepStatus.FAILED, "{\"status\":\"FAILED\"}"));
+
+        List<ConversationCitation> available = ConversationCitations.available(sources, steps, objectMapper);
+
+        assertThat(available).extracting(ConversationCitation::reference).containsExactly(1, 2, 3, 4, 5);
+        assertThat(available).extracting(ConversationCitation::kind).containsExactly(
+                ConversationCitationKind.GROUNDING_MATERIAL,
+                ConversationCitationKind.DICTIONARY_ENTRY,
+                ConversationCitationKind.GROUNDING_MATERIAL,
+                ConversationCitationKind.GROUNDING_MATERIAL,
+                ConversationCitationKind.USER_DOCUMENT);
+        assertThat(available.get(2).title()).isEqualTo("语法");
+        assertThat(available.get(4).title()).isEqualTo("grammar.md · Agreement");
+    }
+
+    @Test
     void keepsOnlyTheCitationsTheAnswerActuallyReferences() {
         List<ConversationCitation> available = List.of(
                 new ConversationCitation(1, ConversationCitationKind.GROUNDING_MATERIAL,

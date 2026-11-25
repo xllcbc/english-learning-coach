@@ -5,13 +5,14 @@ import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorCitationPlan;
 import com.writelab.agent.TutorCitableSource;
 import com.writelab.agent.TutorSourceKind;
+import com.writelab.agent.TutorToolSources;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,9 +34,11 @@ final class ConversationCitations {
             List<AgentStep> steps,
             ObjectMapper objectMapper
     ) {
-        List<ConversationCitation> citations = new ArrayList<>();
+        // One turn may mix briefing sources, retrieval tool results and dictionary lookups. They
+        // all share one [依据N] sequence, so collect by reference and replay in that order.
+        TreeMap<Integer, ConversationCitation> byReference = new TreeMap<>();
         for (TutorCitableSource source : briefingSources) {
-            citations.add(new ConversationCitation(
+            byReference.put(source.reference(), new ConversationCitation(
                     source.reference(),
                     kindOf(source.kind()),
                     source.title(),
@@ -43,14 +46,27 @@ final class ConversationCitations {
                     source.source(),
                     source.license()));
         }
+
         List<AgentStep> lookups = LookupWordSteps.successful(steps);
         for (int index = 0; index < lookups.size(); index++) {
-            citations.add(dictionaryCitation(
-                    TutorCitationPlan.dictionaryReference(briefingSources, index),
-                    lookups.get(index),
-                    objectMapper));
+            AgentStep lookup = lookups.get(index);
+            Integer observedReference = LookupWordSteps.reference(lookup, objectMapper);
+            int reference = observedReference == null
+                    ? TutorCitationPlan.dictionaryReference(briefingSources, index)
+                    : observedReference;
+            byReference.put(reference, dictionaryCitation(reference, lookup, objectMapper));
         }
-        return List.copyOf(citations);
+
+        for (TutorCitableSource source : TutorToolSources.successful(steps, objectMapper)) {
+            byReference.put(source.reference(), new ConversationCitation(
+                    source.reference(),
+                    kindOf(source.kind()),
+                    source.title(),
+                    source.content(),
+                    source.source(),
+                    source.license()));
+        }
+        return List.copyOf(byReference.values());
     }
 
     static List<ConversationCitation> cited(String answer, List<ConversationCitation> available) {
