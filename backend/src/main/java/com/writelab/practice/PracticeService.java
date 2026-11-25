@@ -79,10 +79,6 @@ public class PracticeService {
         this.targetedPracticeStore = targetedPracticeStore;
     }
 
-    public PracticeResponse create(String writingText) {
-        return create(writingText, null);
-    }
-
     public PracticeResponse create(String writingText, UUID targetedPracticeId) {
         int wordCount = WordCounter.count(writingText);
         if (wordCount < MIN_WORDS || wordCount > MAX_WORDS) {

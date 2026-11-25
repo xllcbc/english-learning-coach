@@ -92,9 +92,11 @@ public class TargetedPracticeStore {
     }
 
     /**
-     * Marks the task submitted and snapshots how many targeted Learning Issues the new Practice
-     * Attempt produced. The conditional update makes a concurrent second submission fail instead of
-     * silently overwriting the first comparison.
+     * Marks the Targeted Practice submitted and snapshots how many Learning Issues of the same
+     * category and severity the new Practice Attempt produced. The Study Plan item is defined by
+     * that pair, so a MAJOR→MINOR change is outside the targeted cluster rather than a hidden
+     * failure. The conditional update makes a concurrent second submission fail instead of silently
+     * overwriting the first comparison.
      */
     public void complete(
             UUID id,
