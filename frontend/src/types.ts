@@ -86,7 +86,8 @@ export type AgentStopReason =
 export type ConversationCitationKind =
   | 'GROUNDING_MATERIAL'
   | 'DICTIONARY_ENTRY'
-  | 'USER_DOCUMENT';
+  | 'USER_DOCUMENT'
+  | 'LEARNING_ISSUE';
 
 export interface AgentStep {
   position: number;

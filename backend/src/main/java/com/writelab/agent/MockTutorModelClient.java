@@ -3,6 +3,7 @@ package com.writelab.agent;
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueSeverity;
 import com.writelab.feedback.LearningIssue;
+import com.writelab.tools.QueryLearningProgressToolDefinition;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
@@ -35,6 +36,14 @@ public class MockTutorModelClient implements TutorModelClient {
             "\\b(go|see|eat|take|make|do|have|come|write|speak|run)\\b",
             Pattern.CASE_INSENSITIVE);
 
+    /**
+     * Recurrence language the offline model can recognise without a real LLM. It only decides
+     * whether to consult the learning-progress tool; the tool decides whether a pattern exists.
+     */
+    private static final Pattern RECURRENCE_QUESTION = Pattern.compile(
+            "又|反复|总是|每次都|同样的|老是|第[二三四五六七八九十]+次|\\bagain\\b|\\brecurr\\w*|\\brepeat\\w*",
+            Pattern.CASE_INSENSITIVE);
+
     private static final Map<String, String> SIMPLE_PAST = Map.ofEntries(
             Map.entry("go", "went"),
             Map.entry("see", "saw"),
@@ -58,6 +67,12 @@ public class MockTutorModelClient implements TutorModelClient {
     public TutorModelDecision next(TutorModelContext context) {
         if (context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE) {
             return speakingAnswer(context);
+        }
+
+        if (shouldQueryLearningProgress(context)) {
+            return TutorModelDecision.toolCall(
+                    QueryLearningProgressToolDefinition.NAME,
+                    Map.of("query", context.learnerMessage()));
         }
 
         List<TutorCitableSource> sources = context.briefing().sources();
@@ -109,12 +124,21 @@ public class MockTutorModelClient implements TutorModelClient {
         return TutorModelDecision.answer(answer.toString());
     }
 
+    private static boolean shouldQueryLearningProgress(TutorModelContext context) {
+        if (!context.availableTools().contains(QueryLearningProgressToolDefinition.NAME)) {
+            return false;
+        }
+        boolean alreadyQueried = context.steps().stream()
+                .anyMatch(step -> QueryLearningProgressToolDefinition.NAME.equals(step.toolName()));
+        return !alreadyQueried
+                && RECURRENCE_QUESTION.matcher(context.learnerMessage()).find();
+    }
+
     /**
      * Speaking Practice has no written Practice Attempt to cite, so the offline coach replies to
      * what the learner actually said and stays encouraging. Lookups, when the learner asked for
      * one explicitly in a scripted turn, are still surfaced without citation markers.
-     */
-    private TutorModelDecision speakingAnswer(TutorModelContext context) {
+     */    private TutorModelDecision speakingAnswer(TutorModelContext context) {
         StringBuilder answer = new StringBuilder("我听到你说：「")
                 .append(context.learnerMessage())
                 .append("」。\n");

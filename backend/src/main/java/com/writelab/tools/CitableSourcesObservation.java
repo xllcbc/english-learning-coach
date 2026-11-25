@@ -32,6 +32,18 @@ final class CitableSourcesObservation {
         return new ToolResult(ToolInvocationStatus.FAILED, objectMapper.writeValueAsString(root));
     }
 
+    /**
+     * A successful invocation that has nothing to cite. It is not an error: the model should tell
+     * the learner that the available history cannot support the requested pattern.
+     */
+    static ToolResult notFound(String message, ObjectMapper objectMapper) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("status", "NOT_FOUND");
+        root.put("sources", List.of());
+        root.put("message", message);
+        return new ToolResult(ToolInvocationStatus.NOT_FOUND, objectMapper.writeValueAsString(root));
+    }
+
     private static String toJson(
             String status,
             List<CitableToolSource> sources,

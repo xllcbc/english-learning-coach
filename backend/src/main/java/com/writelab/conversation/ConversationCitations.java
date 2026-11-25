@@ -115,6 +115,7 @@ final class ConversationCitations {
         return switch (kind) {
             case GROUNDING_MATERIAL -> ConversationCitationKind.GROUNDING_MATERIAL;
             case USER_DOCUMENT -> ConversationCitationKind.USER_DOCUMENT;
+            case LEARNING_ISSUE -> ConversationCitationKind.LEARNING_ISSUE;
         };
     }
 

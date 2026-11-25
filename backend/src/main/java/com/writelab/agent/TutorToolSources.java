@@ -1,5 +1,6 @@
 package com.writelab.agent;
 
+import com.writelab.tools.QueryLearningProgressToolDefinition;
 import com.writelab.tools.RetrieveGroundingMaterialToolDefinition;
 import com.writelab.tools.SearchUserDocumentsToolDefinition;
 import org.slf4j.Logger;
@@ -12,17 +13,19 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads citable sources out of the retrieval tools' successful Agent Steps. The observation is the
- * same JSON the citation snapshot persists, so the model, replay and the citation builder all speak
- * one shape instead of three slightly different ones.
+ * Reads citable sources out of the successful Agent Steps of tools that produce them (Grounding
+ * Material, User Document and recurring Learning Issue results). The observation is the same JSON
+ * the citation snapshot persists, so the model, replay and the citation builder all speak one shape
+ * instead of three slightly different ones.
  */
 public final class TutorToolSources {
 
     private static final Logger log = LoggerFactory.getLogger(TutorToolSources.class);
 
-    private static final Set<String> RETRIEVAL_TOOLS = Set.of(
+    private static final Set<String> CITABLE_TOOLS = Set.of(
             RetrieveGroundingMaterialToolDefinition.NAME,
-            SearchUserDocumentsToolDefinition.NAME);
+            SearchUserDocumentsToolDefinition.NAME,
+            QueryLearningProgressToolDefinition.NAME);
 
     private TutorToolSources() {
     }
@@ -32,7 +35,7 @@ public final class TutorToolSources {
         for (AgentStep step : steps) {
             if (!step.isToolCall()
                     || step.status() != AgentStepStatus.SUCCESS
-                    || !RETRIEVAL_TOOLS.contains(step.toolName())) {
+                    || !CITABLE_TOOLS.contains(step.toolName())) {
                 continue;
             }
             sources.addAll(read(step, objectMapper));

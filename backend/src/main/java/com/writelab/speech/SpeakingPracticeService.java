@@ -10,12 +10,10 @@ import com.writelab.agent.TutorScenario;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
-import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.ToolRegistry;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -33,12 +31,6 @@ public class SpeakingPracticeService {
     public static final String SYNTHESIS_FAILED_TEXT = "语音回复暂不可用，已用文字回答。";
     public static final String EMPTY_ANSWER_TEXT = "我暂时没有想到合适的回复，请再说一次。";
 
-    private static final Set<String> ALLOWED_TOOLS = Set.of(
-            LookupWordTool.NAME,
-            // The parent spec gives Speaking Practice these tools too. Neither is wired into this
-            // scenario yet, so keep them out of the model context until that slice lands.
-            "search_user_documents",
-            "save_vocabulary");
     private static final TutorBriefing BRIEFING = new TutorBriefing("""
             这是一次 Speaking Practice 的单个回合。学习者用英语说出或输入一句话，你要给出适合朗读的简短反馈。
             回答用中文，保持鼓励和具体；不要使用 [依据N] 引用标记。
@@ -142,7 +134,8 @@ public class SpeakingPracticeService {
     ) {
         ensureNotCancelled(cancelled);
         AgentTurn turn = tutorAgentCore.run(new AgentTurnRequest(
-                learnerText, ALLOWED_TOOLS, AgentLoopBudget.defaults(), BRIEFING));
+                learnerText, TutorScenario.SPEAKING_PRACTICE.allowedTools(),
+                AgentLoopBudget.defaults(), BRIEFING));
         String reply = turn.answer().isBlank() ? EMPTY_ANSWER_TEXT : turn.answer();
         ensureNotCancelled(cancelled);
 

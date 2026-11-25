@@ -22,6 +22,7 @@ const citationKindLabels: Record<ConversationCitationKind, string> = {
   GROUNDING_MATERIAL: '依据材料',
   DICTIONARY_ENTRY: '词典条目',
   USER_DOCUMENT: '我的文档',
+  LEARNING_ISSUE: '学习问题',
 };
 
 type LoadStatus = 'loading' | 'ready' | 'error';

@@ -223,7 +223,6 @@ class TeacherConversationApiIntegrationTest {
                         "categories", List.of("GRAMMAR"))),
                 context -> TutorModelDecision.toolCall("search_user_documents", Map.of(
                         "query", "I have a problem with this sentence.")),
-                context -> TutorModelDecision.toolCall("query_learning_progress", Map.of()),
                 context -> {
                     int briefingSize = context.briefing().sources().size();
                     return TutorModelDecision.answer(
@@ -242,12 +241,10 @@ class TeacherConversationApiIntegrationTest {
                 "lookup_word",
                 "retrieve_grounding_material",
                 "search_user_documents",
-                "query_learning_progress",
                 null);
-        assertThat(turn.steps().get(3).status()).isEqualTo(AgentStepStatus.UNKNOWN_TOOL);
         assertThat(turn.toolInvocations()).extracting(ToolInvocation::toolName)
                 .containsExactly("lookup_word", "retrieve_grounding_material",
-                        "search_user_documents", "query_learning_progress");
+                        "search_user_documents");
         // Citations are ordered by their [依据N], and the lookup ran before the retrieval tools.
         assertThat(turn.citations()).extracting(CitationBody::reference).isSorted();
         assertThat(turn.citations()).extracting(CitationBody::kind).containsExactly(
@@ -256,7 +253,8 @@ class TeacherConversationApiIntegrationTest {
                 ConversationCitationKind.USER_DOCUMENT);
 
         assertThat(model.contexts()).allSatisfy(context -> assertThat(context.availableTools())
-                .containsExactly("lookup_word", "retrieve_grounding_material", "search_user_documents"));
+                .containsExactly("lookup_word", "query_learning_progress",
+                        "retrieve_grounding_material", "search_user_documents"));
 
         ConversationTurnBody replayed = getConversation(practiceId).turns().getFirst();
         assertThat(replayed.citations()).isEqualTo(turn.citations());
@@ -292,7 +290,7 @@ class TeacherConversationApiIntegrationTest {
     void stopsAtTheStepBudgetWhenTheModelKeepsChoosingTools() throws Exception {
         UUID practiceId = createPractice();
         for (int index = 0; index < 6; index++) {
-            model.script(context -> TutorModelDecision.toolCall("query_learning_progress", Map.of()));
+            model.script(context -> TutorModelDecision.toolCall("missing_tool", Map.of()));
         }
 
         CompleteBody complete = readEvent(
@@ -359,6 +357,78 @@ class TeacherConversationApiIntegrationTest {
 
         ConversationTurnBody replayed = getConversation(practiceId).turns().getFirst();
         assertThat(replayed.citations()).isEqualTo(complete.turn().citations());
+    }
+
+    @Test
+    void recognisesARepeatedLearningIssueFromFixedHistoryWithACitedCount() throws Exception {
+        jdbcClient.sql("DELETE FROM practice_attempt").update();
+        UUID first = createPractice();
+        UUID second = createPractice();
+        UUID current = createPractice();
+        fixAlthoughButIssue(first, "Although it was raining, but we went out.",
+                "Although it was raining, we went out.");
+        fixAlthoughButIssue(second, "Although he is young, but he is brave.",
+                "Although he is young, he is brave.");
+        fixAlthoughButIssue(current, "Although the task was hard, but she finished it.",
+                "Although the task was hard, she finished it.");
+
+        model.script(
+                context -> TutorModelDecision.toolCall(
+                        "query_learning_progress", Map.of("query", "although/but")),
+                context -> {
+                    int reference = context.briefing().sources().size() + 1;
+                    return TutorModelDecision.answer(
+                            "这已经是你第三次混淆 although/but [依据" + reference + "]，"
+                                    + "前两次也出现在更早的 Practice Attempt 里。");
+                });
+
+        CompleteBody complete = readEvent(
+                ask(current, "我已经第三次混淆 although/but 了吗？").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.answer()).contains("第三次");
+        assertThat(turn.steps().getFirst().toolName()).isEqualTo("query_learning_progress");
+        assertThat(turn.steps().getFirst().status()).isEqualTo(AgentStepStatus.SUCCESS);
+        assertThat(turn.steps().getFirst().output())
+                .contains("\"attemptCount\":3")
+                .contains("\"occurrenceCount\":3");
+
+        assertThat(turn.citations()).singleElement().satisfies(citation -> {
+            assertThat(citation.kind()).isEqualTo(ConversationCitationKind.LEARNING_ISSUE);
+            assertThat(citation.title()).contains("反复学习问题").contains("but");
+            assertThat(citation.content()).contains("3 次 Practice Attempt");
+            assertThat(citation.source()).isEqualTo("学习历史");
+        });
+
+        ConversationTurnBody replayed = getConversation(current).turns().getFirst();
+        assertThat(replayed.citations()).isEqualTo(turn.citations());
+        assertThat(replayed.steps()).isEqualTo(turn.steps());
+    }
+
+    @Test
+    void refusesToInventARecurringPatternWhenHistoryHasOnlyOneAttempt() throws Exception {
+        jdbcClient.sql("DELETE FROM practice_attempt").update();
+        UUID only = createPractice();
+        fixAlthoughButIssue(only, "Although it was raining, but we went out.",
+                "Although it was raining, we went out.");
+
+        model.script(
+                context -> TutorModelDecision.toolCall(
+                        "query_learning_progress", Map.of("query", "although/but")),
+                context -> TutorModelDecision.answer(
+                        "这只是一次记录，历史不足，不能判断它是否反复出现 [依据1]。"));
+
+        CompleteBody complete = readEvent(
+                ask(only, "我已经第三次混淆 although/but 了吗？").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.steps().getFirst().status()).isEqualTo(AgentStepStatus.NOT_FOUND);
+        assertThat(turn.steps().getFirst().output()).contains("历史不足");
+        assertThat(turn.citations())
+                .extracting(CitationBody::kind)
+                .doesNotContain(ConversationCitationKind.LEARNING_ISSUE);
     }
 
     @Test
@@ -497,6 +567,27 @@ class TeacherConversationApiIntegrationTest {
             }
             return step.apply(context);
         }
+    }
+
+    private void fixAlthoughButIssue(UUID practiceId, String originalSentence, String suggestion) {
+        jdbcClient.sql("DELETE FROM learning_issue WHERE practice_attempt_id = :practiceId")
+                .param("practiceId", practiceId)
+                .update();
+        jdbcClient.sql("""
+                        INSERT INTO learning_issue (
+                            id, practice_attempt_id, position, original_sentence, suggestion,
+                            category, severity, explanation
+                        ) VALUES (
+                            :id, :practiceId, 1, :originalSentence, :suggestion,
+                            'GRAMMAR', 'MINOR', :explanation
+                        )
+                        """)
+                .param("id", UUID.randomUUID())
+                .param("practiceId", practiceId)
+                .param("originalSentence", originalSentence)
+                .param("suggestion", suggestion)
+                .param("explanation", "although 与 but 不能同时使用，保留其中一个即可。")
+                .update();
     }
 
     private UUID createPractice() throws Exception {
