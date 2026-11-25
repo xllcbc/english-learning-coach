@@ -11,7 +11,8 @@ import java.util.Set;
 public record AgentTurnRequest(
         String learnerMessage,
         Set<String> allowedTools,
-        AgentLoopBudget budget
+        AgentLoopBudget budget,
+        TutorBriefing briefing
 ) {
 
     public AgentTurnRequest {
@@ -20,6 +21,11 @@ public record AgentTurnRequest(
                 ? Set.of()
                 : Collections.unmodifiableSet(new LinkedHashSet<>(allowedTools));
         budget = budget == null ? AgentLoopBudget.defaults() : budget;
+        briefing = briefing == null ? TutorBriefing.empty() : briefing;
+    }
+
+    public AgentTurnRequest(String learnerMessage, Set<String> allowedTools, AgentLoopBudget budget) {
+        this(learnerMessage, allowedTools, budget, TutorBriefing.empty());
     }
 
     public static AgentTurnRequest of(String learnerMessage, Set<String> allowedTools) {

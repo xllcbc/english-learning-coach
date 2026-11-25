@@ -6,6 +6,8 @@ import type {
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
+  TeacherConversation,
+  TeacherConversationTurn,
   UserDocumentSummary,
   UserDocumentUploadResponse,
 } from './types';
@@ -191,29 +193,7 @@ export async function streamExplanation(
     );
   }
 
-  if (!response.body) {
-    throw new ApiRequestError('STREAM_UNAVAILABLE', '无法读取教师讲解，请重试。');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let eventName = 'message';
-  let dataLines: string[] = [];
-  let completed = false;
-  let errored = false;
-
-  const dispatch = () => {
-    if (dataLines.length === 0) {
-      eventName = 'message';
-      return;
-    }
-
-    const data = dataLines.join('\n');
-    const name = eventName;
-    dataLines = [];
-    eventName = 'message';
-
+  await readSse(response, (name, data) => {
     if (name === 'start') {
       const payload = JSON.parse(data) as { replay?: boolean };
       handlers.onStart?.(payload.replay ?? false);
@@ -226,7 +206,6 @@ export async function streamExplanation(
         groundingMaterials?: GroundingCitation[];
         documentCitations?: DocumentCitation[];
       };
-      completed = true;
       handlers.onComplete(
         payload.explanation,
         payload.groundingMaterials ?? [],
@@ -234,9 +213,108 @@ export async function streamExplanation(
       );
     } else if (name === 'error') {
       const payload = JSON.parse(data) as ApiError;
-      errored = true;
       handlers.onError(payload.message || '教师讲解生成失败，请重试。');
     }
+  }, () => handlers.onError('教师讲解流意外中断，请重试。'));
+}
+
+export function getConversation(practiceId: string): Promise<TeacherConversation> {
+  return request<TeacherConversation>(
+    `/api/practices/${encodeURIComponent(practiceId)}/conversation`,
+  );
+}
+
+export interface ConversationStart {
+  practiceId: string;
+  conversationId: string;
+  turnPosition: number;
+  mockMode: boolean;
+}
+
+export interface ConversationStreamHandlers {
+  onStart?: (start: ConversationStart) => void;
+  onDelta: (text: string) => void;
+  onComplete: (turn: TeacherConversationTurn) => void;
+  onError: (message: string) => void;
+}
+
+export async function streamConversationTurn(
+  practiceId: string,
+  message: string,
+  handlers: ConversationStreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/practices/${encodeURIComponent(practiceId)}/conversation/turns`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream, application/json',
+      },
+      body: JSON.stringify({ message }),
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiError | null;
+    throw new ApiRequestError(
+      payload?.code ?? 'HTTP_ERROR',
+      payload?.message ?? '教师对话请求失败，请稍后重试。',
+    );
+  }
+
+  await readSse(response, (name, data) => {
+    if (name === 'start') {
+      handlers.onStart?.(JSON.parse(data) as ConversationStart);
+    } else if (name === 'delta') {
+      const payload = JSON.parse(data) as { text: string };
+      handlers.onDelta(payload.text);
+    } else if (name === 'complete') {
+      const payload = JSON.parse(data) as { turn: TeacherConversationTurn };
+      handlers.onComplete(payload.turn);
+    } else if (name === 'error') {
+      const payload = JSON.parse(data) as ApiError;
+      handlers.onError(payload.message || '教师回答生成失败，请重试。');
+    }
+  }, () => handlers.onError('教师对话流意外中断，请重试。'));
+}
+
+/**
+ * Shared Server-Sent Events reader. Both the Teacher Explanation and Teacher Conversation
+ * channels use the same `event:` + `data:` framing, so one parser keeps their behavior aligned.
+ */
+async function readSse(
+  response: Response,
+  onEvent: (name: string, data: string) => void,
+  onInterrupted?: () => void,
+): Promise<void> {
+  if (!response.body) {
+    throw new ApiRequestError('STREAM_UNAVAILABLE', '无法读取流式回答，请重试。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let eventName = 'message';
+  let dataLines: string[] = [];
+  let terminal = false;
+
+  const dispatch = () => {
+    if (dataLines.length === 0) {
+      eventName = 'message';
+      return;
+    }
+
+    const data = dataLines.join('\n');
+    const name = eventName;
+    dataLines = [];
+    eventName = 'message';
+    if (name === 'complete' || name === 'error') {
+      terminal = true;
+    }
+    onEvent(name, data);
   };
 
   const processLine = (line: string) => {
@@ -269,7 +347,8 @@ export async function streamExplanation(
     processLine(line.replace(/\r$/, ''));
   }
 
-  if (!completed && !errored) {
-    handlers.onError('教师讲解流意外中断，请重试。');
+  if (!terminal) {
+    onInterrupted?.();
   }
 }
+

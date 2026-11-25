@@ -18,6 +18,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import type { HistoryStatus } from './components/HistoryPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
+import { TeacherConversationPanel } from './components/TeacherConversationPanel';
 import { UserDocumentsPanel } from './components/UserDocumentsPanel';
 import { formatTimestamp } from './format';
 import type {
@@ -464,6 +465,7 @@ export default function App() {
               onSaveVocabulary={handleSaveVocabulary}
             >
               <ExplanationView
+                key={`${result.id}-explanation`}
                 status={explanationStatus}
                 text={explanation}
                 groundingMaterials={explanationGrounding}
@@ -471,6 +473,11 @@ export default function App() {
                 error={explanationError}
                 replay={explanationReplay}
                 onGenerate={handleGenerateExplanation}
+              />
+              <TeacherConversationPanel
+                key={result.id}
+                practiceId={result.id}
+                defaultMockMode={result.mockMode}
               />
             </FeedbackView>
           )}

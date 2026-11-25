@@ -18,8 +18,8 @@ import com.writelab.persistence.VocabularySuggestionEntity;
 import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.retrieval.RetrievalHit;
+import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.tools.ToolInvocation;
-import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.writing.WordCounter;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -159,12 +159,27 @@ public class PracticeService {
         StructuredFeedback feedback = objectMapper.readValue(
                 entity.structuredResponse().value(), StructuredFeedback.class
         );
-        List<ToolInvocation> toolInvocations = entity.toolInvocations().stream()
-                .map(this::toToolInvocation)
-                .toList();
+        List<ToolInvocation> toolInvocations = findGradingToolInvocations(id);
         Map<Integer, CorpusSentenceSource> sources = findCorpusSentenceSources(id);
 
         return toResponse(entity, feedback, toolInvocations, sources::get);
+    }
+
+    /**
+     * The practice detail is the grading workflow's view. Conversation turns write their own Tool
+     * Invocations against the same Practice Attempt (ADR-0010), so this read excludes them instead
+     * of showing conversation lookups as if the grader made them.
+     */
+    private List<ToolInvocation> findGradingToolInvocations(UUID practiceId) {
+        return jdbcClient.sql("""
+                        SELECT tool_name, arguments, result_status, duration_millis
+                        FROM tool_invocation
+                        WHERE practice_attempt_id = :id AND teacher_conversation_turn_id IS NULL
+                        ORDER BY position
+                        """)
+                .param("id", practiceId)
+                .query((resultSet, rowNumber) -> ToolInvocationRows.map(resultSet, objectMapper))
+                .list();
     }
 
     private static StructuredFeedback withResolvedSuggestions(
@@ -303,16 +318,5 @@ public class PracticeService {
                         invocation.durationMillis()
                 ))
                 .toList();
-    }
-
-    @SuppressWarnings("unchecked")
-    private ToolInvocation toToolInvocation(ToolInvocationEntity entity) {
-        Map<String, Object> arguments = objectMapper.readValue(entity.arguments().value(), Map.class);
-        return new ToolInvocation(
-                entity.toolName(),
-                arguments,
-                ToolInvocationStatus.valueOf(entity.resultStatus()),
-                entity.durationMillis()
-        );
     }
 }
