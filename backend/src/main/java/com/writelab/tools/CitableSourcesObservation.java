@@ -24,8 +24,12 @@ final class CitableSourcesObservation {
         return new ToolResult(ToolInvocationStatus.SUCCESS, toJson("SUCCESS", sources, objectMapper));
     }
 
-    static ToolResult failed(String observation) {
-        return new ToolResult(ToolInvocationStatus.FAILED, observation);
+    static ToolResult failed(String message, ObjectMapper objectMapper) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("status", "FAILED");
+        root.put("sources", List.of());
+        root.put("message", message);
+        return new ToolResult(ToolInvocationStatus.FAILED, objectMapper.writeValueAsString(root));
     }
 
     private static String toJson(
@@ -42,6 +46,7 @@ final class CitableSourcesObservation {
             item.put("content", source.content());
             item.put("source", source.source());
             item.put("license", source.license());
+            source.metadata().forEach(item::putIfAbsent);
             payload.add(item);
         }
         Map<String, Object> root = new LinkedHashMap<>();
@@ -56,7 +61,23 @@ final class CitableSourcesObservation {
             String title,
             String content,
             String source,
-            String license
+            String license,
+            Map<String, Object> metadata
     ) {
+
+        CitableToolSource {
+            metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
+        }
+
+        CitableToolSource(
+                int reference,
+                String kind,
+                String title,
+                String content,
+                String source,
+                String license
+        ) {
+            this(reference, kind, title, content, source, license, Map.of());
+        }
     }
 }

@@ -108,14 +108,20 @@ class TeacherConversationStore {
      * answer. Kept separate from {@link #readTurns} so a new question does not rebuild every Agent
      * Step and citation snapshot on the way in.
      */
-    List<HistoryRow> readHistory(UUID conversationId) {
+    List<HistoryRow> readHistory(UUID conversationId, int limit) {
         return jdbcClient.sql("""
                         SELECT position, learner_message, answer
-                        FROM teacher_conversation_turn
-                        WHERE conversation_id = :conversationId
+                        FROM (
+                            SELECT position, learner_message, answer
+                            FROM teacher_conversation_turn
+                            WHERE conversation_id = :conversationId
+                            ORDER BY position DESC
+                            LIMIT :limit
+                        ) recent
                         ORDER BY position
                         """)
                 .param("conversationId", conversationId)
+                .param("limit", limit)
                 .query((resultSet, rowNum) -> new HistoryRow(
                         resultSet.getInt("position"),
                         resultSet.getString("learner_message"),

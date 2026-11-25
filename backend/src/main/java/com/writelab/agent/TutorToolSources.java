@@ -41,7 +41,7 @@ public final class TutorToolSources {
     }
 
     private static List<TutorCitableSource> read(AgentStep step, ObjectMapper objectMapper) {
-        Map<String, Object> observation = LookupWordSteps.observation(step, objectMapper);
+        Map<String, Object> observation = AgentStepObservations.json(step, objectMapper);
         Object rawSources = observation.get("sources");
         if (!(rawSources instanceof List<?> items)) {
             return List.of();

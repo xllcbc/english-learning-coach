@@ -38,7 +38,7 @@ final class ConversationCitations {
         // all share one [依据N] sequence, so collect by reference and replay in that order.
         TreeMap<Integer, ConversationCitation> byReference = new TreeMap<>();
         for (TutorCitableSource source : briefingSources) {
-            byReference.put(source.reference(), new ConversationCitation(
+            add(byReference, new ConversationCitation(
                     source.reference(),
                     kindOf(source.kind()),
                     source.title(),
@@ -49,16 +49,13 @@ final class ConversationCitations {
 
         List<AgentStep> lookups = LookupWordSteps.successful(steps);
         for (int index = 0; index < lookups.size(); index++) {
-            AgentStep lookup = lookups.get(index);
-            Integer observedReference = LookupWordSteps.reference(lookup, objectMapper);
-            int reference = observedReference == null
-                    ? TutorCitationPlan.dictionaryReference(briefingSources, index)
-                    : observedReference;
-            byReference.put(reference, dictionaryCitation(reference, lookup, objectMapper));
+            int reference = TutorCitationPlan.lookupReference(
+                    briefingSources, lookups, index, objectMapper);
+            add(byReference, dictionaryCitation(reference, lookups.get(index), objectMapper));
         }
 
         for (TutorCitableSource source : TutorToolSources.successful(steps, objectMapper)) {
-            byReference.put(source.reference(), new ConversationCitation(
+            add(byReference, new ConversationCitation(
                     source.reference(),
                     kindOf(source.kind()),
                     source.title(),
@@ -67,6 +64,20 @@ final class ConversationCitations {
                     source.license()));
         }
         return List.copyOf(byReference.values());
+    }
+
+    /**
+     * A duplicate reference means two different sources claim the same number, which would make
+     * the persisted citation list ambiguous. Fail instead of letting the last writer win.
+     */
+    private static void add(
+            TreeMap<Integer, ConversationCitation> byReference,
+            ConversationCitation citation
+    ) {
+        ConversationCitation previous = byReference.putIfAbsent(citation.reference(), citation);
+        if (previous != null) {
+            throw new IllegalStateException("重复的引用编号: " + citation.reference());
+        }
     }
 
     static List<ConversationCitation> cited(String answer, List<ConversationCitation> available) {

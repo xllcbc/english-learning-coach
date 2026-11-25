@@ -7,6 +7,7 @@ import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorAgentCore;
 import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorModelClient;
+import com.writelab.agent.TutorToolSources;
 import com.writelab.agent.TutorTurnMemory;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.ModelMode;
@@ -43,6 +44,7 @@ public class TeacherConversationService {
     private static final Logger log = LoggerFactory.getLogger(TeacherConversationService.class);
 
     private static final long STREAM_TIMEOUT_MILLIS = 120_000L;
+    private static final int MAX_HISTORY_TURNS = 10;
     private static final String ERROR_CODE = "CONVERSATION_GENERATION_FAILED";
     private static final String ERROR_MESSAGE = "教师回答生成失败，请重试。";
     private static final Set<String> ALLOWED_TOOLS = Set.of(
@@ -118,7 +120,8 @@ public class TeacherConversationService {
                     practice.structuredResponse(), StructuredFeedback.class);
             ExplanationMaterialResolver.ResolvedMaterials materials = materialResolver.resolve(feedback);
             TutorBriefing briefing = TeacherConversationBriefing.create(practice, feedback, materials);
-            List<TutorTurnMemory> history = store.readHistory(conversation.id()).stream()
+            List<TutorTurnMemory> history = store.readHistory(conversation.id(), MAX_HISTORY_TURNS)
+                    .stream()
                     .map(row -> new TutorTurnMemory(
                             row.position(), row.learnerMessage(), row.answer()))
                     .toList();
@@ -139,7 +142,8 @@ public class TeacherConversationService {
                 throw new IllegalStateException("教师回答引用了不存在的依据");
             }
             boolean hasCitableSource = !briefing.sources().isEmpty()
-                    || !LookupWordSteps.successful(turn.steps()).isEmpty();
+                    || !LookupWordSteps.successful(turn.steps()).isEmpty()
+                    || !TutorToolSources.successful(turn.steps(), objectMapper).isEmpty();
             if (turn.completed() && hasCitableSource && citations.isEmpty()) {
                 throw new IllegalStateException("教师回答没有引用任何依据");
             }

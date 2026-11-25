@@ -61,14 +61,15 @@ public class MockTutorModelClient implements TutorModelClient {
             if (!partOfSpeech.isBlank()) {
                 answer.append(partOfSpeech).append(' ');
             }
-            Integer reference = LookupWordSteps.reference(lookup, objectMapper);
             answer.append(meaning)
                     .append(" [依据")
-                    .append(reference == null ? TutorCitationPlan.dictionaryReference(sources, index) : reference)
+                    .append(TutorCitationPlan.lookupReference(sources, lookups, index, objectMapper))
                     .append("]\n");
         }
 
-        for (TutorCitableSource source : retrieved) {
+        int shownRetrieved = Math.min(MAX_GROUNDING_CITATIONS, retrieved.size());
+        for (int index = 0; index < shownRetrieved; index++) {
+            TutorCitableSource source = retrieved.get(index);
             answer.append("- ").append(source.title()).append('：').append(source.content())
                     .append(" [依据").append(source.reference()).append("]\n");
         }

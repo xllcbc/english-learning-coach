@@ -1,8 +1,5 @@
 package com.writelab.agent;
 
-import com.writelab.practice.ApiError;
-import com.writelab.practice.PracticeNotFoundException;
-import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.tools.LookupWordTool;
 import tools.jackson.databind.ObjectMapper;
 
@@ -33,11 +30,7 @@ public final class LookupWordSteps {
     }
 
     public static Map<String, Object> observation(AgentStep step, ObjectMapper objectMapper) {
-        try {
-            return ToolInvocationRows.readArguments(step.output(), objectMapper);
-        } catch (RuntimeException malformed) {
-            return Map.of();
-        }
+        return AgentStepObservations.json(step, objectMapper);
     }
 
     /**
@@ -45,18 +38,7 @@ public final class LookupWordSteps {
      * written before Agent Turns allocated tool references (and for the grading workflow's shape).
      */
     public static Integer reference(AgentStep step, ObjectMapper objectMapper) {
-        Object value = observation(step, objectMapper).get("reference");
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value != null) {
-            try {
-                return Integer.parseInt(value.toString());
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+        return AgentStepObservations.reference(step, objectMapper);
     }
 
     public static String text(Map<String, Object> observation, String key, Object fallback) {

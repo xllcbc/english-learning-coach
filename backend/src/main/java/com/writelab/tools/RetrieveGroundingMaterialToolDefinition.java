@@ -81,12 +81,12 @@ public final class RetrieveGroundingMaterialToolDefinition implements ToolDefini
                             IssueCategoryLabels.label(material.category()),
                             material.content(),
                             material.source(),
-                            material.license()));
+                            material.license(),
+                            Map.of("materialId", material.id().toString())));
                 }
                 return CitableSourcesObservation.success(sources, objectMapper);
             } catch (RuntimeException exception) {
-                return CitableSourcesObservation.failed(
-                        "{\"status\":\"FAILED\",\"sources\":[],\"message\":\"依据材料检索失败。\"}");
+                return CitableSourcesObservation.failed("依据材料检索失败。", objectMapper);
             }
         };
     }

@@ -7,6 +7,7 @@ import com.writelab.retrieval.RankedDocumentChunk;
 import com.writelab.retrieval.RankedGroundingMaterial;
 import com.writelab.retrieval.UserDocumentRetriever;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Collection;
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RetrievalToolDefinitionsTest {
@@ -86,6 +88,11 @@ class RetrievalToolDefinitionsTest {
                 .openSession(new ToolTurnContext(1))
                 .invoke(Map.of("query", "任意问题"));
 
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<IssueCategory>> categories =
+                ArgumentCaptor.forClass(Collection.class);
+        verify(materialRetriever).groundingMaterials(categories.capture(), eq("任意问题"));
+        assertThat(categories.getValue()).containsExactlyInAnyOrder(IssueCategory.values());
         assertThat(result.status()).isEqualTo(ToolInvocationStatus.NOT_FOUND);
         assertThat(result.observation()).contains("\"sources\":[]");
     }
@@ -112,6 +119,8 @@ class RetrievalToolDefinitionsTest {
             assertThat(source).containsEntry("title", "grammar.md · Grammar > Agreement");
             assertThat(source).containsEntry("content", "I have a problem with this sentence.");
             assertThat(source).containsEntry("source", "我的文档");
+            assertThat(source).containsEntry("documentId", DOCUMENT_ID.toString());
+            assertThat(source).containsEntry("documentChunkId", CHUNK_ID.toString());
             assertThat(source.get("license")).isNull();
         });
     }

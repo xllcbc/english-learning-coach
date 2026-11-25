@@ -24,8 +24,4 @@ public final class ToolReferenceAllocator {
         }
         return first;
     }
-
-    public synchronized int nextReference() {
-        return nextReference;
-    }
 }

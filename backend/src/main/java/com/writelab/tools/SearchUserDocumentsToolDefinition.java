@@ -72,12 +72,14 @@ public final class SearchUserDocumentsToolDefinition implements ToolDefinition {
                             chunk.title(),
                             chunk.content(),
                             SOURCE,
-                            null));
+                            null,
+                            Map.of(
+                                    "documentId", chunk.documentId().toString(),
+                                    "documentChunkId", chunk.documentChunkId().toString())));
                 }
                 return CitableSourcesObservation.success(sources, objectMapper);
             } catch (RuntimeException exception) {
-                return CitableSourcesObservation.failed(
-                        "{\"status\":\"FAILED\",\"sources\":[],\"message\":\"我的文档检索失败。\"}");
+                return CitableSourcesObservation.failed("我的文档检索失败。", objectMapper);
             }
         };
     }

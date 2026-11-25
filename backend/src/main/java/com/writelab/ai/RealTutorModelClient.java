@@ -1,5 +1,6 @@
 package com.writelab.ai;
 
+import com.writelab.agent.AgentLoopBudget;
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorCitationPlan;
@@ -34,8 +35,8 @@ public class RealTutorModelClient implements TutorModelClient {
             2. 每条规则或事实后面用 [依据N] 标注来源；N 只能取自本回合“可引用依据”、检索工具返回的 sources 或“成功查词的词典条目”的编号。
             3. 工具结果可以补充事实，但不得把工具结果之外的规则说成已证实。
             4. 没有可引用来源时，直接说明缺少依据，不要编造。
-            5. 需要具体规则时调用 retrieve_grounding_material；需要学习者自己的笔记或讲义时调用 search_user_documents；查英文词义时调用 lookup_word。参数都使用 {"query": "..."}。
-            6. 本回合最多 6 步、4 次工具调用；不要重复无意义的调用，预算耗尽会终止本回合。
+            5. 查英文词义时调用 lookup_word，参数为 {"word": "<英文单词>"}。需要具体规则时调用 retrieve_grounding_material，参数为 {"query": "<问题>"}，可选 categories 取 GRAMMAR / VOCABULARY / SENTENCE_STRUCTURE / COHERENCE / PUNCTUATION。需要学习者自己的笔记或讲义时调用 search_user_documents，参数为 {"query": "<主题或句子>"}。
+            6. 本回合最多 %d 步、%d 次工具调用；不要重复无意义的调用，预算耗尽会终止本回合。
             7. “此前回合”只用于理解上下文；其中的 [依据N] 编号属于过去的回合，不能在本回合复用。
             """;
 
@@ -72,9 +73,11 @@ public class RealTutorModelClient implements TutorModelClient {
     }
 
     private static String systemPrompt(TutorModelContext context) {
-        return context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE
-                ? SPEAKING_SYSTEM_PROMPT
-                : TEACHER_SYSTEM_PROMPT;
+        if (context.briefing().scenario() == TutorScenario.SPEAKING_PRACTICE) {
+            return SPEAKING_SYSTEM_PROMPT;
+        }
+        return TEACHER_SYSTEM_PROMPT.formatted(
+                AgentLoopBudget.DEFAULT_MAX_STEPS, AgentLoopBudget.DEFAULT_MAX_TOOL_CALLS);
     }
 
     private String userPrompt(TutorModelContext context) {
@@ -147,11 +150,9 @@ public class RealTutorModelClient implements TutorModelClient {
             String meaning = LookupWordSteps.text(observation, "meaningZh", "");
             prompt.append("- ");
             if (!speaking) {
-                Integer reference = LookupWordSteps.reference(step, objectMapper);
                 prompt.append("[依据")
-                        .append(reference == null
-                                ? TutorCitationPlan.dictionaryReference(context.briefing().sources(), index)
-                                : reference)
+                        .append(TutorCitationPlan.lookupReference(
+                                context.briefing().sources(), lookups, index, objectMapper))
                         .append("] ");
             }
             prompt.append(word).append("：")

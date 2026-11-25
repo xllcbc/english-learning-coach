@@ -34,7 +34,8 @@ class LookupWordToolDefinitionTest {
         assertThat(result.observation())
                 .contains("\"status\":\"SUCCESS\"")
                 .contains("moreover")
-                .contains("而且");
+                .contains("而且")
+                .doesNotContain("\"reference\"");
     }
 
     @Test

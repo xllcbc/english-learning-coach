@@ -10,7 +10,6 @@ import com.writelab.agent.TutorScenario;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.LookupWordTool;
-import com.writelab.tools.SearchUserDocumentsToolDefinition;
 import com.writelab.tools.ToolRegistry;
 
 import java.util.List;
@@ -32,9 +31,9 @@ public class SpeakingPracticeService {
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             LookupWordTool.NAME,
-            // The parent spec gives Speaking Practice these tools too. save_vocabulary is not
-            // registered yet, so ToolRegistry filters it out of the model context until it lands.
-            SearchUserDocumentsToolDefinition.NAME,
+            // The parent spec gives Speaking Practice these tools too. Neither is wired into this
+            // scenario yet, so keep them out of the model context until that slice lands.
+            "search_user_documents",
             "save_vocabulary");
     private static final TutorBriefing BRIEFING = new TutorBriefing("""
             这是一次 Speaking Practice 的单个回合。学习者用英语说出或输入一句话，你要给出适合朗读的简短反馈。
