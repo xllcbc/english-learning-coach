@@ -22,6 +22,7 @@ public record SpeakingTurn(
         String transcript,
         String reply,
         SpeechFailureReason fallbackReason,
+        Integer latencyMs,
         AgentStopReason stopReason,
         ModelMode modelMode,
         Instant createdAt,
@@ -32,6 +33,7 @@ public record SpeakingTurn(
     public SpeakingTurn {
         transcript = transcript == null ? "" : transcript;
         reply = reply == null ? "" : reply;
+        latencyMs = latencyMs == null ? null : Math.max(0, latencyMs);
         steps = steps == null ? List.of() : List.copyOf(steps);
         toolInvocations = toolInvocations == null ? List.of() : List.copyOf(toolInvocations);
     }

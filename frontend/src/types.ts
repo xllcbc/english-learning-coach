@@ -140,6 +140,7 @@ export interface SpeakingTurn {
   transcript: string;
   reply: string;
   fallbackReason: SpeakingFallbackReason | null;
+  latencyMs: number | null;
   stopReason: AgentStopReason | null;
   modelMode: 'MOCK' | 'REAL';
   createdAt: string;
@@ -173,6 +174,7 @@ export interface SpeakingAudioReply {
   reply: string;
   inputMode: SpeakingInputMode;
   mockMode: boolean;
+  latencyMs: number | null;
 }
 
 export interface SpeakingTextReply {
@@ -184,6 +186,16 @@ export interface SpeakingTextReply {
   transcript: string;
   inputMode: SpeakingInputMode;
   mockMode: boolean;
+  latencyMs: number | null;
+}
+
+export interface SpeakingLatencyStats {
+  turnCount: number;
+  p50Ms: number;
+  p95Ms: number;
+  maxMs: number;
+  budgetMs: number;
+  withinBudget: boolean;
 }
 
 export interface SpeakingInterrupted {

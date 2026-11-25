@@ -15,6 +15,7 @@ import com.writelab.tools.ToolRegistry;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * One spoken (or typed) turn of Speaking Practice. The service owns the ordering STT -> bounded
@@ -60,6 +61,7 @@ public class SpeakingPracticeService {
     }
 
     public SpeakingTurnResult respond(AudioClip audio, UUID sessionId) {
+        long startedAtNanos = System.nanoTime();
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
 
@@ -72,7 +74,8 @@ public class SpeakingPracticeService {
         if (transcript == null || transcript.isBlank()) {
             return transcriptionFallback(session, SpeechFailureReason.FAILED, modelMode);
         }
-        return respondWithAgent(session, transcript, SpeakingInputMode.VOICE, modelMode);
+        return respondWithAgent(session, transcript, SpeakingInputMode.VOICE, modelMode,
+                startedAtNanos);
     }
 
     /**
@@ -80,10 +83,12 @@ public class SpeakingPracticeService {
      * STT, so a failed voice turn never blocks the practice.
      */
     public SpeakingTurnResult respondToText(String text, UUID sessionId) {
+        long startedAtNanos = System.nanoTime();
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
         String learnerText = text == null ? "" : text.strip();
-        return respondWithAgent(session, learnerText, SpeakingInputMode.TEXT, modelMode);
+        return respondWithAgent(session, learnerText, SpeakingInputMode.TEXT, modelMode,
+                startedAtNanos);
     }
 
     public SpeakingSessionResponse session(UUID sessionId) {
@@ -108,11 +113,16 @@ public class SpeakingPracticeService {
                 .toList();
     }
 
+    public SpeakingLatencyStats latency() {
+        return SpeakingLatencyStats.of(repository.readLatencies());
+    }
+
     private SpeakingTurnResult respondWithAgent(
             SpeakingSession session,
             String learnerText,
             SpeakingInputMode inputMode,
-            ModelMode modelMode
+            ModelMode modelMode,
+            long startedAtNanos
     ) {
         AgentTurn turn = tutorAgentCore.run(new AgentTurnRequest(
                 learnerText, ALLOWED_TOOLS, AgentLoopBudget.defaults(), BRIEFING));
@@ -128,6 +138,9 @@ public class SpeakingPracticeService {
         if (audio == null) {
             fallbackReason = SpeechFailureReason.SYNTHESIS_FAILED;
         }
+        // "Finished speaking to playback": measured until the reply is ready to send, immediately
+        // before the client starts playing it (ADR-0011).
+        int latencyMs = elapsedMillis(startedAtNanos);
 
         SpeakingTurn saved = repository.saveTurn(new SpeakingSessionRepository.SpeakingTurnDraft(
                 session.id(),
@@ -135,6 +148,7 @@ public class SpeakingPracticeService {
                 learnerText,
                 reply,
                 fallbackReason,
+                latencyMs,
                 turn.stopReason(),
                 modelMode,
                 turn.steps(),
@@ -162,10 +176,15 @@ public class SpeakingPracticeService {
                 "",
                 reason,
                 null,
+                null,
                 modelMode,
                 List.of(),
                 List.of()));
         return new TextReply(saved, text, reason);
+    }
+
+    private static int elapsedMillis(long startedAtNanos) {
+        return (int) Math.max(0, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
     }
 
     private static String textFor(SpeechFailureReason reason) {

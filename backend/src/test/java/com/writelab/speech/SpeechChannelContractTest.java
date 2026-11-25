@@ -219,6 +219,26 @@ class SpeechChannelContractTest {
     }
 
     @Test
+    void recordsTheTimeToPlaybackAndExposesItsP95AgainstTheBudget() throws Exception {
+        tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
+
+        sendAudio(null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
+
+        SpeakingTurn turn = replay(UUID.fromString(reply.sessionId())).turns().getFirst();
+        assertThat(turn.latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
+
+        SpeakingLatencyStats stats = latencyStats();
+        assertThat(stats.turnCount()).isEqualTo(1);
+        assertThat(stats.p95Ms()).isGreaterThanOrEqualTo(0);
+        assertThat(stats.budgetMs()).isEqualTo(2500);
+        assertThat(stats.withinBudget()).isTrue();
+    }
+
+    @Test
     void bargeInCancelsTheReplyInFlightAndTheNextTurnStillAnswers() throws Exception {
         CountDownLatch modelStarted = new CountDownLatch(1);
         CountDownLatch releaseModel = new CountDownLatch(1);
@@ -304,15 +324,23 @@ class SpeechChannelContractTest {
     }
 
     private SpeakingSessionResponse replay(UUID sessionId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(
-                        URI.create("http://localhost:" + port
-                                + "/api/speaking/sessions/" + sessionId))
-                .GET()
-                .build();
-        HttpResponse<String> response = httpClient.send(
-                request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = get("/api/speaking/sessions/" + sessionId);
         assertThat(response.statusCode()).isEqualTo(200);
         return objectMapper.readValue(response.body(), SpeakingSessionResponse.class);
+    }
+
+    private SpeakingLatencyStats latencyStats() throws Exception {
+        HttpResponse<String> response = get("/api/speaking/latency");
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), SpeakingLatencyStats.class);
+    }
+
+    private HttpResponse<String> get(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + port + path))
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     @SpringBootApplication(exclude = {
@@ -484,6 +512,15 @@ class SpeechChannelContractTest {
         }
 
         @Override
+        public List<Integer> readLatencies() {
+            return turns.values().stream()
+                    .flatMap(List::stream)
+                    .map(SpeakingTurn::latencyMs)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+        }
+
+        @Override
         public SpeakingTurn saveTurn(SpeakingTurnDraft draft) {
             SpeakingSession session = requireSession(draft.sessionId());
             List<SpeakingTurn> existing = turns.get(draft.sessionId());
@@ -495,6 +532,7 @@ class SpeechChannelContractTest {
                     draft.transcript(),
                     draft.reply(),
                     draft.fallbackReason(),
+                    draft.latencyMs(),
                     draft.stopReason(),
                     draft.modelMode(),
                     Instant.now(),

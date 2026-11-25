@@ -13,6 +13,7 @@ import type {
   SpeakingChannelError,
   SpeakingInputMode,
   SpeakingInterrupted,
+  SpeakingLatencyStats,
   SpeakingServerMessage,
   SpeakingSession,
   SpeakingSessionSummary,
@@ -406,6 +407,11 @@ export function listSpeakingSessions(): Promise<SpeakingSessionSummary[]> {
 
 export function getSpeakingSession(id: string): Promise<SpeakingSession> {
   return request<SpeakingSession>(`/api/speaking/sessions/${encodeURIComponent(id)}`);
+}
+
+/** Observed "finished speaking to playback" latency over every persisted speaking turn. */
+export function getSpeakingLatency(): Promise<SpeakingLatencyStats> {
+  return request<SpeakingLatencyStats>('/api/speaking/latency');
 }
 
 export interface SpeakingChannelHandlers {

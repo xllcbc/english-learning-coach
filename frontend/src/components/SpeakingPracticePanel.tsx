@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import {
+  getSpeakingLatency,
   getSpeakingSession,
   listSpeakingSessions,
   openSpeakingChannel,
@@ -14,6 +15,7 @@ import type {
   SpeakingAudioReply,
   SpeakingFallbackReason,
   SpeakingInputMode,
+  SpeakingLatencyStats,
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
@@ -60,6 +62,10 @@ function replayTurns(session: SpeakingSession): DisplayTurn[] {
   ));
 }
 
+function formatSeconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(1)} 秒`;
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -86,6 +92,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const [turns, setTurns] = useState<DisplayTurn[]>([]);
   const [fallbackReason, setFallbackReason] = useState<SpeakingFallbackReason | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [latencyStats, setLatencyStats] = useState<SpeakingLatencyStats | null>(null);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +110,14 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const rememberSession = useCallback((id: string | null) => {
     sessionIdRef.current = id;
     setSessionId(id);
+  }, []);
+
+  const refreshLatency = useCallback(async () => {
+    try {
+      setLatencyStats(await getSpeakingLatency());
+    } catch {
+      // The latency badge is observational; a failed lookup must not block speaking.
+    }
   }, []);
 
   const appendTurn = useCallback((
@@ -157,6 +172,10 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   }, [loadSession]);
 
   useEffect(() => {
+    void refreshLatency();
+  }, [refreshLatency]);
+
+  useEffect(() => {
     const handlers: SpeakingChannelHandlers = {
       onOpen: () => setChannelStatus('ready'),
       onAudio: (reply: SpeakingAudioReply) => {
@@ -168,6 +187,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setThinking(false);
         appendTurn(reply.inputMode, reply.transcript, reply.reply, null);
         playSpeakingAudio(reply.audio, reply.mimeType);
+        void refreshLatency();
       },
       onText: (reply: SpeakingTextReply) => {
         rememberSession(reply.sessionId);
@@ -183,6 +203,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           transcriptionFallback ? '' : reply.text,
           reply.reason,
         );
+        void refreshLatency();
       },
       onInterrupted: () => {
         // The server abandoned the reply in flight; local playback was already stopped when the
@@ -208,7 +229,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       streamRef.current?.getTracks().forEach((track) => track.stop());
       stopSpeakingAudio();
     };
-  }, [appendTurn, rememberSession]);
+  }, [appendTurn, rememberSession, refreshLatency]);
 
   const connectionReady = channelStatus === 'ready';
   const canRecord = typeof navigator !== 'undefined'
@@ -326,6 +347,16 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       <p className="speaking-anchor">
         说一句英语，系统会转写、回答并朗读。语音失败或超时时自动退回文字输入，本次 Speaking Session 会保存下来供回放。
       </p>
+
+      {latencyStats && latencyStats.turnCount > 0 && (
+        <p
+          className={`speaking-latency ${latencyStats.withinBudget ? '' : 'is-over-budget'}`}
+          role="status"
+        >
+          说完到开始播放 p95 {formatSeconds(latencyStats.p95Ms)}（目标{' '}
+          {formatSeconds(latencyStats.budgetMs)}）{latencyStats.withinBudget ? '' : '，超出预算'}
+        </p>
+      )}
 
       {sessions.length > 0 && (
         <div className="speaking-history" aria-label="历史 Speaking Session">

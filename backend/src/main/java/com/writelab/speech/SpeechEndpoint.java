@@ -207,7 +207,8 @@ public class SpeechEndpoint extends Endpoint {
                             reply.turn().transcript(),
                             reply.turn().reply(),
                             reply.turn().inputMode().name(),
-                            reply.turn().mockMode());
+                            reply.turn().mockMode(),
+                            reply.turn().latencyMs());
             case SpeakingPracticeService.TextReply fallback ->
                     new SpeechChannelMessages.TextReplyMessage(
                             SpeechChannelMessages.TYPE_TEXT,
@@ -217,7 +218,8 @@ public class SpeechEndpoint extends Endpoint {
                             fallback.reason().wireValue(),
                             fallback.turn().transcript(),
                             fallback.turn().inputMode().name(),
-                            fallback.turn().mockMode());
+                            fallback.turn().mockMode(),
+                            fallback.turn().latencyMs());
         };
     }
 

@@ -6,6 +6,7 @@ import { SpeakingPracticePanel } from '../components/SpeakingPracticePanel';
 import type { SpeakingChannelHandlers } from '../api';
 import type {
   SpeakingAudioReply,
+  SpeakingLatencyStats,
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
@@ -14,6 +15,7 @@ import type {
 const api = vi.hoisted(() => ({
   listSpeakingSessions: vi.fn(),
   getSpeakingSession: vi.fn(),
+  getSpeakingLatency: vi.fn(),
   openSpeakingChannel: vi.fn(),
   playSpeakingAudio: vi.fn(),
   stopSpeakingAudio: vi.fn(),
@@ -22,6 +24,7 @@ const api = vi.hoisted(() => ({
 vi.mock('../api', () => ({
   listSpeakingSessions: api.listSpeakingSessions,
   getSpeakingSession: api.getSpeakingSession,
+  getSpeakingLatency: api.getSpeakingLatency,
   openSpeakingChannel: api.openSpeakingChannel,
   playSpeakingAudio: api.playSpeakingAudio,
   stopSpeakingAudio: api.stopSpeakingAudio,
@@ -56,6 +59,7 @@ function session(overrides: Partial<SpeakingSession> = {}): SpeakingSession {
         transcript: 'I went to the park yesterday.',
         reply: '你说得很清楚。试着补充一个原因。',
         fallbackReason: null,
+        latencyMs: 900,
         stopReason: 'COMPLETED',
         modelMode: 'MOCK',
         createdAt: '2026-11-25T08:00:00Z',
@@ -63,6 +67,18 @@ function session(overrides: Partial<SpeakingSession> = {}): SpeakingSession {
         toolInvocations: [],
       },
     ],
+    ...overrides,
+  };
+}
+
+function latencyStats(overrides: Partial<SpeakingLatencyStats> = {}): SpeakingLatencyStats {
+  return {
+    turnCount: 0,
+    p50Ms: 0,
+    p95Ms: 0,
+    maxMs: 0,
+    budgetMs: 2500,
+    withinBudget: true,
     ...overrides,
   };
 }
@@ -89,6 +105,8 @@ describe('SpeakingPracticePanel', () => {
   beforeEach(() => {
     api.listSpeakingSessions.mockReset();
     api.getSpeakingSession.mockReset();
+    api.getSpeakingLatency.mockReset();
+    api.getSpeakingLatency.mockResolvedValue(latencyStats());
     api.openSpeakingChannel.mockReset();
     api.playSpeakingAudio.mockReset();
     api.stopSpeakingAudio.mockReset();
@@ -146,6 +164,7 @@ describe('SpeakingPracticePanel', () => {
       reply: '很好，试着说明你喜欢哪一类书。',
       inputMode: 'TEXT',
       mockMode: true,
+      latencyMs: 800,
     };
     handlers.onAudio?.(audioReply);
 
@@ -158,6 +177,29 @@ describe('SpeakingPracticePanel', () => {
       'I enjoy history books.',
       'session-1',
     );
+  });
+
+  it('shows the recorded time-to-playback p95 against the budget', async () => {
+    api.listSpeakingSessions.mockResolvedValue([]);
+    api.getSpeakingLatency.mockResolvedValue(latencyStats({
+      turnCount: 3,
+      p50Ms: 900,
+      p95Ms: 1200,
+      maxMs: 2400,
+    }));
+    api.openSpeakingChannel.mockReturnValue({
+      sendAudio: vi.fn(),
+      sendText: vi.fn(),
+      bargeIn: vi.fn(),
+      close: vi.fn(),
+    });
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+
+    expect(
+      await screen.findByText('说完到开始播放 p95 1.2 秒（目标 2.5 秒）'),
+    ).toBeInTheDocument();
+    expect(api.getSpeakingLatency).toHaveBeenCalled();
   });
 
   it('barges in and stops waiting when the learner starts a new recording', async () => {
@@ -205,6 +247,7 @@ describe('SpeakingPracticePanel', () => {
       transcript: '',
       inputMode: 'VOICE',
       mockMode: true,
+      latencyMs: null,
     };
     handlers.onText?.(fallback);
 

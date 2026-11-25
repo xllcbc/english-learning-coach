@@ -122,6 +122,7 @@ class SpeakingPracticeApiIntegrationTest {
 
         SpeakingTurn turn = replayed.turns().getFirst();
         assertThat(turn.inputMode()).isEqualTo(SpeakingInputMode.VOICE);
+        assertThat(turn.latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
         assertThat(turn.transcript()).isEqualTo(MockSpeechModel.FIXED_TRANSCRIPT);
         assertThat(turn.reply()).isEqualTo(reply.reply());
         assertThat(turn.stopReason()).isEqualTo(AgentStopReason.COMPLETED);

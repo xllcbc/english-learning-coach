@@ -104,7 +104,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
     public List<SpeakingTurn> readTurns(UUID sessionId) {
         List<TurnRow> rows = jdbcClient.sql("""
                         SELECT id, position, input_mode, transcript, reply, fallback_reason,
-                               stop_reason, model_mode, created_at
+                               latency_ms, stop_reason, model_mode, created_at
                         FROM speaking_session_turn
                         WHERE session_id = :sessionId
                         ORDER BY position
@@ -117,6 +117,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                         resultSet.getString("transcript"),
                         resultSet.getString("reply"),
                         failureReason(resultSet.getString("fallback_reason")),
+                        resultSet.getObject("latency_ms", Integer.class),
                         stopReason(resultSet.getString("stop_reason")),
                         ModelMode.valueOf(resultSet.getString("model_mode")),
                         resultSet.getTimestamp("created_at").toInstant()))
@@ -132,6 +133,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     row.transcript(),
                     row.reply(),
                     row.fallbackReason(),
+                    row.latencyMs(),
                     row.stopReason(),
                     row.modelMode(),
                     row.createdAt(),
@@ -142,6 +144,17 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                             AgentStepRows.SPEAKING_TOOL_INVOCATION_TURN, row.id())));
         }
         return List.copyOf(turns);
+    }
+
+    @Override
+    public List<Integer> readLatencies() {
+        return jdbcClient.sql("""
+                        SELECT latency_ms
+                        FROM speaking_session_turn
+                        WHERE latency_ms IS NOT NULL
+                        """)
+                .query(Integer.class)
+                .list();
     }
 
     @Override
@@ -157,10 +170,10 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
             jdbcClient.sql("""
                             INSERT INTO speaking_session_turn (
                                 id, session_id, position, input_mode, transcript, reply,
-                                fallback_reason, stop_reason, model_mode, created_at
+                                fallback_reason, latency_ms, stop_reason, model_mode, created_at
                             ) VALUES (
                                 :id, :sessionId, :position, :inputMode, :transcript, :reply,
-                                :fallbackReason, :stopReason, :modelMode, :createdAt
+                                :fallbackReason, :latencyMs, :stopReason, :modelMode, :createdAt
                             )
                             """)
                     .param("id", turnId)
@@ -171,6 +184,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     .param("reply", draft.reply())
                     .param("fallbackReason",
                             draft.fallbackReason() == null ? null : draft.fallbackReason().name())
+                    .param("latencyMs", draft.latencyMs())
                     .param("stopReason", draft.stopReason() == null ? null : draft.stopReason().name())
                     .param("modelMode", draft.modelMode().name())
                     .param("createdAt", Timestamp.from(createdAt))
@@ -199,6 +213,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                 draft.transcript(),
                 draft.reply(),
                 draft.fallbackReason(),
+                draft.latencyMs(),
                 draft.stopReason(),
                 draft.modelMode(),
                 createdAt,
@@ -262,6 +277,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
             String transcript,
             String reply,
             SpeechFailureReason fallbackReason,
+            Integer latencyMs,
             AgentStopReason stopReason,
             ModelMode modelMode,
             Instant createdAt

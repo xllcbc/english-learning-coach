@@ -33,6 +33,12 @@ public interface SpeakingSessionRepository {
     SpeakingTurn saveTurn(SpeakingTurnDraft draft);
 
     /**
+     * Recorded time-to-playback samples, oldest first. Turns that never produced a playable reply
+     * are absent; callers aggregate them into {@link SpeakingLatencyStats}.
+     */
+    List<Integer> readLatencies();
+
+    /**
      * Everything needed to append one turn. Position and identifiers are assigned by the store so
      * concurrent turns cannot collide; fallback turns carry no steps and no stop reason.
      */
@@ -42,6 +48,7 @@ public interface SpeakingSessionRepository {
             String transcript,
             String reply,
             SpeechFailureReason fallbackReason,
+            Integer latencyMs,
             AgentStopReason stopReason,
             ModelMode modelMode,
             List<AgentStep> steps,
@@ -60,6 +67,7 @@ public interface SpeakingSessionRepository {
             }
             transcript = transcript == null ? "" : transcript;
             reply = reply == null ? "" : reply;
+            latencyMs = latencyMs == null ? null : Math.max(0, latencyMs);
             steps = steps == null ? List.of() : List.copyOf(steps);
             toolInvocations = toolInvocations == null ? List.of() : List.copyOf(toolInvocations);
         }

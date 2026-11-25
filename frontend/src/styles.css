@@ -2169,6 +2169,22 @@ textarea {
   line-height: 1.7;
 }
 
+.speaking-latency {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.speaking-latency.is-over-budget {
+  border-color: #e5d6a8;
+  background: #fbf6e6;
+  color: #7a5d1c;
+}
+
 .speaking-history {
   display: flex;
   flex-wrap: wrap;

@@ -56,7 +56,8 @@ public final class SpeechChannelMessages {
             String transcript,
             String reply,
             String inputMode,
-            boolean mockMode
+            boolean mockMode,
+            Integer latencyMs
     ) implements OutgoingMessage {
     }
 
@@ -68,7 +69,8 @@ public final class SpeechChannelMessages {
             String reason,
             String transcript,
             String inputMode,
-            boolean mockMode
+            boolean mockMode,
+            Integer latencyMs
     ) implements OutgoingMessage {
     }
 
