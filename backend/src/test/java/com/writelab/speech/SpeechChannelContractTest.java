@@ -174,6 +174,7 @@ class SpeechChannelContractTest {
         assertThat(fallback.reason()).isEqualTo("timeout");
         assertThat(fallback.text()).contains("文字输入");
         assertThat(fallback.transcript()).isEmpty();
+        assertThat(fallback.latencyMs()).isNull();
 
         UUID sessionId = UUID.fromString(fallback.sessionId());
         SpeakingTurn fallbackTurn = replay(sessionId).turns().getFirst();
@@ -181,6 +182,9 @@ class SpeechChannelContractTest {
         assertThat(fallbackTurn.stopReason()).isNull();
         assertThat(fallbackTurn.reply()).isEmpty();
         assertThat(fallbackTurn.steps()).isEmpty();
+        assertThat(fallbackTurn.latencyMs()).isNull();
+        // A turn with no playable reply is not part of the time-to-playback sample.
+        assertThat(latencyStats().turnCount()).isZero();
 
         tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
         sendText("I will type this instead.", fallback.sessionId());
@@ -191,6 +195,8 @@ class SpeechChannelContractTest {
         assertThat(reply.sessionId()).isEqualTo(fallback.sessionId());
         assertThat(reply.transcript()).isEqualTo("I will type this instead.");
         assertThat(reply.reply()).isEqualTo(AGENT_REPLY);
+        assertThat(reply.latencyMs()).isNotNull();
+        assertThat(latencyStats().turnCount()).isEqualTo(1);
 
         SpeakingSessionResponse replayed = replay(sessionId);
         assertThat(replayed.turns()).hasSize(2);
