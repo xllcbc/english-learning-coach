@@ -1,10 +1,12 @@
 package com.writelab.config;
 
+import com.writelab.progress.LearningProgressHistory;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.tools.GeneratePracticePromptToolDefinition;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.LookupWordToolDefinition;
+import com.writelab.tools.QueryLearningProgressToolDefinition;
 import com.writelab.tools.RetrieveGroundingMaterialToolDefinition;
 import com.writelab.tools.SearchUserDocumentsToolDefinition;
 import com.writelab.tools.ToolDefinition;
@@ -47,6 +49,14 @@ public class AgentConfiguration {
     @Bean
     GeneratePracticePromptToolDefinition generatePracticePromptToolDefinition(ObjectMapper objectMapper) {
         return new GeneratePracticePromptToolDefinition(objectMapper);
+    }
+
+    @Bean
+    QueryLearningProgressToolDefinition queryLearningProgressToolDefinition(
+            LearningProgressHistory learningProgressHistory,
+            ObjectMapper objectMapper
+    ) {
+        return new QueryLearningProgressToolDefinition(learningProgressHistory, objectMapper);
     }
 
     @Bean

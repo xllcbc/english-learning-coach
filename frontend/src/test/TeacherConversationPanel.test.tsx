@@ -81,6 +81,32 @@ describe('TeacherConversationPanel', () => {
     expect(api.streamConversationTurn).not.toHaveBeenCalled();
   });
 
+  it('shows a recurring learning issue citation with its history source', async () => {
+    api.getConversation.mockResolvedValue(conversation([
+      turn({
+        learnerMessage: '我已经第三次混淆 although/but 了吗？',
+        answer: '这是你第三次混淆 although 和 but [依据1]。',
+        citations: [
+          {
+            reference: 1,
+            kind: 'LEARNING_ISSUE',
+            title: '反复学习问题 · 语法 · 多用了 but',
+            content: '在 3 次 Practice Attempt 中重复出现（共 3 次）。',
+            source: '历史练习记录',
+            license: null,
+          },
+        ],
+      }),
+    ]));
+
+    render(<TeacherConversationPanel practiceId="practice-1" defaultMockMode />);
+
+    expect(await screen.findByText('学习问题')).toBeInTheDocument();
+    expect(screen.getByText('历史练习记录')).toBeInTheDocument();
+    expect(screen.getByText('反复学习问题 · 语法 · 多用了 but')).toBeInTheDocument();
+    expect(screen.getByText('在 3 次 Practice Attempt 中重复出现（共 3 次）。')).toBeInTheDocument();
+  });
+
   it('streams a new question and appends the saved turn with its citations', async () => {
     api.getConversation.mockResolvedValue(conversation([]));
     api.streamConversationTurn.mockImplementation(

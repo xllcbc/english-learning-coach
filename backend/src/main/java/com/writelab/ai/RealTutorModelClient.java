@@ -40,7 +40,7 @@ public class RealTutorModelClient implements TutorModelClient {
             2. 每条规则或事实后面用 [依据N] 标注来源；N 只能取自本回合“可引用依据”、检索工具返回的 sources 或“成功查词的词典条目”的编号。
             3. 工具结果可以补充事实，但不得把工具结果之外的规则说成已证实。
             4. 没有可引用来源时，直接说明缺少依据，不要编造。
-            5. 查英文词义时调用 lookup_word，参数为 {"word": "<英文单词>"}。需要具体规则时调用 retrieve_grounding_material，参数为 {"query": "<问题>"}，可选 categories 取 GRAMMAR / VOCABULARY / SENTENCE_STRUCTURE / COHERENCE / PUNCTUATION。需要学习者自己的笔记或讲义时调用 search_user_documents，参数为 {"query": "<主题或句子>"}。
+            5. 查英文词义时调用 lookup_word，参数为 {"word": "<英文单词>"}。需要具体规则时调用 retrieve_grounding_material，参数为 {"query": "<问题>"}，可选 categories 取 GRAMMAR / VOCABULARY / SENTENCE_STRUCTURE / COHERENCE / PUNCTUATION。需要学习者自己的笔记或讲义时调用 search_user_documents，参数为 {"query": "<主题或句子>"}。要判断某个学习问题是否反复出现时调用 query_learning_progress，参数为 {"query": "<当前问题或语法点>"}；只有工具返回的 attemptCount 才能说成“第几次”，NOT_FOUND 时必须说明历史不足，不得编造模式。
             6. 本回合最多 %d 步、%d 次工具调用；不要重复无意义的调用，预算耗尽会终止本回合。
             7. “此前回合”只用于理解上下文；其中的 [依据N] 编号属于过去的回合，不能在本回合复用。
             """;
