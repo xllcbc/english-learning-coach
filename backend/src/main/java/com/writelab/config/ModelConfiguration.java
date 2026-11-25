@@ -4,6 +4,10 @@ import com.writelab.ai.OpenAiChatClientFactory;
 import com.writelab.ai.OpenAiEmbeddingModelFactory;
 import com.writelab.ai.OpenAiSpeechModelFactory;
 import com.writelab.ai.RealExplanationModel;
+import com.writelab.ai.RealTutorModelClient;
+import com.writelab.agent.MockTutorModelClient;
+import com.writelab.agent.TutorModelClient;
+import com.writelab.tools.ToolRegistry;
 import com.writelab.ai.SpringAiEmbeddingClient;
 import com.writelab.ai.SpringAiFeedbackClient;
 import com.writelab.dictionary.DictionaryService;
@@ -69,6 +73,18 @@ public class ModelConfiguration {
     @Conditional(MockModelCondition.class)
     MockSpeechModel mockSpeechModel() {
         return new MockSpeechModel();
+    }
+
+    @Bean
+    @Conditional(MockModelCondition.class)
+    MockTutorModelClient mockTutorModelClient(ObjectMapper objectMapper) {
+        return new MockTutorModelClient(objectMapper);
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    RealTutorModelClient realTutorModelClient(ChatClient chatClient, ObjectMapper objectMapper) {
+        return new RealTutorModelClient(chatClient, objectMapper);
     }
 
     @Bean

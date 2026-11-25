@@ -43,7 +43,7 @@ public final class TutorAgentCore {
         while (steps.size() < request.budget().maxSteps()) {
             long startedNanos = System.nanoTime();
             TutorModelDecision decision = modelClient.next(
-                    new TutorModelContext(request.learnerMessage(), steps, availableTools));
+                    new TutorModelContext(request.learnerMessage(), steps, availableTools, request.briefing()));
 
             if (decision instanceof TutorModelDecision.Answer answer) {
                 steps.add(answerStep(steps.size() + 1, answer.content(), startedNanos));

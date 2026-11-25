@@ -74,6 +74,60 @@ export interface ToolInvocation {
   durationMillis: number;
 }
 
+export type AgentStepKind = 'TOOL_CALL' | 'ANSWER';
+
+export type AgentStepStatus = 'SUCCESS' | 'NOT_FOUND' | 'BLOCKED' | 'FAILED' | 'UNKNOWN_TOOL';
+
+export type AgentStopReason =
+  | 'COMPLETED'
+  | 'STEP_BUDGET_EXHAUSTED'
+  | 'TOOL_BUDGET_EXHAUSTED';
+
+export type ConversationCitationKind =
+  | 'GROUNDING_MATERIAL'
+  | 'DICTIONARY_ENTRY'
+  | 'USER_DOCUMENT';
+
+export interface AgentStep {
+  position: number;
+  kind: AgentStepKind;
+  toolName: string | null;
+  arguments: Record<string, unknown>;
+  status: AgentStepStatus;
+  output: string;
+  durationMillis: number;
+}
+
+export interface ConversationCitation {
+  reference: number;
+  kind: ConversationCitationKind;
+  title: string;
+  content: string;
+  source: string;
+  license: string | null;
+}
+
+export interface TeacherConversationTurn {
+  id: string;
+  position: number;
+  learnerMessage: string;
+  answer: string;
+  stopReason: AgentStopReason;
+  createdAt: string;
+  steps: AgentStep[];
+  citations: ConversationCitation[];
+  toolInvocations: ToolInvocation[];
+}
+
+export interface TeacherConversation {
+  practiceAttemptId: string;
+  conversationId: string | null;
+  modelMode: 'MOCK' | 'REAL';
+  mockMode: boolean;
+  turns: TeacherConversationTurn[];
+}
+
+
 export interface PracticeResponse {
   id: string;
   writingText: string;
