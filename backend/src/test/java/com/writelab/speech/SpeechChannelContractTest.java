@@ -1,17 +1,23 @@
 package com.writelab.speech;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.apache.tomcat.websocket.server.WsSci;
-import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
-import org.springframework.boot.web.server.servlet.context.AnnotationConfigServletWebServerApplicationContext;
-import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import tools.jackson.databind.ObjectMapper;
 
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -26,35 +32,64 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The external contract of the voice channel: a real WebSocket client sends an audio payload and
+ * The external contract of the speech channel: a real WebSocket client sends an audio payload and
  * the server answers with audio, or degrades to a text message when speech recognition fails or
- * times out (ADR-0011). No microphone, container or real provider is involved.
+ * times out (ADR-0011). A real Mock-mode Spring Boot server is used, so Boot's WebSocket
+ * auto-configuration, the Mock {@link SpeechModel} bean and the endpoint registration are all
+ * exercised. No microphone, container or real provider is involved.
  */
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        classes = SpeechChannelContractTest.TestApplication.class,
+        properties = {
+                "writelab.model.api-key=",
+                "spring.flyway.enabled=false",
+                "spring.datasource.url=",
+                "spring.datasource.username=",
+                "spring.datasource.password="
+        }
+)
+@Import(SpeechChannelContractTest.ScriptedSpeechModelConfiguration.class)
 class SpeechChannelContractTest {
 
     private static final byte[] LEARNER_AUDIO =
             "learner audio".getBytes(StandardCharsets.UTF_8);
     private static final String AUDIO_MIME_TYPE = "audio/webm";
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private AnnotationConfigServletWebServerApplicationContext context;
+    @LocalServerPort
+    private int port;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private ScriptedSpeechModel speechModel;
+
     private WebSocket webSocket;
     private CollectingListener listener;
 
+    @BeforeEach
+    void openChannel() throws Exception {
+        speechModel.reset();
+        listener = new CollectingListener();
+        webSocket = HttpClient.newHttpClient()
+                .newWebSocketBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .buildAsync(
+                        URI.create("ws://127.0.0.1:" + port + SpeechChannelConfiguration.PATH),
+                        listener)
+                .get(5, TimeUnit.SECONDS);
+    }
+
     @AfterEach
-    void stop() throws Exception {
+    void closeChannel() {
         if (webSocket != null) {
             webSocket.abort();
-        }
-        if (context != null) {
-            context.close();
         }
     }
 
     @Test
     void receivesAudioAndReturnsSynthesizedAudio() throws Exception {
-        start(new MockSpeechModel());
-
         sendAudio();
 
         SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
@@ -67,7 +102,7 @@ class SpeechChannelContractTest {
 
     @Test
     void degradesToTextWhenTranscriptionFails() throws Exception {
-        start(new FailingTranscriptionSpeechModel(SpeechTranscriptionException.Reason.FAILED));
+        speechModel.failTranscriptionWith(SpeechFailureReason.FAILED);
 
         sendAudio();
 
@@ -81,7 +116,7 @@ class SpeechChannelContractTest {
 
     @Test
     void degradesToTextWhenTranscriptionTimesOut() throws Exception {
-        start(new FailingTranscriptionSpeechModel(SpeechTranscriptionException.Reason.TIMEOUT));
+        speechModel.failTranscriptionWith(SpeechFailureReason.TIMEOUT);
 
         sendAudio();
 
@@ -93,67 +128,77 @@ class SpeechChannelContractTest {
         assertThat(reply.text()).contains("文字输入");
     }
 
-    private void start(SpeechModel speechModel) throws Exception {
-        TomcatServletWebServerFactory webServerFactory = new TomcatServletWebServerFactory();
-        webServerFactory.setPort(0);
-        // In the full application Boot's WebSocket auto-configuration adds this initializer.
-        webServerFactory.addContextCustomizers(
-                context -> context.addServletContainerInitializer(new WsSci(), null));
+    @Test
+    void acceptsTypedTextAfterATranscriptionFallback() throws Exception {
+        speechModel.failTranscriptionWith(SpeechFailureReason.TIMEOUT);
+        sendAudio();
+        objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.TextReplyMessage.class);
 
-        context = new AnnotationConfigServletWebServerApplicationContext();
-        context.registerBean(TomcatServletWebServerFactory.class, () -> webServerFactory);
-        context.registerBean(ObjectMapper.class, () -> objectMapper);
-        context.registerBean(SpeechModel.class, () -> speechModel);
-        context.registerBean("catchAllServlet", ServletRegistrationBean.class, () -> {
-            // A servlet mapping is required for Tomcat to build the filter chain; the WebSocket
-            // upgrade filter runs before this catch-all and never reaches it on a valid handshake.
-            var registration = new ServletRegistrationBean<>(new HttpServlet() {
-                @Override
-                protected void service(HttpServletRequest request, HttpServletResponse response)
-                        throws IOException {
-                    response.sendError(HttpServletResponse.SC_NOT_FOUND);
-                }
-            }, "/*");
-            return registration;
-        });
-        context.register(SpeechChannelConfiguration.class);
-        context.refresh();
+        String payload = objectMapper.writeValueAsString(new SpeechChannelMessages.SpeechInput(
+                SpeechChannelMessages.TYPE_TEXT, null, null, "I will type this instead."));
+        webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
 
-        int port = context.getWebServer().getPort();
-        listener = new CollectingListener();
-        webSocket = HttpClient.newHttpClient()
-                .newWebSocketBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .buildAsync(
-                        URI.create("ws://127.0.0.1:" + port + SpeechChannelConfiguration.PATH),
-                        listener)
-                .get(5, TimeUnit.SECONDS);
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.type()).isEqualTo(SpeechChannelMessages.TYPE_AUDIO);
+        assertThat(reply.transcript()).isEqualTo("I will type this instead.");
+        assertThat(Base64.getDecoder().decode(reply.audio())).isEqualTo(MockSpeechModel.fixedAudio());
     }
 
     private void sendAudio() throws Exception {
         String payload = objectMapper.writeValueAsString(new SpeechChannelMessages.SpeechInput(
                 SpeechChannelMessages.TYPE_AUDIO,
                 Base64.getEncoder().encodeToString(LEARNER_AUDIO),
-                AUDIO_MIME_TYPE));
+                AUDIO_MIME_TYPE,
+                null));
         webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
     }
 
-    private static final class FailingTranscriptionSpeechModel implements SpeechModel {
+    @SpringBootApplication(exclude = {
+            DataSourceAutoConfiguration.class,
+            DataSourceTransactionManagerAutoConfiguration.class,
+            JdbcClientAutoConfiguration.class,
+            JdbcTemplateAutoConfiguration.class,
+            FlywayAutoConfiguration.class
+    })
+    static class TestApplication {
+    }
 
-        private final SpeechTranscriptionException failure;
+    @TestConfiguration
+    static class ScriptedSpeechModelConfiguration {
 
-        private FailingTranscriptionSpeechModel(SpeechTranscriptionException.Reason reason) {
-            this.failure = new SpeechTranscriptionException(reason, "scripted failure");
+        @Bean
+        @Primary
+        ScriptedSpeechModel scriptedSpeechModel() {
+            return new ScriptedSpeechModel();
         }
+    }
+
+    static final class ScriptedSpeechModel implements SpeechModel {
+
+        private final MockSpeechModel delegate = new MockSpeechModel();
+        private SpeechTranscriptionException transcriptionFailure;
 
         @Override
-        public String transcribe(AudioClip audio) throws SpeechTranscriptionException {
-            throw failure;
+        public String transcribe(AudioClip audio) {
+            if (transcriptionFailure != null) {
+                throw transcriptionFailure;
+            }
+            return delegate.transcribe(audio);
         }
 
         @Override
         public AudioClip synthesize(String text) {
-            throw new AssertionError("synthesis must not run after a transcription failure");
+            return delegate.synthesize(text);
+        }
+
+        void failTranscriptionWith(SpeechFailureReason reason) {
+            transcriptionFailure = new SpeechTranscriptionException(reason, "scripted failure");
+        }
+
+        void reset() {
+            transcriptionFailure = null;
         }
     }
 

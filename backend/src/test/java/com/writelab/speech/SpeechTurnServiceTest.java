@@ -8,8 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fixes the STT -> TTS turn contract and the degradation rules from ADR-0011: a transcription
- * failure or timeout becomes a text fallback message, and a TTS failure still returns the
- * transcript as text.
+ * failure or timeout becomes a text fallback message, text input skips STT, and a TTS failure still
+ * returns text.
  */
 class SpeechTurnServiceTest {
 
@@ -18,24 +18,22 @@ class SpeechTurnServiceTest {
 
     @Test
     void transcribesThenSynthesizesTheTranscript() {
-        RecordingSpeechModel model = new RecordingSpeechModel();
-        SpeechTurnService service = new SpeechTurnService(model);
+        SpeechTurnService service = new SpeechTurnService(new TextEchoSpeechModel());
 
         SpeechTurnService.TurnResult result = service.respond(AUDIO);
 
-        assertThat(model.transcribedAudio).isSameAs(AUDIO);
-        assertThat(model.synthesizedText).isEqualTo("Hello from the test.");
         assertThat(result).isInstanceOfSatisfying(SpeechTurnService.SpokenReply.class, reply -> {
             assertThat(reply.transcript()).isEqualTo("Hello from the test.");
-            assertThat(reply.audio().bytes()).isEqualTo(RecordingSpeechModel.AUDIO_BYTES);
+            assertThat(new String(reply.audio().bytes(), StandardCharsets.UTF_8))
+                    .isEqualTo("audio:Hello from the test.");
+            assertThat(reply.audio().mimeType()).isEqualTo("audio/wav");
         });
     }
 
     @Test
     void degradesToTextWhenTranscriptionFails() {
         SpeechTurnService service = new SpeechTurnService(
-                new FailingSpeechModel(new SpeechTranscriptionException(
-                        SpeechTranscriptionException.Reason.FAILED, "provider error")));
+                new FailingTranscriptionSpeechModel(SpeechFailureReason.FAILED));
 
         SpeechTurnService.TurnResult result = service.respond(AUDIO);
 
@@ -48,14 +46,26 @@ class SpeechTurnServiceTest {
     @Test
     void degradesToTextWhenTranscriptionTimesOut() {
         SpeechTurnService service = new SpeechTurnService(
-                new FailingSpeechModel(new SpeechTranscriptionException(
-                        SpeechTranscriptionException.Reason.TIMEOUT, "too slow")));
+                new FailingTranscriptionSpeechModel(SpeechFailureReason.TIMEOUT));
 
         SpeechTurnService.TurnResult result = service.respond(AUDIO);
 
         assertThat(result).isInstanceOfSatisfying(SpeechTurnService.TextFallback.class, fallback -> {
             assertThat(fallback.reason()).isEqualTo(SpeechFailureReason.TIMEOUT);
             assertThat(fallback.text()).contains("文字输入");
+        });
+    }
+
+    @Test
+    void textInputSkipsTranscriptionAndSynthesizesTheText() {
+        SpeechTurnService service = new SpeechTurnService(new TextEchoSpeechModel());
+
+        SpeechTurnService.TurnResult result = service.respondToText("typed reply");
+
+        assertThat(result).isInstanceOfSatisfying(SpeechTurnService.SpokenReply.class, reply -> {
+            assertThat(reply.transcript()).isEqualTo("typed reply");
+            assertThat(new String(reply.audio().bytes(), StandardCharsets.UTF_8))
+                    .isEqualTo("audio:typed reply");
         });
     }
 
@@ -71,37 +81,31 @@ class SpeechTurnServiceTest {
         });
     }
 
-    private static final class RecordingSpeechModel implements SpeechModel {
-
-        static final byte[] AUDIO_BYTES = "synthesized".getBytes(StandardCharsets.UTF_8);
-
-        private AudioClip transcribedAudio;
-        private String synthesizedText;
+    private static final class TextEchoSpeechModel implements SpeechModel {
 
         @Override
         public String transcribe(AudioClip audio) {
-            transcribedAudio = audio;
             return "Hello from the test.";
         }
 
         @Override
         public AudioClip synthesize(String text) {
-            synthesizedText = text;
-            return new AudioClip(AUDIO_BYTES, "audio/wav");
+            return new AudioClip(
+                    ("audio:" + text).getBytes(StandardCharsets.UTF_8), "audio/wav");
         }
     }
 
-    private static final class FailingSpeechModel implements SpeechModel {
+    private static final class FailingTranscriptionSpeechModel implements SpeechModel {
 
-        private final SpeechTranscriptionException failure;
+        private final SpeechFailureReason reason;
 
-        private FailingSpeechModel(SpeechTranscriptionException failure) {
-            this.failure = failure;
+        private FailingTranscriptionSpeechModel(SpeechFailureReason reason) {
+            this.reason = reason;
         }
 
         @Override
-        public String transcribe(AudioClip audio) throws SpeechTranscriptionException {
-            throw failure;
+        public String transcribe(AudioClip audio) {
+            throw new SpeechTranscriptionException(reason, "scripted failure");
         }
 
         @Override
@@ -118,7 +122,7 @@ class SpeechTurnServiceTest {
         }
 
         @Override
-        public AudioClip synthesize(String text) throws SpeechSynthesisException {
+        public AudioClip synthesize(String text) {
             throw new SpeechSynthesisException("provider error");
         }
     }

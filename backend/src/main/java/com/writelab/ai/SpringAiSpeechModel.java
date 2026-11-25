@@ -1,33 +1,24 @@
 package com.writelab.ai;
 
-import com.writelab.config.ModelProperties;
 import com.writelab.speech.AudioClip;
+import com.writelab.speech.SpeechFailureReason;
 import com.writelab.speech.SpeechModel;
 import com.writelab.speech.SpeechSynthesisException;
 import com.writelab.speech.SpeechTranscriptionException;
 import org.springframework.ai.audio.transcription.TranscriptionModel;
 import org.springframework.ai.audio.tts.TextToSpeechModel;
-import org.springframework.ai.openai.OpenAiAudioSpeechModel;
-import org.springframework.ai.openai.OpenAiAudioSpeechOptions;
-import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
-import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
 import org.springframework.core.io.ByteArrayResource;
 
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.util.Locale;
+import java.util.concurrent.TimeoutException;
 
 /**
- * Spring AI backed {@link SpeechModel}. Construction is manual, like the chat and embedding
- * factories, so Mock vs real mode stays a property of the application instead of Spring AI
- * autoconfiguration. The API key is passed straight to the provider options and never logged.
+ * Spring AI backed {@link SpeechModel}. Construction lives in {@link OpenAiSpeechModelFactory}, so
+ * this class only adapts provider responses and failures to the speech seam.
  */
 public final class SpringAiSpeechModel implements SpeechModel {
-
-    public static final String DEFAULT_TRANSCRIPTION_MODEL = "whisper-1";
-    public static final String DEFAULT_SPEECH_MODEL = "tts-1";
-    public static final String DEFAULT_VOICE = "alloy";
-    public static final String DEFAULT_RESPONSE_MIME_TYPE = "audio/mpeg";
 
     private final TranscriptionModel transcriptionModel;
     private final TextToSpeechModel textToSpeechModel;
@@ -43,33 +34,8 @@ public final class SpringAiSpeechModel implements SpeechModel {
         this.responseMimeType = responseMimeType;
     }
 
-    public static SpringAiSpeechModel create(ModelProperties properties) {
-        OpenAiAudioTranscriptionOptions transcriptionOptions =
-                OpenAiAudioTranscriptionOptions.builder()
-                        .baseUrl(properties.baseUrl())
-                        .apiKey(properties.apiKey())
-                        .model(DEFAULT_TRANSCRIPTION_MODEL)
-                        .timeout(properties.timeout())
-                        .maxRetries(properties.maxRetries())
-                        .build();
-        OpenAiAudioSpeechOptions speechOptions = OpenAiAudioSpeechOptions.builder()
-                .baseUrl(properties.baseUrl())
-                .apiKey(properties.apiKey())
-                .model(DEFAULT_SPEECH_MODEL)
-                .voice(DEFAULT_VOICE)
-                .responseFormat(OpenAiAudioSpeechOptions.AudioResponseFormat.MP3)
-                .timeout(properties.timeout())
-                .maxRetries(properties.maxRetries())
-                .build();
-
-        return new SpringAiSpeechModel(
-                OpenAiAudioTranscriptionModel.builder().options(transcriptionOptions).build(),
-                OpenAiAudioSpeechModel.builder().options(speechOptions).build(),
-                DEFAULT_RESPONSE_MIME_TYPE);
-    }
-
     @Override
-    public String transcribe(AudioClip audio) throws SpeechTranscriptionException {
+    public String transcribe(AudioClip audio) {
         try {
             return transcriptionModel.transcribe(audioResource(audio));
         } catch (RuntimeException failure) {
@@ -79,7 +45,7 @@ public final class SpringAiSpeechModel implements SpeechModel {
     }
 
     @Override
-    public AudioClip synthesize(String text) throws SpeechSynthesisException {
+    public AudioClip synthesize(String text) {
         try {
             return new AudioClip(textToSpeechModel.call(text), responseMimeType);
         } catch (RuntimeException failure) {
@@ -107,7 +73,6 @@ public final class SpringAiSpeechModel implements SpeechModel {
             case "audio/mp3", "audio/mpeg" -> "mp3";
             case "audio/mp4", "audio/m4a", "audio/x-m4a" -> "m4a";
             case "audio/ogg" -> "ogg";
-            case "audio/webm" -> "webm";
             default -> "webm";
         };
     }
@@ -116,12 +81,14 @@ public final class SpringAiSpeechModel implements SpeechModel {
      * The provider SDK wraps timeouts, so walk the cause chain instead of matching only the
      * outermost exception type.
      */
-    private static SpeechTranscriptionException.Reason reasonFor(Throwable failure) {
+    private static SpeechFailureReason reasonFor(Throwable failure) {
         for (Throwable current = failure; current != null; current = current.getCause()) {
-            if (current instanceof HttpTimeoutException || current instanceof SocketTimeoutException) {
-                return SpeechTranscriptionException.Reason.TIMEOUT;
+            if (current instanceof HttpTimeoutException
+                    || current instanceof SocketTimeoutException
+                    || current instanceof TimeoutException) {
+                return SpeechFailureReason.TIMEOUT;
             }
         }
-        return SpeechTranscriptionException.Reason.FAILED;
+        return SpeechFailureReason.FAILED;
     }
 }

@@ -10,13 +10,17 @@ import java.io.IOException;
 import java.util.Base64;
 
 /**
- * WebSocket adapter for the voice channel. It owns transport concerns only: decode the audio
- * payload, delegate the spoken turn to {@link SpeechTurnService}, and serialize either audio or a
- * text fallback back to the learner.
+ * WebSocket adapter for Speaking Practice's speech channel. It owns transport concerns only:
+ * decode the audio (or text fallback) payload, delegate the turn to {@link SpeechTurnService}, and
+ * serialize either audio or text back to the learner.
  */
 public class SpeechEndpoint extends Endpoint {
 
     static final String INVALID_MESSAGE_CODE = "INVALID_MESSAGE";
+    static final String INVALID_JSON_TEXT = "消息不是有效的 JSON。";
+    static final String UNSUPPORTED_TYPE_TEXT = "只支持 audio 或 text 消息。";
+    static final String INVALID_AUDIO_TEXT = "audio 必须是 Base64。";
+    static final String EMPTY_TEXT_TEXT = "text 不能为空。";
 
     private final SpeechTurnService speechTurnService;
     private final ObjectMapper objectMapper;
@@ -50,48 +54,70 @@ public class SpeechEndpoint extends Endpoint {
         try {
             input = objectMapper.readValue(payload, SpeechChannelMessages.SpeechInput.class);
         } catch (RuntimeException malformed) {
-            send(session, new SpeechChannelMessages.ErrorMessage(
-                    SpeechChannelMessages.TYPE_ERROR, INVALID_MESSAGE_CODE, "消息不是有效的 JSON。"));
+            sendError(session, INVALID_JSON_TEXT);
             return;
         }
 
-        if (input == null || !SpeechChannelMessages.TYPE_AUDIO.equals(input.type())) {
-            send(session, new SpeechChannelMessages.ErrorMessage(
-                    SpeechChannelMessages.TYPE_ERROR, INVALID_MESSAGE_CODE, "只支持 audio 消息。"));
+        if (input == null) {
+            sendError(session, INVALID_JSON_TEXT);
             return;
         }
+        if (SpeechChannelMessages.TYPE_AUDIO.equals(input.type())) {
+            handleAudio(session, input);
+            return;
+        }
+        if (SpeechChannelMessages.TYPE_TEXT.equals(input.type())) {
+            handleText(session, input);
+            return;
+        }
+        sendError(session, UNSUPPORTED_TYPE_TEXT);
+    }
 
+    private void handleAudio(Session session, SpeechChannelMessages.SpeechInput input) {
         byte[] audioBytes;
         try {
             audioBytes = Base64.getDecoder().decode(input.audio() == null ? "" : input.audio());
         } catch (IllegalArgumentException malformed) {
-            send(session, new SpeechChannelMessages.ErrorMessage(
-                    SpeechChannelMessages.TYPE_ERROR, INVALID_MESSAGE_CODE, "audio 必须是 Base64。"));
+            sendError(session, INVALID_AUDIO_TEXT);
             return;
         }
-
-        SpeechTurnService.TurnResult result =
-                speechTurnService.respond(new AudioClip(audioBytes, input.mimeType()));
-        send(session, toMessage(result));
+        send(session, toMessage(
+                speechTurnService.respond(new AudioClip(audioBytes, input.mimeType()))));
     }
 
-    private Object toMessage(SpeechTurnService.TurnResult result) {
-        if (result instanceof SpeechTurnService.SpokenReply reply) {
-            return new SpeechChannelMessages.SpokenReplyMessage(
-                    SpeechChannelMessages.TYPE_AUDIO,
-                    Base64.getEncoder().encodeToString(reply.audio().bytes()),
-                    reply.audio().mimeType(),
-                    reply.transcript());
+    private void handleText(Session session, SpeechChannelMessages.SpeechInput input) {
+        if (input.text() == null || input.text().isBlank()) {
+            sendError(session, EMPTY_TEXT_TEXT);
+            return;
         }
-        SpeechTurnService.TextFallback fallback = (SpeechTurnService.TextFallback) result;
-        return new SpeechChannelMessages.TextReplyMessage(
-                SpeechChannelMessages.TYPE_TEXT,
-                fallback.text(),
-                true,
-                fallback.reason().wireValue());
+        send(session, toMessage(speechTurnService.respondToText(input.text())));
     }
 
-    private void send(Session session, Object message) {
+    private SpeechChannelMessages.OutgoingMessage toMessage(
+            SpeechTurnService.TurnResult result
+    ) {
+        return switch (result) {
+            case SpeechTurnService.SpokenReply reply ->
+                    new SpeechChannelMessages.SpokenReplyMessage(
+                            SpeechChannelMessages.TYPE_AUDIO,
+                            Base64.getEncoder().encodeToString(reply.audio().bytes()),
+                            reply.audio().mimeType(),
+                            reply.transcript());
+            case SpeechTurnService.TextFallback fallback ->
+                    new SpeechChannelMessages.TextReplyMessage(
+                            SpeechChannelMessages.TYPE_TEXT,
+                            fallback.text(),
+                            true,
+                            fallback.reason().wireValue());
+        };
+    }
+
+    private void sendError(Session session, String message) {
+        send(session, new SpeechChannelMessages.ErrorMessage(
+                SpeechChannelMessages.TYPE_ERROR, INVALID_MESSAGE_CODE, message));
+    }
+
+    private void send(Session session, SpeechChannelMessages.OutgoingMessage message) {
         try {
             session.getBasicRemote().sendText(objectMapper.writeValueAsString(message));
         } catch (IOException | RuntimeException clientGone) {

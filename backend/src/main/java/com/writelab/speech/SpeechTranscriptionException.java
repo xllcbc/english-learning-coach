@@ -1,30 +1,32 @@
 package com.writelab.speech;
 
 /**
- * A transcription failure that is safe to degrade from. {@link Reason#TIMEOUT} is kept distinct
- * from {@link Reason#FAILED} so the channel can explain what happened without inspecting provider
- * exception types.
+ * A transcription failure that is safe to degrade from. {@link SpeechFailureReason#TIMEOUT} is kept
+ * distinct from {@link SpeechFailureReason#FAILED} so the channel can explain what happened without
+ * inspecting provider exception types.
  */
-public class SpeechTranscriptionException extends Exception {
+public class SpeechTranscriptionException extends RuntimeException {
 
-    public enum Reason {
-        FAILED,
-        TIMEOUT
-    }
+    private final SpeechFailureReason reason;
 
-    private final Reason reason;
-
-    public SpeechTranscriptionException(Reason reason, String message) {
+    public SpeechTranscriptionException(SpeechFailureReason reason, String message) {
         super(message);
-        this.reason = reason;
+        this.reason = requireTranscriptionReason(reason);
     }
 
-    public SpeechTranscriptionException(Reason reason, String message, Throwable cause) {
+    public SpeechTranscriptionException(SpeechFailureReason reason, String message, Throwable cause) {
         super(message, cause);
-        this.reason = reason;
+        this.reason = requireTranscriptionReason(reason);
     }
 
-    public Reason reason() {
+    public SpeechFailureReason reason() {
+        return reason;
+    }
+
+    private static SpeechFailureReason requireTranscriptionReason(SpeechFailureReason reason) {
+        if (reason != SpeechFailureReason.FAILED && reason != SpeechFailureReason.TIMEOUT) {
+            throw new IllegalArgumentException("Not a transcription failure: " + reason);
+        }
         return reason;
     }
 }

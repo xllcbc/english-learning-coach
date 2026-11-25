@@ -2,10 +2,10 @@ package com.writelab.config;
 
 import com.writelab.ai.OpenAiChatClientFactory;
 import com.writelab.ai.OpenAiEmbeddingModelFactory;
+import com.writelab.ai.OpenAiSpeechModelFactory;
 import com.writelab.ai.RealExplanationModel;
 import com.writelab.ai.SpringAiEmbeddingClient;
 import com.writelab.ai.SpringAiFeedbackClient;
-import com.writelab.ai.SpringAiSpeechModel;
 import com.writelab.dictionary.DictionaryService;
 import com.writelab.document.DocumentChunkEmbedder;
 import com.writelab.document.EmbeddingDocumentChunkEmbedder;
@@ -50,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
  * SpEL expression, so the secret never appears in condition-evaluation output.
  */
 @Configuration
-@EnableConfigurationProperties({ModelProperties.class, RetrievalProperties.class})
+@EnableConfigurationProperties({ModelProperties.class, RetrievalProperties.class, SpeechProperties.class})
 public class ModelConfiguration {
 
     @Bean
@@ -67,14 +67,14 @@ public class ModelConfiguration {
 
     @Bean
     @Conditional(MockModelCondition.class)
-    SpeechModel mockSpeechModel() {
+    MockSpeechModel mockSpeechModel() {
         return new MockSpeechModel();
     }
 
     @Bean
     @Conditional(RealModelCondition.class)
-    SpeechModel springAiSpeechModel(ModelProperties properties) {
-        return SpringAiSpeechModel.create(properties);
+    SpeechModel springAiSpeechModel(ModelProperties properties, SpeechProperties speechProperties) {
+        return OpenAiSpeechModelFactory.create(properties, speechProperties);
     }
 
     @Bean

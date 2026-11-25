@@ -11,8 +11,8 @@ import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Registers the voice endpoint at the WebSocket container level. The endpoint is deliberately not
- * a Spring MVC controller: the voice channel is transport-adapted from the turn service, and text
+ * Registers the speech endpoint at the WebSocket container level. The endpoint is deliberately not
+ * a Spring MVC controller: the speech channel is transport-adapted from the turn service, and text
  * fallbacks share the same connection (ADR-0009, ADR-0011).
  *
  * <p>Registration happens in a {@link ServletContextListener} rather than directly in the
