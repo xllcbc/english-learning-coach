@@ -5,6 +5,7 @@ import com.writelab.ai.OpenAiEmbeddingModelFactory;
 import com.writelab.ai.RealExplanationModel;
 import com.writelab.ai.SpringAiEmbeddingClient;
 import com.writelab.ai.SpringAiFeedbackClient;
+import com.writelab.ai.SpringAiSpeechModel;
 import com.writelab.dictionary.DictionaryService;
 import com.writelab.document.DocumentChunkEmbedder;
 import com.writelab.document.EmbeddingDocumentChunkEmbedder;
@@ -24,6 +25,8 @@ import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.retrieval.VectorUserDocumentRetriever;
+import com.writelab.speech.MockSpeechModel;
+import com.writelab.speech.SpeechModel;
 import com.writelab.tools.LookupWordTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -60,6 +63,18 @@ public class ModelConfiguration {
     @Conditional(MockModelCondition.class)
     MockExplanationModel mockExplanationModel() {
         return new MockExplanationModel();
+    }
+
+    @Bean
+    @Conditional(MockModelCondition.class)
+    SpeechModel mockSpeechModel() {
+        return new MockSpeechModel();
+    }
+
+    @Bean
+    @Conditional(RealModelCondition.class)
+    SpeechModel springAiSpeechModel(ModelProperties properties) {
+        return SpringAiSpeechModel.create(properties);
     }
 
     @Bean

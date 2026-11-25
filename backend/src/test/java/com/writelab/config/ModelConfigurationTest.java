@@ -1,6 +1,7 @@
 package com.writelab.config;
 
 import com.writelab.ai.RealExplanationModel;
+import com.writelab.ai.SpringAiSpeechModel;
 import com.writelab.dictionary.DictionaryService;
 import com.writelab.explanation.ExplanationModel;
 import com.writelab.explanation.MockExplanationModel;
@@ -17,6 +18,8 @@ import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
 import com.writelab.retrieval.VectorLearningMaterialRetriever;
 import com.writelab.retrieval.VectorUserDocumentRetriever;
+import com.writelab.speech.MockSpeechModel;
+import com.writelab.speech.SpeechModel;
 import com.writelab.tools.LookupWordTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -68,6 +71,7 @@ class ModelConfigurationTest {
                     assertThat(context).hasSingleBean(FeedbackModel.class);
                     assertThat(context.getBean(FeedbackModel.class)).isInstanceOf(MockFeedbackModel.class);
                     assertThat(context.getBean(ExplanationModel.class)).isInstanceOf(MockExplanationModel.class);
+                    assertThat(context.getBean(SpeechModel.class)).isInstanceOf(MockSpeechModel.class);
                     assertThat(context).doesNotHaveBean(ChatClient.class);
                 });
     }
@@ -77,6 +81,7 @@ class ModelConfigurationTest {
         runner.run(context -> {
             assertThat(context.getBean(FeedbackModel.class)).isInstanceOf(MockFeedbackModel.class);
             assertThat(context.getBean(ExplanationModel.class)).isInstanceOf(MockExplanationModel.class);
+            assertThat(context.getBean(SpeechModel.class)).isInstanceOf(MockSpeechModel.class);
         });
     }
 
@@ -90,6 +95,7 @@ class ModelConfigurationTest {
                     assertThat(context).hasSingleBean(FeedbackModel.class);
                     assertThat(context.getBean(FeedbackModel.class)).isInstanceOf(RealFeedbackModel.class);
                     assertThat(context.getBean(ExplanationModel.class)).isInstanceOf(RealExplanationModel.class);
+                    assertThat(context.getBean(SpeechModel.class)).isInstanceOf(SpringAiSpeechModel.class);
                     assertThat(context).hasSingleBean(ChatClient.class);
                 });
     }
