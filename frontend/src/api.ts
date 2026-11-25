@@ -3,6 +3,7 @@ import type {
   DictionaryEntry,
   DocumentCitation,
   GroundingCitation,
+  LearningReview,
   PracticeResponse,
   PracticeSummary,
   SavedVocabularyEntry,
@@ -116,6 +117,10 @@ export function listPractices(): Promise<PracticeSummary[]> {
 
 export function getPractice(id: string): Promise<PracticeResponse> {
   return request<PracticeResponse>(`/api/practices/${encodeURIComponent(id)}`);
+}
+
+export function getLearningReview(): Promise<LearningReview> {
+  return request<LearningReview>('/api/learning-review');
 }
 
 export function listUserDocuments(): Promise<UserDocumentSummary[]> {

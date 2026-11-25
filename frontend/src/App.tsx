@@ -16,6 +16,7 @@ import { ExplanationView } from './components/ExplanationView';
 import { FeedbackView } from './components/FeedbackView';
 import { HistoryPanel } from './components/HistoryPanel';
 import type { HistoryStatus } from './components/HistoryPanel';
+import { LearningReviewPanel } from './components/LearningReviewPanel';
 import { SavedVocabularyPanel } from './components/SavedVocabularyPanel';
 import type { SavedVocabularyDeleteError } from './components/SavedVocabularyPanel';
 import { SpeakingPracticePanel } from './components/SpeakingPracticePanel';
@@ -486,6 +487,7 @@ export default function App() {
       </main>
 
       <div className="library-grid">
+        <LearningReviewPanel />
         <SavedVocabularyPanel
           entries={savedVocabulary}
           status={savedStatus}
