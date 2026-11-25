@@ -67,21 +67,24 @@ class VectorUserDocumentRetrieverTest {
     @Test
     void capsTheOverallBudgetAtFourAndEachDocumentAtTwo() {
         UUID first = insertDocument("first.md", "READY", true, 1, MODEL);
-        for (int position = 0; position < 3; position++) {
-            insertChunk(first, 1, position, "Grammar", "First note " + position + ".", axis(0, 1.0f));
-        }
+        // Distinct similarities keep this test independent of the random document UUIDs: first is
+        // clearly the strongest document and fourth is clearly the one the overall budget drops.
+        insertChunk(first, 1, 0, "Grammar", "First note 0.", unit(1.0, 0.0));
+        insertChunk(first, 1, 1, "Grammar", "First note 1.", unit(0.99, 0.1411));
+        insertChunk(first, 1, 2, "Grammar", "First note 2.", unit(0.98, 0.1990));
         UUID second = insertDocument("second.md", "READY", true, 1, MODEL);
-        insertChunk(second, 1, 0, "Grammar", "Second note.", axis(0, 1.0f));
+        insertChunk(second, 1, 0, "Grammar", "Second note.", unit(0.9, 0.4359));
         UUID third = insertDocument("third.md", "READY", true, 1, MODEL);
-        insertChunk(third, 1, 0, "Grammar", "Third note.", axis(0, 1.0f));
+        insertChunk(third, 1, 0, "Grammar", "Third note.", unit(0.8, 0.6));
         UUID fourth = insertDocument("fourth.md", "READY", true, 1, MODEL);
-        insertChunk(fourth, 1, 0, "Grammar", "Fourth note.", axis(0, 1.0f));
+        insertChunk(fourth, 1, 0, "Grammar", "Fourth note.", unit(0.7, 0.7141));
 
         List<RankedDocumentChunk> chunks = retriever(new FakeEmbeddingClient(Map.of())).retrieve(
                 "query", vector(0, 1.0f));
 
         assertThat(chunks).hasSize(4);
         assertThat(chunks).filteredOn(chunk -> chunk.documentId().equals(first)).hasSize(2);
+        assertThat(chunks).filteredOn(chunk -> chunk.documentId().equals(fourth)).isEmpty();
     }
 
     @Test
