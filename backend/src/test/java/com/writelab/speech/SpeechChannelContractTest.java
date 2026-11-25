@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -173,6 +174,7 @@ class SpeechChannelContractTest {
         assertThat(fallback.reason()).isEqualTo("timeout");
         assertThat(fallback.text()).contains("文字输入");
         assertThat(fallback.transcript()).isEmpty();
+        assertThat(fallback.latencyMs()).isNull();
 
         UUID sessionId = UUID.fromString(fallback.sessionId());
         SpeakingTurn fallbackTurn = replay(sessionId).turns().getFirst();
@@ -180,6 +182,9 @@ class SpeechChannelContractTest {
         assertThat(fallbackTurn.stopReason()).isNull();
         assertThat(fallbackTurn.reply()).isEmpty();
         assertThat(fallbackTurn.steps()).isEmpty();
+        assertThat(fallbackTurn.latencyMs()).isNull();
+        // A turn with no playable reply is not part of the time-to-playback sample.
+        assertThat(latencyStats().turnCount()).isZero();
 
         tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
         sendText("I will type this instead.", fallback.sessionId());
@@ -190,6 +195,9 @@ class SpeechChannelContractTest {
         assertThat(reply.sessionId()).isEqualTo(fallback.sessionId());
         assertThat(reply.transcript()).isEqualTo("I will type this instead.");
         assertThat(reply.reply()).isEqualTo(AGENT_REPLY);
+        // Typed input has no "finished speaking", so it is not part of the voice latency sample.
+        assertThat(reply.latencyMs()).isNull();
+        assertThat(latencyStats().turnCount()).isZero();
 
         SpeakingSessionResponse replayed = replay(sessionId);
         assertThat(replayed.turns()).hasSize(2);
@@ -211,10 +219,89 @@ class SpeechChannelContractTest {
         assertThat(fallback.fallback()).isTrue();
         assertThat(fallback.reason()).isEqualTo("synthesis_failed");
         assertThat(fallback.text()).isEqualTo(AGENT_REPLY);
+        assertThat(fallback.latencyMs()).isNull();
 
         SpeakingTurn turn = replay(UUID.fromString(fallback.sessionId())).turns().getFirst();
         assertThat(turn.reply()).isEqualTo(AGENT_REPLY);
         assertThat(turn.fallbackReason()).isEqualTo(SpeechFailureReason.SYNTHESIS_FAILED);
+        assertThat(turn.latencyMs()).isNull();
+        assertThat(latencyStats().turnCount()).isZero();
+    }
+
+    @Test
+    void recordsTheTimeToPlaybackAndExposesItsP95AgainstTheBudget() throws Exception {
+        tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
+
+        sendAudio(null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
+
+        SpeakingTurn turn = replay(UUID.fromString(reply.sessionId())).turns().getFirst();
+        assertThat(turn.latencyMs()).isNotNull().isGreaterThanOrEqualTo(0);
+
+        SpeakingLatencyStats stats = latencyStats();
+        assertThat(stats.turnCount()).isEqualTo(1);
+        assertThat(stats.p95Ms()).isGreaterThanOrEqualTo(0);
+        assertThat(stats.budgetMs()).isEqualTo(2500);
+        assertThat(stats.withinBudget()).isTrue();
+    }
+
+    @Test
+    void flagsAnOverBudgetP95WhenAPlayableReplyIsTooSlow() throws Exception {
+        speechModel.delaySynthesis(3000);
+        tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
+
+        sendAudio(null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.latencyMs()).isGreaterThan(SpeakingLatencyStats.BUDGET_MS);
+
+        SpeakingLatencyStats stats = latencyStats();
+        assertThat(stats.turnCount()).isEqualTo(1);
+        assertThat(stats.p95Ms()).isGreaterThan(SpeakingLatencyStats.BUDGET_MS);
+        assertThat(stats.withinBudget()).isFalse();
+    }
+
+    @Test
+    void bargeInCancelsTheReplyInFlightAndTheNextTurnStillAnswers() throws Exception {
+        CountDownLatch modelStarted = new CountDownLatch(1);
+        CountDownLatch releaseModel = new CountDownLatch(1);
+        tutorModel.script(context -> {
+            modelStarted.countDown();
+            try {
+                assertThat(releaseModel.await(5, TimeUnit.SECONDS)).isTrue();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(interrupted);
+            }
+            return TutorModelDecision.answer("This reply must never reach the learner.");
+        });
+
+        sendAudio(null);
+        assertThat(modelStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+        sendBargeIn();
+        SpeechChannelMessages.InterruptedMessage interrupted = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.InterruptedMessage.class);
+        assertThat(interrupted.type()).isEqualTo(SpeechChannelMessages.TYPE_INTERRUPTED);
+        assertThat(interrupted.reason()).isEqualTo(SpeechChannelMessages.BARGE_IN_REASON);
+
+        releaseModel.countDown();
+        assertThat(listener.poll(500, TimeUnit.MILLISECONDS))
+                .as("an interrupted turn must not deliver its reply")
+                .isNull();
+        assertThat(latencyStats().turnCount()).isZero();
+
+        tutorModel.script(context -> TutorModelDecision.answer("Now the learner has the floor."));
+        sendText("I want to steer the conversation.", null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        assertThat(reply.type()).isEqualTo(SpeechChannelMessages.TYPE_AUDIO);
+        assertThat(reply.reply()).isEqualTo("Now the learner has the floor.");
     }
 
     @Test
@@ -258,16 +345,30 @@ class SpeechChannelContractTest {
         webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
     }
 
+    private void sendBargeIn() throws Exception {
+        String payload = objectMapper.writeValueAsString(new SpeechChannelMessages.SpeechInput(
+                SpeechChannelMessages.TYPE_BARGE_IN, null, null, null, null));
+        webSocket.sendText(payload, true).get(5, TimeUnit.SECONDS);
+    }
+
     private SpeakingSessionResponse replay(UUID sessionId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(
-                        URI.create("http://localhost:" + port
-                                + "/api/speaking/sessions/" + sessionId))
-                .GET()
-                .build();
-        HttpResponse<String> response = httpClient.send(
-                request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = get("/api/speaking/sessions/" + sessionId);
         assertThat(response.statusCode()).isEqualTo(200);
         return objectMapper.readValue(response.body(), SpeakingSessionResponse.class);
+    }
+
+    private SpeakingLatencyStats latencyStats() throws Exception {
+        HttpResponse<String> response = get("/api/speaking/latency");
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), SpeakingLatencyStats.class);
+    }
+
+    private HttpResponse<String> get(String path) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + port + path))
+                .GET()
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     @SpringBootApplication(exclude = {
@@ -328,6 +429,7 @@ class SpeechChannelContractTest {
         private final MockSpeechModel delegate = new MockSpeechModel();
         private SpeechTranscriptionException transcriptionFailure;
         private boolean synthesisFails;
+        private long synthesisDelayMillis;
 
         @Override
         public String transcribe(AudioClip audio) {
@@ -339,6 +441,14 @@ class SpeechChannelContractTest {
 
         @Override
         public AudioClip synthesize(String text) {
+            if (synthesisDelayMillis > 0) {
+                try {
+                    Thread.sleep(synthesisDelayMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new SpeechSynthesisException("interrupted during scripted delay");
+                }
+            }
             if (synthesisFails) {
                 throw new SpeechSynthesisException("scripted synthesis failure");
             }
@@ -353,9 +463,14 @@ class SpeechChannelContractTest {
             synthesisFails = true;
         }
 
+        void delaySynthesis(long millis) {
+            synthesisDelayMillis = millis;
+        }
+
         void reset() {
             transcriptionFailure = null;
             synthesisFails = false;
+            synthesisDelayMillis = 0;
         }
     }
 
@@ -439,6 +554,15 @@ class SpeechChannelContractTest {
         }
 
         @Override
+        public List<Integer> readLatencies() {
+            return turns.values().stream()
+                    .flatMap(List::stream)
+                    .map(SpeakingTurn::latencyMs)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+        }
+
+        @Override
         public SpeakingTurn saveTurn(SpeakingTurnDraft draft) {
             SpeakingSession session = requireSession(draft.sessionId());
             List<SpeakingTurn> existing = turns.get(draft.sessionId());
@@ -450,6 +574,7 @@ class SpeechChannelContractTest {
                     draft.transcript(),
                     draft.reply(),
                     draft.fallbackReason(),
+                    draft.latencyMs(),
                     draft.stopReason(),
                     draft.modelMode(),
                     Instant.now(),
@@ -487,6 +612,10 @@ class SpeechChannelContractTest {
             String message = messages.poll(5, TimeUnit.SECONDS);
             assertThat(message).as("WebSocket reply").isNotNull();
             return message;
+        }
+
+        private String poll(long timeout, TimeUnit unit) throws InterruptedException {
+            return messages.poll(timeout, unit);
         }
     }
 }

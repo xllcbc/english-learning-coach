@@ -1,5 +1,6 @@
 package com.writelab.speech;
 
+import jakarta.websocket.CloseReason;
 import jakarta.websocket.Endpoint;
 import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
@@ -11,6 +12,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /**
  * WebSocket adapter for Speaking Practice's speech channel. It owns transport concerns only:
@@ -25,7 +30,7 @@ public class SpeechEndpoint extends Endpoint {
     static final String SESSION_NOT_FOUND_CODE = "SPEAKING_SESSION_NOT_FOUND";
     static final String TURN_FAILED_CODE = "SPEAKING_TURN_FAILED";
     static final String INVALID_JSON_TEXT = "消息不是有效的 JSON。";
-    static final String UNSUPPORTED_TYPE_TEXT = "只支持 audio 或 text 消息。";
+    static final String UNSUPPORTED_TYPE_TEXT = "只支持 audio、text 或 barge_in 消息。";
     static final String INVALID_AUDIO_TEXT = "audio 必须是 Base64。";
     static final String EMPTY_TEXT_TEXT = "text 不能为空。";
     static final String INVALID_SESSION_TEXT = "sessionId 必须是有效的 UUID。";
@@ -34,6 +39,13 @@ public class SpeechEndpoint extends Endpoint {
 
     private final SpeakingPracticeService speakingPracticeService;
     private final ObjectMapper objectMapper;
+    private final Object sendLock = new Object();
+    private final AtomicLong turnGeneration = new AtomicLong();
+    private final ExecutorService turnExecutor = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "speech-turn");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public SpeechEndpoint(
             SpeakingPracticeService speakingPracticeService,
@@ -62,6 +74,11 @@ public class SpeechEndpoint extends Endpoint {
         session.addMessageHandler(String.class, message -> handle(session, message));
     }
 
+    @Override
+    public void onClose(Session session, CloseReason closeReason) {
+        turnExecutor.shutdownNow();
+    }
+
     private void handle(Session session, String payload) {
         SpeechChannelMessages.SpeechInput input;
         try {
@@ -83,7 +100,23 @@ public class SpeechEndpoint extends Endpoint {
             handleText(session, input);
             return;
         }
+        if (SpeechChannelMessages.TYPE_BARGE_IN.equals(input.type())) {
+            handleBargeIn(session);
+            return;
+        }
         sendError(session, INVALID_MESSAGE_CODE, UNSUPPORTED_TYPE_TEXT);
+    }
+
+    /**
+     * Barge-in is a channel concern (ADR-0009, ADR-0011): the learner started speaking, so any
+     * reply this connection is still producing is abandoned instead of being played over the
+     * learner's new utterance. Acknowledgements make the cancellation observable to the client.
+     */
+    private void handleBargeIn(Session session) {
+        turnGeneration.incrementAndGet();
+        send(session, new SpeechChannelMessages.InterruptedMessage(
+                SpeechChannelMessages.TYPE_INTERRUPTED,
+                SpeechChannelMessages.BARGE_IN_REASON));
     }
 
     private void handleAudio(Session session, SpeechChannelMessages.SpeechInput input) {
@@ -102,8 +135,8 @@ public class SpeechEndpoint extends Endpoint {
             sendError(session, INVALID_MESSAGE_CODE, INVALID_AUDIO_TEXT);
             return;
         }
-        respond(session, () -> speakingPracticeService.respond(
-                new AudioClip(audioBytes, input.mimeType()), sessionId));
+        respond(session, cancelled -> speakingPracticeService.respond(
+                new AudioClip(audioBytes, input.mimeType()), sessionId, cancelled));
     }
 
     private void handleText(Session session, SpeechChannelMessages.SpeechInput input) {
@@ -118,22 +151,59 @@ public class SpeechEndpoint extends Endpoint {
             sendError(session, INVALID_MESSAGE_CODE, INVALID_SESSION_TEXT);
             return;
         }
-        respond(session, () -> speakingPracticeService.respondToText(input.text(), sessionId));
+        respond(session, cancelled -> speakingPracticeService.respondToText(
+                input.text(), sessionId, cancelled));
     }
 
+    /**
+     * Turns run off the container's message thread so a barge-in can be received while a reply is
+     * still being generated. Each new input (or barge-in) supersedes the previous generation; a
+     * superseded turn may persist its audit record but must never deliver its stale reply.
+     */
     private void respond(Session session, TurnSupplier turnSupplier) {
-        SpeakingPracticeService.SpeakingTurnResult result;
-        try {
-            result = turnSupplier.get();
-        } catch (SpeakingSessionNotFoundException missing) {
-            sendError(session, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND_TEXT);
-            return;
-        } catch (RuntimeException failure) {
-            log.warn("口语回合生成失败: {}", failure.getMessage());
-            sendError(session, TURN_FAILED_CODE, TURN_FAILED_TEXT);
-            return;
+        long generation = turnGeneration.incrementAndGet();
+        BooleanSupplier cancelled = () -> !isCurrent(generation);
+        turnExecutor.execute(() -> {
+            SpeakingPracticeService.SpeakingTurnResult result;
+            try {
+                result = turnSupplier.get(cancelled);
+            } catch (SpeakingTurnCancelledException interrupted) {
+                // The learner took the floor; nothing was synthesized or persisted.
+                return;
+            } catch (SpeakingSessionNotFoundException missing) {
+                sendErrorIfCurrent(
+                        session, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND_TEXT, generation);
+                return;
+            } catch (RuntimeException failure) {
+                log.warn("口语回合生成失败: {}", failure.getMessage());
+                sendErrorIfCurrent(session, TURN_FAILED_CODE, TURN_FAILED_TEXT, generation);
+                return;
+            }
+            // Check and send under the send lock so a barge-in acknowledgement can never be
+            // overtaken by the reply it was meant to cancel.
+            synchronized (sendLock) {
+                if (isCurrent(generation)) {
+                    send(session, toMessage(result));
+                }
+            }
+        });
+    }
+
+    private boolean isCurrent(long generation) {
+        return turnGeneration.get() == generation;
+    }
+
+    private void sendErrorIfCurrent(
+            Session session,
+            String code,
+            String message,
+            long generation
+    ) {
+        synchronized (sendLock) {
+            if (isCurrent(generation)) {
+                sendError(session, code, message);
+            }
         }
-        send(session, toMessage(result));
     }
 
     private SpeechChannelMessages.OutgoingMessage toMessage(
@@ -149,7 +219,8 @@ public class SpeechEndpoint extends Endpoint {
                             reply.turn().transcript(),
                             reply.turn().reply(),
                             reply.turn().inputMode().name(),
-                            reply.turn().mockMode());
+                            reply.turn().mockMode(),
+                            reply.turn().latencyMs());
             case SpeakingPracticeService.TextReply fallback ->
                     new SpeechChannelMessages.TextReplyMessage(
                             SpeechChannelMessages.TYPE_TEXT,
@@ -159,7 +230,8 @@ public class SpeechEndpoint extends Endpoint {
                             fallback.reason().wireValue(),
                             fallback.turn().transcript(),
                             fallback.turn().inputMode().name(),
-                            fallback.turn().mockMode());
+                            fallback.turn().mockMode(),
+                            fallback.turn().latencyMs());
         };
     }
 
@@ -177,7 +249,10 @@ public class SpeechEndpoint extends Endpoint {
 
     private void send(Session session, SpeechChannelMessages.OutgoingMessage message) {
         try {
-            session.getBasicRemote().sendText(objectMapper.writeValueAsString(message));
+            String payload = objectMapper.writeValueAsString(message);
+            synchronized (sendLock) {
+                session.getBasicRemote().sendText(payload);
+            }
         } catch (IOException | RuntimeException clientGone) {
             // The learner closed the channel mid-turn; there is no useful recovery here.
         }
@@ -185,7 +260,7 @@ public class SpeechEndpoint extends Endpoint {
 
     @FunctionalInterface
     private interface TurnSupplier {
-        SpeakingPracticeService.SpeakingTurnResult get();
+        SpeakingPracticeService.SpeakingTurnResult get(BooleanSupplier cancelled);
     }
 
     private static final class Configurator extends ServerEndpointConfig.Configurator {

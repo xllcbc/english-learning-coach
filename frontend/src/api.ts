@@ -12,6 +12,8 @@ import type {
   SpeakingAudioReply,
   SpeakingChannelError,
   SpeakingInputMode,
+  SpeakingInterrupted,
+  SpeakingLatencyStats,
   SpeakingServerMessage,
   SpeakingSession,
   SpeakingSessionSummary,
@@ -407,10 +409,16 @@ export function getSpeakingSession(id: string): Promise<SpeakingSession> {
   return request<SpeakingSession>(`/api/speaking/sessions/${encodeURIComponent(id)}`);
 }
 
+/** Observed "finished speaking to playback" latency over every persisted speaking turn. */
+export function getSpeakingLatency(): Promise<SpeakingLatencyStats> {
+  return request<SpeakingLatencyStats>('/api/speaking/latency');
+}
+
 export interface SpeakingChannelHandlers {
   onOpen?: () => void;
   onAudio?: (reply: SpeakingAudioReply) => void;
   onText?: (reply: SpeakingTextReply) => void;
+  onInterrupted?: (interrupted: SpeakingInterrupted) => void;
   onError?: (error: SpeakingChannelError) => void;
   onClose?: () => void;
 }
@@ -418,6 +426,8 @@ export interface SpeakingChannelHandlers {
 export interface SpeakingChannelConnection {
   sendAudio(base64Audio: string, mimeType: string, sessionId: string | null): void;
   sendText(text: string, sessionId: string | null): void;
+  /** Announces that the learner started speaking so the channel can cancel a reply in flight. */
+  bargeIn(): void;
   close(): void;
 }
 
@@ -450,6 +460,8 @@ export function openSpeakingChannel(
       handlers.onAudio?.(payload as SpeakingAudioReply);
     } else if (payload.type === 'text') {
       handlers.onText?.(payload as SpeakingTextReply);
+    } else if (payload.type === 'interrupted') {
+      handlers.onInterrupted?.(payload as SpeakingInterrupted);
     } else if (payload.type === 'error') {
       const error = payload as SpeakingChannelError;
       handlers.onError?.({ code: error.code, message: error.message });
@@ -471,6 +483,9 @@ export function openSpeakingChannel(
         text,
         sessionId: sessionId ?? undefined,
       }));
+    },
+    bargeIn() {
+      socket.send(JSON.stringify({ type: 'barge_in' }));
     },
     close() {
       socket.close();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import {
+  getSpeakingLatency,
   getSpeakingSession,
   listSpeakingSessions,
   openSpeakingChannel,
@@ -14,6 +15,7 @@ import type {
   SpeakingAudioReply,
   SpeakingFallbackReason,
   SpeakingInputMode,
+  SpeakingLatencyStats,
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
@@ -33,6 +35,12 @@ interface DisplayTurn {
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 type ChannelStatus = 'connecting' | 'ready' | 'closed' | 'error';
+
+/**
+ * ADR-0011 latency budget: if a reply has not started playing after this long, the panel must say
+ * it is thinking instead of leaving the learner in silence.
+ */
+export const SPEAKING_THINKING_BUDGET_MS = 2500;
 
 const fallbackLabels: Record<SpeakingFallbackReason, string> = {
   failed: '语音识别失败，已退回文字输入。',
@@ -58,6 +66,10 @@ function replayTurns(session: SpeakingSession): DisplayTurn[] {
     turn.reply,
     turn.fallbackReason,
   ));
+}
+
+function formatSeconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(1)} 秒`;
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -86,8 +98,10 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const [turns, setTurns] = useState<DisplayTurn[]>([]);
   const [fallbackReason, setFallbackReason] = useState<SpeakingFallbackReason | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [latencyStats, setLatencyStats] = useState<SpeakingLatencyStats | null>(null);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [thinkingOverBudget, setThinkingOverBudget] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [channelStatus, setChannelStatus] = useState<ChannelStatus>('connecting');
   const [isRecording, setIsRecording] = useState(false);
@@ -99,10 +113,19 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const localTurnSequence = useRef(0);
+  const suppressPlaybackRef = useRef(false);
 
   const rememberSession = useCallback((id: string | null) => {
     sessionIdRef.current = id;
     setSessionId(id);
+  }, []);
+
+  const refreshLatency = useCallback(async () => {
+    try {
+      setLatencyStats(await getSpeakingLatency());
+    } catch {
+      // The latency badge is observational; a failed lookup must not block speaking.
+    }
   }, []);
 
   const appendTurn = useCallback((
@@ -157,6 +180,19 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   }, [loadSession]);
 
   useEffect(() => {
+    void refreshLatency();
+  }, [refreshLatency]);
+
+  useEffect(() => {
+    if (!thinking) {
+      setThinkingOverBudget(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setThinkingOverBudget(true), SPEAKING_THINKING_BUDGET_MS);
+    return () => clearTimeout(timer);
+  }, [thinking]);
+
+  useEffect(() => {
     const handlers: SpeakingChannelHandlers = {
       onOpen: () => setChannelStatus('ready'),
       onAudio: (reply: SpeakingAudioReply) => {
@@ -167,7 +203,10 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setError(null);
         setThinking(false);
         appendTurn(reply.inputMode, reply.transcript, reply.reply, null);
-        playSpeakingAudio(reply.audio, reply.mimeType);
+        if (!suppressPlaybackRef.current) {
+          playSpeakingAudio(reply.audio, reply.mimeType);
+        }
+        void refreshLatency();
       },
       onText: (reply: SpeakingTextReply) => {
         rememberSession(reply.sessionId);
@@ -183,6 +222,13 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           transcriptionFallback ? '' : reply.text,
           reply.reason,
         );
+        void refreshLatency();
+      },
+      onInterrupted: () => {
+        // The server abandoned the reply in flight. Local playback was already stopped and
+        // suppressed when the learner started speaking. This acknowledgement must not clear
+        // `thinking` (it may already belong to a newer turn) nor re-enable playback (a reply that
+        // was in transit may still arrive); sending the new turn re-enables playback.
       },
       onError: (channelError) => {
         setError(channelError.message);
@@ -203,7 +249,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       streamRef.current?.getTracks().forEach((track) => track.stop());
       stopSpeakingAudio();
     };
-  }, [appendTurn, rememberSession]);
+  }, [appendTurn, rememberSession, refreshLatency]);
 
   const connectionReady = channelStatus === 'ready';
   const canRecord = typeof navigator !== 'undefined'
@@ -224,10 +270,15 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       return;
     }
 
-    stopSpeakingAudio();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      // Barge-in: the microphone is open and the learner is about to speak, so stop the tutor's
+      // playback and tell the channel to abandon a reply it is still producing (ADR-0011).
+      stopSpeakingAudio();
+      suppressPlaybackRef.current = true;
+      connectionRef.current?.bargeIn();
+      setThinking(false);
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       chunksRef.current = [];
@@ -252,6 +303,8 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           setFallbackReason(null);
           setFallbackNotice(null);
           setError(null);
+          // A new utterance is on its way, so its reply may play normally.
+          suppressPlaybackRef.current = false;
           connectionRef.current?.sendAudio(base64, mimeType, sessionIdRef.current);
         }).catch(() => {
           setMicError('无法读取录音数据，请使用文字输入。');
@@ -278,6 +331,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
     }
 
     stopSpeakingAudio();
+    suppressPlaybackRef.current = false;
     connectionRef.current.sendText(message, sessionIdRef.current);
     setDraft('');
     setThinking(true);
@@ -288,6 +342,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
 
   function startNewPractice() {
     stopSpeakingAudio();
+    suppressPlaybackRef.current = false;
     rememberSession(null);
     setTurns([]);
     setFallbackReason(null);
@@ -317,6 +372,16 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       <p className="speaking-anchor">
         说一句英语，系统会转写、回答并朗读。语音失败或超时时自动退回文字输入，本次 Speaking Session 会保存下来供回放。
       </p>
+
+      {latencyStats && latencyStats.turnCount > 0 && (
+        <p
+          className={`speaking-latency ${latencyStats.withinBudget ? '' : 'is-over-budget'}`}
+          role="status"
+        >
+          说完到开始播放（服务端）p95 {formatSeconds(latencyStats.p95Ms)}（目标{' '}
+          {formatSeconds(latencyStats.budgetMs)}）{latencyStats.withinBudget ? '' : '，超出预算'}
+        </p>
+      )}
 
       {sessions.length > 0 && (
         <div className="speaking-history" aria-label="历史 Speaking Session">
@@ -371,9 +436,12 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
             </li>
           ))}
           {thinking && (
-            <li className="speaking-turn speaking-thinking" aria-live="polite">
+            <li
+              className={`speaking-turn speaking-thinking ${thinkingOverBudget ? 'is-over-budget' : ''}`}
+              aria-live="polite"
+            >
               <span className="spinner" aria-hidden="true" />
-              <span>正在思考…</span>
+              <span>{thinkingOverBudget ? '思考中…' : '正在等待回复…'}</span>
             </li>
           )}
         </ol>
@@ -410,7 +478,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           type="button"
           className={isRecording ? 'retry-button is-recording' : 'retry-button'}
           onClick={() => void toggleRecording()}
-          disabled={thinking || !connectionReady || !canRecord}
+          disabled={!connectionReady || !canRecord}
         >
           {isRecording ? '停止录音并发送' : '开始录音'}
         </button>

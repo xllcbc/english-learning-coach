@@ -15,6 +15,8 @@ import com.writelab.tools.ToolRegistry;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 /**
  * One spoken (or typed) turn of Speaking Practice. The service owns the ordering STT -> bounded
@@ -59,7 +61,13 @@ public class SpeakingPracticeService {
         this.feedbackModel = feedbackModel;
     }
 
-    public SpeakingTurnResult respond(AudioClip audio, UUID sessionId) {
+    public SpeakingTurnResult respond(
+            AudioClip audio,
+            UUID sessionId,
+            BooleanSupplier cancelled
+    ) {
+        long startedAtNanos = System.nanoTime();
+        ensureNotCancelled(cancelled);
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
 
@@ -67,23 +75,33 @@ public class SpeakingPracticeService {
         try {
             transcript = speechModel.transcribe(audio);
         } catch (SpeechTranscriptionException failure) {
+            ensureNotCancelled(cancelled);
             return transcriptionFallback(session, failure.reason(), modelMode);
         }
+        ensureNotCancelled(cancelled);
         if (transcript == null || transcript.isBlank()) {
             return transcriptionFallback(session, SpeechFailureReason.FAILED, modelMode);
         }
-        return respondWithAgent(session, transcript, SpeakingInputMode.VOICE, modelMode);
+        return respondWithAgent(session, transcript, SpeakingInputMode.VOICE, modelMode,
+                startedAtNanos, cancelled);
     }
 
     /**
      * Text input is the degradation path from ADR-0011: it enters the same session and only skips
      * STT, so a failed voice turn never blocks the practice.
      */
-    public SpeakingTurnResult respondToText(String text, UUID sessionId) {
+    public SpeakingTurnResult respondToText(
+            String text,
+            UUID sessionId,
+            BooleanSupplier cancelled
+    ) {
+        long startedAtNanos = System.nanoTime();
+        ensureNotCancelled(cancelled);
         ModelMode modelMode = feedbackModel.mode();
         SpeakingSession session = repository.ensureSession(sessionId, modelMode);
         String learnerText = text == null ? "" : text.strip();
-        return respondWithAgent(session, learnerText, SpeakingInputMode.TEXT, modelMode);
+        return respondWithAgent(session, learnerText, SpeakingInputMode.TEXT, modelMode,
+                startedAtNanos, cancelled);
     }
 
     public SpeakingSessionResponse session(UUID sessionId) {
@@ -108,15 +126,23 @@ public class SpeakingPracticeService {
                 .toList();
     }
 
+    public SpeakingLatencyStats latency() {
+        return SpeakingLatencyStats.of(repository.readLatencies());
+    }
+
     private SpeakingTurnResult respondWithAgent(
             SpeakingSession session,
             String learnerText,
             SpeakingInputMode inputMode,
-            ModelMode modelMode
+            ModelMode modelMode,
+            long startedAtNanos,
+            BooleanSupplier cancelled
     ) {
+        ensureNotCancelled(cancelled);
         AgentTurn turn = tutorAgentCore.run(new AgentTurnRequest(
                 learnerText, ALLOWED_TOOLS, AgentLoopBudget.defaults(), BRIEFING));
         String reply = turn.answer().isBlank() ? EMPTY_ANSWER_TEXT : turn.answer();
+        ensureNotCancelled(cancelled);
 
         AudioClip audio = null;
         SpeechFailureReason fallbackReason = null;
@@ -128,6 +154,15 @@ public class SpeakingPracticeService {
         if (audio == null) {
             fallbackReason = SpeechFailureReason.SYNTHESIS_FAILED;
         }
+        // Do not persist a reply the learner interrupted before it could be heard.
+        ensureNotCancelled(cancelled);
+        // ADR-0011's "finished speaking to playback" budget. The sample covers the server share
+        // only: it starts when the utterance arrives and stops when the spoken reply is ready to
+        // send. Typed turns have no "finished speaking", and a reply with no audio never starts
+        // playing, so neither belongs in the sample.
+        Integer latencyMs = inputMode == SpeakingInputMode.VOICE && audio != null
+                ? elapsedMillis(startedAtNanos)
+                : null;
 
         SpeakingTurn saved = repository.saveTurn(new SpeakingSessionRepository.SpeakingTurnDraft(
                 session.id(),
@@ -135,6 +170,7 @@ public class SpeakingPracticeService {
                 learnerText,
                 reply,
                 fallbackReason,
+                latencyMs,
                 turn.stopReason(),
                 modelMode,
                 turn.steps(),
@@ -162,10 +198,21 @@ public class SpeakingPracticeService {
                 "",
                 reason,
                 null,
+                null,
                 modelMode,
                 List.of(),
                 List.of()));
         return new TextReply(saved, text, reason);
+    }
+
+    private static void ensureNotCancelled(BooleanSupplier cancelled) {
+        if (cancelled != null && cancelled.getAsBoolean()) {
+            throw new SpeakingTurnCancelledException();
+        }
+    }
+
+    private static int elapsedMillis(long startedAtNanos) {
+        return (int) Math.max(0, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
     }
 
     private static String textFor(SpeechFailureReason reason) {
