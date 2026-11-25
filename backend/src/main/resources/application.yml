@@ -37,6 +37,11 @@ writelab:
     # timeout x (1 + max-retries).
     timeout: ${WRITELAB_MODEL_TIMEOUT:120s}
     max-retries: ${WRITELAB_MODEL_MAX_RETRIES:1}
+  speech:
+    # Per STT/TTS provider call. Deliberately much shorter than the chat-model timeout: a spoken
+    # turn has a ~2.5s p95 latency budget and must degrade to text instead of waiting silently
+    # (ADR-0011).
+    timeout: ${WRITELAB_SPEECH_TIMEOUT:10s}
   retrieval:
     # Grounding Material a single Teacher Explanation may cite. min-hits is the deterministic
     # stand-in for the relevance threshold; the vector implementation replaces it with similarity.
