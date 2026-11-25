@@ -2,6 +2,9 @@ package com.writelab.persistence;
 
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.AgentStopReason;
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.speech.SpeakingInputMode;
 import com.writelab.speech.SpeakingSession;
@@ -141,7 +144,8 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                             jdbcClient, objectMapper, AgentStepRows.SPEAKING_AGENT_STEP_TURN, row.id()),
                     AgentStepRows.readToolInvocations(
                             jdbcClient, objectMapper,
-                            AgentStepRows.SPEAKING_TOOL_INVOCATION_TURN, row.id())));
+                            AgentStepRows.SPEAKING_TOOL_INVOCATION_TURN, row.id()),
+                    readIssues(row.id())));
         }
         return List.copyOf(turns);
     }
@@ -162,6 +166,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
         UUID turnId = UUID.randomUUID();
         Instant createdAt = Instant.now();
         int[] committedPosition = new int[1];
+        List<LearningIssue> savedIssues = new ArrayList<>();
 
         transactionTemplate.executeWithoutResult(status -> {
             lockSession(draft.sessionId());
@@ -194,6 +199,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     jdbcClient, objectMapper,
                     AgentStepRows.SPEAKING_AGENT_STEP_TURN, turnId, draft.steps());
             saveToolInvocations(turnId, draft.toolInvocations());
+            savedIssues.addAll(saveIssues(turnId, draft.sessionId(), draft.issues()));
 
             jdbcClient.sql("""
                             UPDATE speaking_session
@@ -218,7 +224,8 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                 draft.modelMode(),
                 createdAt,
                 draft.steps(),
-                draft.toolInvocations());
+                draft.toolInvocations(),
+                List.copyOf(savedIssues));
     }
 
     private void lockSession(UUID sessionId) {
@@ -260,6 +267,56 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     .param("durationMillis", invocation.durationMillis())
                     .update();
         }
+    }
+
+    private List<LearningIssue> readIssues(UUID turnId) {
+        return jdbcClient.sql("""
+                        SELECT original_sentence, suggestion, category, severity, explanation
+                        FROM speaking_session_learning_issue
+                        WHERE turn_id = :turnId
+                        ORDER BY position
+                        """)
+                .param("turnId", turnId)
+                .query((resultSet, rowNum) -> new LearningIssue(
+                        resultSet.getString("original_sentence"),
+                        resultSet.getString("suggestion"),
+                        IssueCategory.valueOf(resultSet.getString("category")),
+                        IssueSeverity.valueOf(resultSet.getString("severity")),
+                        resultSet.getString("explanation")))
+                .list();
+    }
+
+    private List<LearningIssue> saveIssues(
+            UUID turnId,
+            UUID sessionId,
+            List<LearningIssue> issues
+    ) {
+        List<LearningIssue> saved = new ArrayList<>(issues.size());
+        int position = 1;
+        for (LearningIssue issue : issues) {
+            jdbcClient.sql("""
+                            INSERT INTO speaking_session_learning_issue (
+                                id, session_id, turn_id, position, original_sentence, suggestion,
+                                category, severity, explanation
+                            ) VALUES (
+                                :id, :sessionId, :turnId, :position, :originalSentence, :suggestion,
+                                :category, :severity, :explanation
+                            )
+                            """)
+                    .param("id", UUID.randomUUID())
+                    .param("sessionId", sessionId)
+                    .param("turnId", turnId)
+                    .param("position", position)
+                    .param("originalSentence", issue.originalSentence())
+                    .param("suggestion", issue.suggestion())
+                    .param("category", issue.category().name())
+                    .param("severity", issue.severity().name())
+                    .param("explanation", issue.explanation())
+                    .update();
+            saved.add(issue);
+            position++;
+        }
+        return saved;
     }
 
     private static SpeechFailureReason failureReason(String value) {

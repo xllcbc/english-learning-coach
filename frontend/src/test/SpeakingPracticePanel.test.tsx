@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpeakingPracticePanel } from '../components/SpeakingPracticePanel';
 import type { SpeakingChannelHandlers } from '../api';
 import type {
+  LearningIssue,
   SpeakingAudioReply,
   SpeakingLatencyStats,
   SpeakingSession,
@@ -65,8 +66,20 @@ function session(overrides: Partial<SpeakingSession> = {}): SpeakingSession {
         createdAt: '2026-11-25T08:00:00Z',
         steps: [],
         toolInvocations: [],
+        issues: [],
       },
     ],
+    ...overrides,
+  };
+}
+
+function learningIssue(overrides: Partial<LearningIssue> = {}): LearningIssue {
+  return {
+    originalSentence: 'I go to the park yesterday.',
+    suggestion: 'I went to the park yesterday.',
+    category: 'GRAMMAR',
+    severity: 'MINOR',
+    explanation: '句子里有过去时间 yesterday，动词要用过去式。',
     ...overrides,
   };
 }
@@ -166,6 +179,7 @@ describe('SpeakingPracticePanel', () => {
       inputMode: 'TEXT',
       mockMode: true,
       latencyMs: 800,
+      issues: [],
     };
     handlers.onAudio?.(audioReply);
 
@@ -178,6 +192,56 @@ describe('SpeakingPracticePanel', () => {
       'I enjoy history books.',
       'session-1',
     );
+  });
+
+  it('shows spoken learning issues replayed with the saved turn', async () => {
+    api.listSpeakingSessions.mockResolvedValue([summary()]);
+    api.getSpeakingSession.mockResolvedValue(session({
+      turns: [
+        {
+          ...session().turns[0],
+          issues: [learningIssue()],
+        },
+      ],
+    }));
+    api.openSpeakingChannel.mockReturnValue({
+      sendAudio: vi.fn(),
+      sendText: vi.fn(),
+      bargeIn: vi.fn(),
+      close: vi.fn(),
+    });
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+
+    expect(await screen.findByText('语法')).toBeInTheDocument();
+    expect(screen.getByText('I go to the park yesterday.')).toBeInTheDocument();
+    expect(screen.getAllByText('I went to the park yesterday.').length).toBeGreaterThan(0);
+    expect(screen.getByText('句子里有过去时间 yesterday，动词要用过去式。')).toBeInTheDocument();
+  });
+
+  it('shows spoken learning issues recorded on a new turn', async () => {
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([]);
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+    await screen.findByText('还没有 Speaking Session。');
+    captured.getHandlers().onOpen?.();
+
+    captured.getHandlers().onAudio?.({
+      type: 'audio',
+      sessionId: 'session-1',
+      audio: 'AAAA',
+      mimeType: 'audio/wav',
+      transcript: 'I go to the park yesterday.',
+      reply: '注意这里要用过去式。',
+      inputMode: 'VOICE',
+      mockMode: true,
+      latencyMs: 800,
+      issues: [learningIssue()],
+    });
+
+    expect(await screen.findByText('语法')).toBeInTheDocument();
+    expect(screen.getByText('句子里有过去时间 yesterday，动词要用过去式。')).toBeInTheDocument();
   });
 
   it('shows the recorded time-to-playback p95 against the budget', async () => {
@@ -278,6 +342,7 @@ describe('SpeakingPracticePanel', () => {
       inputMode: 'TEXT',
       mockMode: true,
       latencyMs: 900,
+      issues: [],
     });
     expect(api.playSpeakingAudio).not.toHaveBeenCalled();
   });
@@ -318,6 +383,7 @@ describe('SpeakingPracticePanel', () => {
       inputMode: 'VOICE',
       mockMode: true,
       latencyMs: null,
+      issues: [],
     };
     handlers.onText?.(fallback);
 

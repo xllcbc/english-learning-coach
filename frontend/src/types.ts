@@ -146,6 +146,7 @@ export interface SpeakingTurn {
   createdAt: string;
   steps: AgentStep[];
   toolInvocations: ToolInvocation[];
+  issues: LearningIssue[];
 }
 
 export interface SpeakingSession {
@@ -175,6 +176,7 @@ export interface SpeakingAudioReply {
   inputMode: SpeakingInputMode;
   mockMode: boolean;
   latencyMs: number | null;
+  issues: LearningIssue[];
 }
 
 export interface SpeakingTextReply {
@@ -187,6 +189,7 @@ export interface SpeakingTextReply {
   inputMode: SpeakingInputMode;
   mockMode: boolean;
   latencyMs: number | null;
+  issues: LearningIssue[];
 }
 
 export interface SpeakingLatencyStats {

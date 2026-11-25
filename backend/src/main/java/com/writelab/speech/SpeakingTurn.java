@@ -2,6 +2,7 @@ package com.writelab.speech;
 
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.AgentStopReason;
+import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.ToolInvocation;
 
@@ -13,6 +14,9 @@ import java.util.UUID;
  * One persisted Speaking Session turn. {@code transcript} is what the learner said or typed;
  * {@code reply} is the tutor's spoken answer. A transcription fallback still owns a turn so the
  * learner can see what happened and continue on the same session.
+ *
+ * <p>{@code issues} are the Learning Issues found in this turn. They are persisted with the
+ * Speaking Session and replayed with the turn, never attached to a Practice Attempt (ADR-0012).
  */
 public record SpeakingTurn(
         UUID id,
@@ -27,7 +31,8 @@ public record SpeakingTurn(
         ModelMode modelMode,
         Instant createdAt,
         List<AgentStep> steps,
-        List<ToolInvocation> toolInvocations
+        List<ToolInvocation> toolInvocations,
+        List<LearningIssue> issues
 ) {
 
     public SpeakingTurn {
@@ -36,6 +41,7 @@ public record SpeakingTurn(
         latencyMs = latencyMs == null ? null : Math.max(0, latencyMs);
         steps = steps == null ? List.of() : List.copyOf(steps);
         toolInvocations = toolInvocations == null ? List.of() : List.copyOf(toolInvocations);
+        issues = issues == null ? List.of() : List.copyOf(issues);
     }
 
     public boolean mockMode() {

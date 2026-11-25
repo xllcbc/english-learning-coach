@@ -1,5 +1,6 @@
 package com.writelab.agent;
 
+import com.writelab.feedback.LearningIssue;
 import com.writelab.tools.ToolInvocation;
 
 import java.util.Collections;
@@ -11,14 +12,16 @@ import java.util.List;
  *
  * <p>{@code toolInvocations} is the existing Tool Invocation trace for every model-driven tool
  * call, kept separate from Agent Steps: the step describes the turn's orchestration, the
- * invocation describes the tool execution.
+ * invocation describes the tool execution. {@code issues} are Learning Issues the model reported
+ * with its answer; only Speaking Practice turns consume them.
  */
 public record AgentTurn(
         String learnerMessage,
         String answer,
         List<AgentStep> steps,
         List<ToolInvocation> toolInvocations,
-        AgentStopReason stopReason
+        AgentStopReason stopReason,
+        List<LearningIssue> issues
 ) {
 
     public AgentTurn {
@@ -29,6 +32,7 @@ public record AgentTurn(
         }
         steps = Collections.unmodifiableList(List.copyOf(steps));
         toolInvocations = Collections.unmodifiableList(List.copyOf(toolInvocations));
+        issues = issues == null ? List.of() : List.copyOf(issues);
     }
 
     public boolean completed() {

@@ -1,9 +1,15 @@
 package com.writelab.agent;
 
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Deterministic offline model for Teacher Conversation. It never invents a source: it cites only
@@ -16,6 +22,31 @@ public class MockTutorModelClient implements TutorModelClient {
     private static final String NO_GROUNDING_ANSWER =
             "我目前没有可引用的依据材料，不能可靠回答这个问题。"
                     + "请先在「我的文档」补充材料，或重新生成教师讲解后再问。";
+
+    /**
+     * Deterministic tense check for Mock mode. It only fires when the utterance carries an explicit
+     * past-time marker and a present-tense verb, so correct English never receives a false issue.
+     */
+    private static final Pattern PAST_TIME_MARKER = Pattern.compile(
+            "\\b(?:yesterday|last (?:night|week|month|year)|ago)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern PRESENT_TENSE_VERB = Pattern.compile(
+            "\\b(go|see|eat|take|make|do|have|come|write|speak|run)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Map<String, String> SIMPLE_PAST = Map.ofEntries(
+            Map.entry("go", "went"),
+            Map.entry("see", "saw"),
+            Map.entry("eat", "ate"),
+            Map.entry("take", "took"),
+            Map.entry("make", "made"),
+            Map.entry("do", "did"),
+            Map.entry("have", "had"),
+            Map.entry("come", "came"),
+            Map.entry("write", "wrote"),
+            Map.entry("speak", "spoke"),
+            Map.entry("run", "ran"));
 
     private final ObjectMapper objectMapper;
 
@@ -97,6 +128,39 @@ public class MockTutorModelClient implements TutorModelClient {
                 answer.append("\n关于「").append(word).append("」：").append(meaning);
             }
         }
-        return TutorModelDecision.answer(answer.toString());
+        return TutorModelDecision.answer(
+                answer.toString(), speakingIssues(context.learnerMessage()));
+    }
+
+    private static List<LearningIssue> speakingIssues(String learnerMessage) {
+        String sentence = learnerMessage == null ? "" : learnerMessage.strip();
+        if (sentence.isEmpty() || !PAST_TIME_MARKER.matcher(sentence).find()) {
+            return List.of();
+        }
+        Matcher verb = PRESENT_TENSE_VERB.matcher(sentence);
+        if (!verb.find()) {
+            return List.of();
+        }
+        String matched = verb.group();
+        String past = SIMPLE_PAST.get(matched.toLowerCase(Locale.ROOT));
+        if (past == null) {
+            return List.of();
+        }
+        String suggestion = sentence.substring(0, verb.start())
+                + capitalizeLike(matched, past)
+                + sentence.substring(verb.end());
+        return List.of(new LearningIssue(
+                sentence,
+                suggestion,
+                IssueCategory.GRAMMAR,
+                IssueSeverity.MINOR,
+                "句子里有过去时间，动词「" + matched + "」要用过去式「" + past + "」。"));
+    }
+
+    private static String capitalizeLike(String original, String replacement) {
+        if (original.isEmpty() || !Character.isUpperCase(original.charAt(0))) {
+            return replacement;
+        }
+        return Character.toUpperCase(replacement.charAt(0)) + replacement.substring(1);
     }
 }

@@ -5,6 +5,9 @@ import com.writelab.agent.AgentStopReason;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
+import com.writelab.feedback.IssueCategory;
+import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,6 +77,9 @@ class SpeakingPracticeApiIntegrationTest {
     @Autowired
     private ScriptedTutorModelClient model;
 
+    @Autowired
+    private ScriptedSpeechModel speech;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private WebSocket webSocket;
     private CollectingListener listener;
@@ -81,6 +87,7 @@ class SpeakingPracticeApiIntegrationTest {
     @BeforeEach
     void openChannel() throws Exception {
         model.reset();
+        speech.reset();
         listener = new CollectingListener();
         webSocket = httpClient
                 .newWebSocketBuilder()
@@ -145,6 +152,47 @@ class SpeakingPracticeApiIntegrationTest {
             assertThat(summary.turnCount()).isEqualTo(1);
             assertThat(summary.mockMode()).isTrue();
         });
+    }
+
+    @Test
+    void recordsLearningIssuesOnTheSpeakingSessionAndReplaysThem() throws Exception {
+        LearningIssue issue = new LearningIssue(
+                "I go to the park yesterday.",
+                "I went to the park yesterday.",
+                IssueCategory.GRAMMAR,
+                IssueSeverity.MINOR,
+                "句子里有过去时间 yesterday，动词要用过去式。");
+        speech.transcribeAs("I go to the park yesterday.");
+        model.script(context -> TutorModelDecision.answer(
+                "Try the past tense here. Your meaning is clear.", List.of(issue)));
+
+        sendAudio(null);
+
+        SpeechChannelMessages.SpokenReplyMessage reply = objectMapper.readValue(
+                listener.awaitMessage(), SpeechChannelMessages.SpokenReplyMessage.class);
+        UUID sessionId = UUID.fromString(reply.sessionId());
+        assertThat(reply.issues()).hasSize(1);
+
+        SpeakingSessionResponse replayed = replay(sessionId);
+        assertThat(replayed.turns()).hasSize(1);
+        SpeakingTurn turn = replayed.turns().getFirst();
+        assertThat(turn.issues()).hasSize(1);
+
+        LearningIssue stored = turn.issues().getFirst();
+        assertThat(stored.originalSentence()).isEqualTo("I go to the park yesterday.");
+        assertThat(stored.suggestion()).isEqualTo("I went to the park yesterday.");
+        assertThat(stored.category()).isEqualTo(IssueCategory.GRAMMAR);
+        assertThat(stored.severity()).isEqualTo(IssueSeverity.MINOR);
+        assertThat(stored.explanation()).contains("过去式");
+
+        // The issue belongs to the Speaking Session, never to a Practice Attempt.
+        HttpResponse<String> practices = get("/api/practices");
+        assertThat(practices.statusCode()).isEqualTo(200);
+        assertThat(objectMapper.readValue(practices.body(), List.class)).isEmpty();
+
+        int callsAfterTurn = model.callCount();
+        assertThat(replay(sessionId).turns()).isEqualTo(replayed.turns());
+        assertThat(model.callCount()).isEqualTo(callsAfterTurn);
     }
 
     @Test
@@ -222,6 +270,7 @@ class SpeakingPracticeApiIntegrationTest {
     static final class ScriptedSpeechModel implements SpeechModel {
 
         private final MockSpeechModel delegate = new MockSpeechModel();
+        private String transcriptOverride;
 
         @Override
         public String transcribe(AudioClip audio) {
@@ -229,12 +278,20 @@ class SpeakingPracticeApiIntegrationTest {
                 throw new SpeechTranscriptionException(
                         SpeechFailureReason.FAILED, "empty audio");
             }
-            return delegate.transcribe(audio);
+            return transcriptOverride == null ? delegate.transcribe(audio) : transcriptOverride;
         }
 
         @Override
         public AudioClip synthesize(String text) {
             return delegate.synthesize(text);
+        }
+
+        void transcribeAs(String transcript) {
+            transcriptOverride = transcript;
+        }
+
+        void reset() {
+            transcriptOverride = null;
         }
     }
 
