@@ -198,7 +198,7 @@ describe('SpeakingPracticePanel', () => {
     render(<SpeakingPracticePanel defaultMockMode />);
 
     expect(
-      await screen.findByText('说完到开始播放 p95 1.2 秒（目标 2.5 秒）'),
+      await screen.findByText('说完到开始播放（服务端）p95 1.2 秒（目标 2.5 秒）'),
     ).toBeInTheDocument();
     expect(api.getSpeakingLatency).toHaveBeenCalled();
   });
@@ -229,15 +229,28 @@ describe('SpeakingPracticePanel', () => {
     vi.useRealTimers();
   });
 
-  it('barges in and stops waiting when the learner starts a new recording', async () => {
-    const captured = captureChannel();
-    api.listSpeakingSessions.mockResolvedValue([]);
-    const getUserMedia = vi.fn().mockRejectedValue(new Error('no microphone'));
+  function stubMicrophone(resolve: boolean) {
+    const getUserMedia = resolve
+      ? vi.fn().mockResolvedValue({ getTracks: () => [] })
+      : vi.fn().mockRejectedValue(new Error('no microphone'));
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: { getUserMedia },
     });
-    vi.stubGlobal('MediaRecorder', class MediaRecorder {});
+    vi.stubGlobal('MediaRecorder', class MediaRecorder {
+      mimeType = 'audio/webm';
+      ondataavailable: ((event: BlobEvent) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start = vi.fn();
+      stop = vi.fn();
+    });
+    return getUserMedia;
+  }
+
+  it('barges in when the learner starts a new recording and drops stale playback', async () => {
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([]);
+    stubMicrophone(true);
 
     render(<SpeakingPracticePanel defaultMockMode />);
     await screen.findByText('还没有 Speaking Session。');
@@ -245,13 +258,43 @@ describe('SpeakingPracticePanel', () => {
 
     await userEvent.type(screen.getByLabelText('说或输入一句英语'), 'A slow reply.');
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
-    expect(await screen.findByText('正在回复…')).toBeInTheDocument();
+    expect(await screen.findByText('正在等待回复…')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '开始录音' }));
 
-    expect(captured.connection.bargeIn).toHaveBeenCalledWith(null);
+    expect(captured.connection.bargeIn).toHaveBeenCalled();
     expect(api.stopSpeakingAudio).toHaveBeenCalled();
-    expect(screen.queryByText('正在回复…')).not.toBeInTheDocument();
+    expect(screen.queryByText('正在等待回复…')).not.toBeInTheDocument();
+
+    // A reply that was already in transit when the learner started speaking must not play over
+    // them. It may still be shown, but playback stays suppressed until the new turn is sent.
+    captured.getHandlers().onAudio?.({
+      type: 'audio',
+      sessionId: 'session-1',
+      audio: 'AAAA',
+      mimeType: 'audio/wav',
+      transcript: 'A slow reply.',
+      reply: 'This reply arrived too late.',
+      inputMode: 'TEXT',
+      mockMode: true,
+      latencyMs: 900,
+    });
+    expect(api.playSpeakingAudio).not.toHaveBeenCalled();
+  });
+
+  it('does not barge in when the microphone is unavailable', async () => {
+    const captured = captureChannel();
+    api.listSpeakingSessions.mockResolvedValue([]);
+    stubMicrophone(false);
+
+    render(<SpeakingPracticePanel defaultMockMode />);
+    await screen.findByText('还没有 Speaking Session。');
+    captured.getHandlers().onOpen?.();
+
+    await userEvent.click(screen.getByRole('button', { name: '开始录音' }));
+
+    expect(captured.connection.bargeIn).not.toHaveBeenCalled();
+    expect(api.stopSpeakingAudio).not.toHaveBeenCalled();
     expect(await screen.findByText('无法访问麦克风，请检查权限或改用文字输入。')).toBeInTheDocument();
   });
 

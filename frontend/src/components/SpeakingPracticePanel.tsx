@@ -113,6 +113,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const localTurnSequence = useRef(0);
+  const suppressPlaybackRef = useRef(false);
 
   const rememberSession = useCallback((id: string | null) => {
     sessionIdRef.current = id;
@@ -202,7 +203,9 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         setError(null);
         setThinking(false);
         appendTurn(reply.inputMode, reply.transcript, reply.reply, null);
-        playSpeakingAudio(reply.audio, reply.mimeType);
+        if (!suppressPlaybackRef.current) {
+          playSpeakingAudio(reply.audio, reply.mimeType);
+        }
         void refreshLatency();
       },
       onText: (reply: SpeakingTextReply) => {
@@ -222,9 +225,10 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
         void refreshLatency();
       },
       onInterrupted: () => {
-        // The server abandoned the reply in flight; local playback was already stopped when the
-        // learner started speaking, so the panel only needs to leave its waiting state.
-        setThinking(false);
+        // The server abandoned the reply in flight. Local playback was already stopped when the
+        // learner started speaking; this acknowledgement only re-enables playback for future
+        // replies. It must not clear `thinking`, which may already belong to a newer turn.
+        suppressPlaybackRef.current = false;
       },
       onError: (channelError) => {
         setError(channelError.message);
@@ -266,14 +270,15 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
       return;
     }
 
-    // Barge-in: the learner has started a new utterance, so stop the tutor's playback and tell the
-    // channel to abandon a reply it is still producing (ADR-0011).
-    stopSpeakingAudio();
-    connectionRef.current.bargeIn(sessionIdRef.current);
-    setThinking(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      // Barge-in: the microphone is open and the learner is about to speak, so stop the tutor's
+      // playback and tell the channel to abandon a reply it is still producing (ADR-0011).
+      stopSpeakingAudio();
+      suppressPlaybackRef.current = true;
+      connectionRef.current?.bargeIn();
+      setThinking(false);
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       chunksRef.current = [];
@@ -298,6 +303,8 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           setFallbackReason(null);
           setFallbackNotice(null);
           setError(null);
+          // A new utterance is on its way, so its reply may play normally.
+          suppressPlaybackRef.current = false;
           connectionRef.current?.sendAudio(base64, mimeType, sessionIdRef.current);
         }).catch(() => {
           setMicError('无法读取录音数据，请使用文字输入。');
@@ -324,6 +331,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
     }
 
     stopSpeakingAudio();
+    suppressPlaybackRef.current = false;
     connectionRef.current.sendText(message, sessionIdRef.current);
     setDraft('');
     setThinking(true);
@@ -334,6 +342,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
 
   function startNewPractice() {
     stopSpeakingAudio();
+    suppressPlaybackRef.current = false;
     rememberSession(null);
     setTurns([]);
     setFallbackReason(null);
@@ -369,7 +378,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
           className={`speaking-latency ${latencyStats.withinBudget ? '' : 'is-over-budget'}`}
           role="status"
         >
-          说完到开始播放 p95 {formatSeconds(latencyStats.p95Ms)}（目标{' '}
+          说完到开始播放（服务端）p95 {formatSeconds(latencyStats.p95Ms)}（目标{' '}
           {formatSeconds(latencyStats.budgetMs)}）{latencyStats.withinBudget ? '' : '，超出预算'}
         </p>
       )}

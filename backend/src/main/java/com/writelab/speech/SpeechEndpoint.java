@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 /**
  * WebSocket adapter for Speaking Practice's speech channel. It owns transport concerns only:
@@ -29,7 +30,7 @@ public class SpeechEndpoint extends Endpoint {
     static final String SESSION_NOT_FOUND_CODE = "SPEAKING_SESSION_NOT_FOUND";
     static final String TURN_FAILED_CODE = "SPEAKING_TURN_FAILED";
     static final String INVALID_JSON_TEXT = "消息不是有效的 JSON。";
-    static final String UNSUPPORTED_TYPE_TEXT = "只支持 audio 或 text 消息。";
+    static final String UNSUPPORTED_TYPE_TEXT = "只支持 audio、text 或 barge_in 消息。";
     static final String INVALID_AUDIO_TEXT = "audio 必须是 Base64。";
     static final String EMPTY_TEXT_TEXT = "text 不能为空。";
     static final String INVALID_SESSION_TEXT = "sessionId 必须是有效的 UUID。";
@@ -100,7 +101,7 @@ public class SpeechEndpoint extends Endpoint {
             return;
         }
         if (SpeechChannelMessages.TYPE_BARGE_IN.equals(input.type())) {
-            handleBargeIn(session, input);
+            handleBargeIn(session);
             return;
         }
         sendError(session, INVALID_MESSAGE_CODE, UNSUPPORTED_TYPE_TEXT);
@@ -111,18 +112,10 @@ public class SpeechEndpoint extends Endpoint {
      * reply this connection is still producing is abandoned instead of being played over the
      * learner's new utterance. Acknowledgements make the cancellation observable to the client.
      */
-    private void handleBargeIn(Session session, SpeechChannelMessages.SpeechInput input) {
-        UUID sessionId;
-        try {
-            sessionId = parseSessionId(input.sessionId());
-        } catch (IllegalArgumentException invalid) {
-            sendError(session, INVALID_MESSAGE_CODE, INVALID_SESSION_TEXT);
-            return;
-        }
+    private void handleBargeIn(Session session) {
         turnGeneration.incrementAndGet();
         send(session, new SpeechChannelMessages.InterruptedMessage(
                 SpeechChannelMessages.TYPE_INTERRUPTED,
-                sessionId == null ? null : sessionId.toString(),
                 SpeechChannelMessages.BARGE_IN_REASON));
     }
 
@@ -142,8 +135,8 @@ public class SpeechEndpoint extends Endpoint {
             sendError(session, INVALID_MESSAGE_CODE, INVALID_AUDIO_TEXT);
             return;
         }
-        respond(session, () -> speakingPracticeService.respond(
-                new AudioClip(audioBytes, input.mimeType()), sessionId));
+        respond(session, cancelled -> speakingPracticeService.respond(
+                new AudioClip(audioBytes, input.mimeType()), sessionId, cancelled));
     }
 
     private void handleText(Session session, SpeechChannelMessages.SpeechInput input) {
@@ -158,7 +151,8 @@ public class SpeechEndpoint extends Endpoint {
             sendError(session, INVALID_MESSAGE_CODE, INVALID_SESSION_TEXT);
             return;
         }
-        respond(session, () -> speakingPracticeService.respondToText(input.text(), sessionId));
+        respond(session, cancelled -> speakingPracticeService.respondToText(
+                input.text(), sessionId, cancelled));
     }
 
     /**
@@ -168,10 +162,14 @@ public class SpeechEndpoint extends Endpoint {
      */
     private void respond(Session session, TurnSupplier turnSupplier) {
         long generation = turnGeneration.incrementAndGet();
+        BooleanSupplier cancelled = () -> !isCurrent(generation);
         turnExecutor.execute(() -> {
             SpeakingPracticeService.SpeakingTurnResult result;
             try {
-                result = turnSupplier.get();
+                result = turnSupplier.get(cancelled);
+            } catch (SpeakingTurnCancelledException interrupted) {
+                // The learner took the floor; nothing was synthesized or persisted.
+                return;
             } catch (SpeakingSessionNotFoundException missing) {
                 if (isCurrent(generation)) {
                     sendError(session, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND_TEXT);
@@ -248,7 +246,7 @@ public class SpeechEndpoint extends Endpoint {
 
     @FunctionalInterface
     private interface TurnSupplier {
-        SpeakingPracticeService.SpeakingTurnResult get();
+        SpeakingPracticeService.SpeakingTurnResult get(BooleanSupplier cancelled);
     }
 
     private static final class Configurator extends ServerEndpointConfig.Configurator {

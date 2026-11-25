@@ -23,10 +23,11 @@ package com.writelab.speech;
  *  "transcript":"..."}
  * }</pre>
  * Barge-in: the learner started speaking, so the channel cancels the reply it is still producing.
- * The channel acknowledges the cancellation with an {@code interrupted} message:
+ * The scope is the connection, not a session, so no session id is needed. The channel acknowledges
+ * the cancellation with an {@code interrupted} message:
  * <pre>{@code
- * {"type":"barge_in","sessionId":"<uuid>"}
- * {"type":"interrupted","sessionId":"<uuid>","reason":"barge_in"}
+ * {"type":"barge_in"}
+ * {"type":"interrupted","reason":"barge_in"}
  * }</pre>
  */
 public final class SpeechChannelMessages {
@@ -74,7 +75,7 @@ public final class SpeechChannelMessages {
     ) implements OutgoingMessage {
     }
 
-    public record InterruptedMessage(String type, String sessionId, String reason)
+    public record InterruptedMessage(String type, String reason)
             implements OutgoingMessage {
     }
 

@@ -33,8 +33,8 @@ public interface SpeakingSessionRepository {
     SpeakingTurn saveTurn(SpeakingTurnDraft draft);
 
     /**
-     * Recorded time-to-playback samples, oldest first. Turns that never produced a playable reply
-     * are absent; callers aggregate them into {@link SpeakingLatencyStats}.
+     * Recorded speaking latency samples. Turns that never produced playable audio are absent;
+     * callers aggregate the sample into {@link SpeakingLatencyStats}.
      */
     List<Integer> readLatencies();
 

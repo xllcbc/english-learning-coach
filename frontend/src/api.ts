@@ -427,7 +427,7 @@ export interface SpeakingChannelConnection {
   sendAudio(base64Audio: string, mimeType: string, sessionId: string | null): void;
   sendText(text: string, sessionId: string | null): void;
   /** Announces that the learner started speaking so the channel can cancel a reply in flight. */
-  bargeIn(sessionId: string | null): void;
+  bargeIn(): void;
   close(): void;
 }
 
@@ -484,11 +484,8 @@ export function openSpeakingChannel(
         sessionId: sessionId ?? undefined,
       }));
     },
-    bargeIn(sessionId) {
-      socket.send(JSON.stringify({
-        type: 'barge_in',
-        sessionId: sessionId ?? undefined,
-      }));
+    bargeIn() {
+      socket.send(JSON.stringify({ type: 'barge_in' }));
     },
     close() {
       socket.close();

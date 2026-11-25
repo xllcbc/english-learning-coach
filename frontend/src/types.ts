@@ -200,7 +200,6 @@ export interface SpeakingLatencyStats {
 
 export interface SpeakingInterrupted {
   type: 'interrupted';
-  sessionId: string | null;
   reason: 'barge_in';
 }
 

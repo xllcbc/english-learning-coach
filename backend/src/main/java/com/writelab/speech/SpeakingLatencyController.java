@@ -5,9 +5,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Exposes the observed "finished speaking to playback" latency so the budget from ADR-0011 is
- * observable instead of living only in logs. The sample is every persisted turn that produced a
- * playable reply.
+ * Exposes the observed speaking latency so the budget from ADR-0011 is observable instead of
+ * living only in logs. The sample is every spoken turn whose reply was synthesized as audio:
+ * turns that never start playing (typed input, transcription or synthesis failures) are excluded.
  */
 @RestController
 @RequestMapping("/api/speaking/latency")
