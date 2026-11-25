@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The generated task before it is persisted: the selected Study Plan item, the prompt, and the
+ * The generated Targeted Practice before it is persisted: the selected Study Plan item, the prompt, and the
  * "before" snapshot taken from the most recent evidence.
  */
 record TargetedPracticeDraft(

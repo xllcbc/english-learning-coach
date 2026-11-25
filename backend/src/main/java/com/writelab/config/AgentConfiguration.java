@@ -2,6 +2,7 @@ package com.writelab.config;
 
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
+import com.writelab.tools.GeneratePracticePromptToolDefinition;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.LookupWordToolDefinition;
 import com.writelab.tools.RetrieveGroundingMaterialToolDefinition;
@@ -41,6 +42,11 @@ public class AgentConfiguration {
             ObjectMapper objectMapper
     ) {
         return new SearchUserDocumentsToolDefinition(userDocumentRetriever, objectMapper);
+    }
+
+    @Bean
+    GeneratePracticePromptToolDefinition generatePracticePromptToolDefinition(ObjectMapper objectMapper) {
+        return new GeneratePracticePromptToolDefinition(objectMapper);
     }
 
     @Bean

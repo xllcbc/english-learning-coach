@@ -2344,6 +2344,39 @@ textarea {
   font-size: 13px;
 }
 
+.targeted-evidence {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.targeted-evidence summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.targeted-evidence ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.targeted-evidence li {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.targeted-evidence p {
+  margin: 0;
+  line-height: 1.6;
+}
+
 .targeted-comparison {
   padding: 12px 14px;
   border: 1px solid var(--line);

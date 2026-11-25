@@ -6,6 +6,7 @@ import com.writelab.review.LearningReviewResponse;
 import com.writelab.review.LearningReviewService;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -38,5 +39,9 @@ public class TargetedPracticeService {
 
     public TargetedPracticeResponse find(UUID id) {
         return store.findRequired(id);
+    }
+
+    public Optional<TargetedPracticeResponse> findByPracticeAttemptId(UUID practiceAttemptId) {
+        return store.findByPracticeAttemptId(practiceAttemptId);
     }
 }

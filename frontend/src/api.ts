@@ -149,6 +149,14 @@ export function getTargetedPractice(id: string): Promise<TargetedPractice> {
   return request<TargetedPractice>(`/api/targeted-practices/${encodeURIComponent(id)}`);
 }
 
+export function getTargetedPracticeForPractice(
+  practiceId: string,
+): Promise<TargetedPractice | null> {
+  return request<TargetedPractice | null>(
+    `/api/targeted-practices/by-practice/${encodeURIComponent(practiceId)}`,
+  );
+}
+
 export function listUserDocuments(): Promise<UserDocumentSummary[]> {
   return request<UserDocumentSummary[]>('/api/documents');
 }

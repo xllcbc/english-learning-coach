@@ -3,6 +3,7 @@ package com.writelab.config;
 import com.writelab.dictionary.DictionaryService;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.UserDocumentRetriever;
+import com.writelab.tools.GeneratePracticePromptToolDefinition;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.LookupWordToolDefinition;
 import com.writelab.tools.RetrieveGroundingMaterialToolDefinition;
@@ -30,9 +31,11 @@ class AgentConfigurationTest {
             assertThat(context).hasSingleBean(LookupWordToolDefinition.class);
             assertThat(context).hasSingleBean(RetrieveGroundingMaterialToolDefinition.class);
             assertThat(context).hasSingleBean(SearchUserDocumentsToolDefinition.class);
+            assertThat(context).hasSingleBean(GeneratePracticePromptToolDefinition.class);
             assertThat(context).hasSingleBean(ToolRegistry.class);
             assertThat(context.getBean(ToolRegistry.class).names()).containsExactlyInAnyOrder(
-                    "lookup_word", "retrieve_grounding_material", "search_user_documents");
+                    "lookup_word", "retrieve_grounding_material", "search_user_documents",
+                    "generate_practice_prompt");
         });
     }
 }

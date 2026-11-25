@@ -21,7 +21,7 @@ class TargetedPracticeWorkflowTest {
     private final TargetedPracticeWorkflow workflow = new TargetedPracticeWorkflow();
 
     @Test
-    void generatesATaskFocusedOnTheSelectedStudyPlanRecommendation() {
+    void generatesATargetedPracticeFocusedOnTheSelectedStudyPlanRecommendation() {
         UUID firstAttempt = UUID.randomUUID();
         UUID secondAttempt = UUID.randomUUID();
         LearningReviewResponse review = review(
@@ -56,7 +56,7 @@ class TargetedPracticeWorkflowTest {
     }
 
     @Test
-    void refusesToGenerateFromAStudyPlanThatIsNotBackedByEnoughData() {
+    void refusesToGenerateATargetedPracticeFromAStudyPlanWithInsufficientData() {
         LearningReviewResponse review = new LearningReviewResponse(
                 LearningReviewStatus.INSUFFICIENT_DATA,
                 "最近只有 1 次 Practice Attempt。",
@@ -72,7 +72,7 @@ class TargetedPracticeWorkflowTest {
     }
 
     @Test
-    void refusesToGenerateForAnIssueThatIsNotInTheStudyPlan() {
+    void refusesToGenerateATargetedPracticeForAnIssueOutsideTheStudyPlan() {
         LearningReviewResponse review = review(
                 recommendation(
                         1,

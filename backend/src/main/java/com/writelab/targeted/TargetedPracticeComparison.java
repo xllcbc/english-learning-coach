@@ -31,24 +31,20 @@ public record TargetedPracticeComparison(
     }
 
     public static TargetedPracticeComparison between(
-            UUID beforePracticeAttemptId,
-            Instant beforeCreatedAt,
-            int beforeCount,
-            UUID afterPracticeAttemptId,
-            Instant afterCreatedAt,
-            int afterCount
+            TargetedIssueSnapshot before,
+            TargetedIssueSnapshot after
     ) {
-        int change = beforeCount - afterCount;
+        int change = before.count() - after.count();
         TargetedPracticeTrend trend = change > 0
                 ? TargetedPracticeTrend.IMPROVED
                 : change < 0 ? TargetedPracticeTrend.WORSENED : TargetedPracticeTrend.UNCHANGED;
         return new TargetedPracticeComparison(
-                beforePracticeAttemptId,
-                beforeCreatedAt,
-                beforeCount,
-                afterPracticeAttemptId,
-                afterCreatedAt,
-                afterCount,
+                before.practiceAttemptId(),
+                before.createdAt(),
+                before.count(),
+                after.practiceAttemptId(),
+                after.createdAt(),
+                after.count(),
                 change,
                 trend
         );

@@ -4,6 +4,7 @@ import com.writelab.feedback.EstimatedLevel;
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueCategoryLabels;
 import com.writelab.feedback.IssueSeverity;
+import com.writelab.feedback.IssueSeverityLabels;
 import com.writelab.retrieval.GroundingMaterial;
 import com.writelab.retrieval.LearningMaterialRetriever;
 import com.writelab.retrieval.RankedGroundingMaterial;
@@ -137,7 +138,7 @@ public class LearningReviewWorkflow {
     }
 
     private static String actionFor(Cluster cluster, boolean hasGroundingMaterial) {
-        String severityLabel = cluster.severity == IssueSeverity.MAJOR ? "严重" : "轻微";
+        String severityLabel = IssueSeverityLabels.label(cluster.severity);
         String nextStep = hasGroundingMaterial
                 ? "先阅读下方依据材料，再用最近一次的原句做最小改写练习。"
                 : "先用最近一次的原句做最小改写练习，再回看同类问题的解释。";

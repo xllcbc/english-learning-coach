@@ -54,6 +54,34 @@ export function TargetedPracticePanel({ practice, onDismiss }: TargetedPracticeP
             练前：最近 {practice.attemptCount} 次练习中出现 {practice.occurrenceCount} 次；最近一次出现{' '}
             {practice.beforeCount} 次。
           </p>
+          {practice.evidence.length > 0 && (
+            <details className="targeted-evidence">
+              <summary>查看这次任务依据的 Learning Issue</summary>
+              <ul>
+                {practice.evidence.map((evidence) => (
+                  <li key={evidence.learningIssueId}>
+                    <p className="evidence-sentence">{evidence.originalSentence}</p>
+                    <p className="evidence-explanation">{evidence.explanation}</p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {practice.groundingMaterials.length > 0 && (
+            <details className="targeted-evidence">
+              <summary>查看这次任务的依据材料</summary>
+              <ul>
+                {practice.groundingMaterials.map((material) => (
+                  <li key={`${material.category}-${material.content}`}>
+                    <p className="grounding-content">{material.content}</p>
+                    <p className="grounding-source">
+                      {material.source} · {material.license}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </>
       ) : (
         practice.comparison && <Comparison practice={practice} />

@@ -21,7 +21,8 @@ CREATE TABLE targeted_practice (
     CHECK ((practice_attempt_id IS NULL) = (completed_at IS NULL))
 );
 
-CREATE INDEX idx_targeted_practice_created_at ON targeted_practice (created_at DESC);
+CREATE INDEX idx_targeted_practice_practice_attempt
+    ON targeted_practice (practice_attempt_id);
 
 COMMENT ON TABLE targeted_practice IS
     'One Targeted Practice task generated from a Study Plan; links to the Practice Attempt submitted through normal grading.';

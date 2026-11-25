@@ -7,6 +7,7 @@ import {
   getModelMode,
   getPractice,
   getTargetedPractice,
+  getTargetedPracticeForPractice,
   listPractices,
   listSavedVocabulary,
   saveVocabulary,
@@ -61,6 +62,32 @@ function countMessage(wordCount: number): string {
     return `超出上限 ${wordCount - MAX_WORDS} 词，请删减后再提交。`;
   }
   return `词数符合要求，可以提交。`;
+}
+
+function completeTargetedPracticeLocally(
+  task: TargetedPractice,
+  practice: PracticeResponse,
+): TargetedPractice {
+  const afterCount = practice.feedback.learningIssues.filter(
+    (issue) => issue.category === task.category && issue.severity === task.severity,
+  ).length;
+  const change = task.beforeCount - afterCount;
+  return {
+    ...task,
+    status: 'SUBMITTED',
+    practiceAttemptId: practice.id,
+    completedAt: practice.createdAt,
+    comparison: {
+      beforePracticeAttemptId: task.beforePracticeAttemptId,
+      beforeCreatedAt: task.beforeCreatedAt,
+      beforeCount: task.beforeCount,
+      afterPracticeAttemptId: practice.id,
+      afterCreatedAt: practice.createdAt,
+      afterCount,
+      change,
+      trend: change > 0 ? 'IMPROVED' : change < 0 ? 'WORSENED' : 'UNCHANGED',
+    },
+  };
 }
 
 export default function App() {
@@ -259,6 +286,15 @@ export default function App() {
       if (practice.hasExplanation) {
         void startExplanation(practice.id);
       }
+      void getTargetedPracticeForPractice(practice.id)
+        .then((linked) => {
+          if (requestId === detailRequest.current) {
+            setTargetedPractice((current) => current ?? linked);
+          }
+        })
+        .catch(() => {
+          // History still works without the optional Targeted Practice comparison.
+        });
       feedbackHeadingRef.current?.focus();
     } catch (error) {
       if (requestId !== detailRequest.current) {
@@ -279,9 +315,9 @@ export default function App() {
       return;
     }
 
-    const targetedPracticeId = targetedPractice?.status === 'PENDING'
-      ? targetedPractice.id
-      : undefined;
+    const pendingTargetedPractice = targetedPractice?.status === 'PENDING'
+      ? targetedPractice
+      : null;
 
     cancelExplanation();
     setStatus('submitting');
@@ -292,15 +328,17 @@ export default function App() {
     setDetailError(null);
 
     try {
-      const practice = await createPractice(writingText, targetedPracticeId);
+      const practice = await createPractice(writingText, pendingTargetedPractice?.id);
       setResult(practice);
       setSelectedId(practice.id);
       setStatus('idle');
-      if (targetedPracticeId) {
+      if (pendingTargetedPractice) {
         try {
-          setTargetedPractice(await getTargetedPractice(targetedPracticeId));
+          setTargetedPractice(await getTargetedPractice(pendingTargetedPractice.id));
         } catch {
-          // The Practice Attempt is already graded and shown; only the comparison refresh failed.
+          // The Practice Attempt is already graded and shown. Keep the comparison visible from the
+          // graded feedback if the targeted refresh fails.
+          setTargetedPractice(completeTargetedPracticeLocally(pendingTargetedPractice, practice));
         }
       }
       void startExplanation(practice.id);

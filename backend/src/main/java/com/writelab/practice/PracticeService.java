@@ -22,6 +22,8 @@ import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.targeted.TargetedPracticeStore;
 import com.writelab.tools.ToolInvocation;
 import com.writelab.writing.WordCounter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class PracticeService {
+
+    private static final Logger log = LoggerFactory.getLogger(PracticeService.class);
 
     static final int MIN_WORDS = 200;
     static final int MAX_WORDS = 500;
@@ -124,13 +128,19 @@ public class PracticeService {
                 toToolInvocationEntities(result.toolInvocations()),
                 toRetrievalHitEntities(resolved)
         );
-        transactionTemplate.executeWithoutResult(status -> {
-            jdbcAggregateTemplate.insert(entity);
-            if (targetedPracticeId != null) {
+        transactionTemplate.executeWithoutResult(status -> jdbcAggregateTemplate.insert(entity));
+
+        // The model has already been paid for and the Practice Attempt is committed. A failure to
+        // link a Targeted Practice must not hide the grading feedback the learner just earned.
+        if (targetedPracticeId != null) {
+            try {
                 targetedPracticeStore.complete(
                         targetedPracticeId, id, createdAt, resolvedFeedback.learningIssues());
+            } catch (RuntimeException exception) {
+                log.warn("针对性练习关联失败，但批改结果已保存: targetedPracticeId={}, practiceAttemptId={}, cause={}",
+                        targetedPracticeId, id, exception.getClass().getSimpleName());
             }
-        });
+        }
 
         return toResponse(
                 entity,

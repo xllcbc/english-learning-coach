@@ -60,7 +60,7 @@ class TargetedPracticeApiIntegrationTest {
     }
 
     @Test
-    void generatesASingleTargetedTaskThenReusesGradingAndShowsTheBeforeAfterChange() throws Exception {
+    void generatesASingleTargetedPracticeThenReusesGradingAndShowsTheBeforeAfterChange() throws Exception {
         UUID first = createPractice(250, 1);
         UUID second = createPractice(350, 2);
         UUID third = createPractice(450, 3);
@@ -116,10 +116,15 @@ class TargetedPracticeApiIntegrationTest {
         // Reading the Practice Attempt still returns the same stored feedback, not a second format.
         PracticeBody replay = getPractice(submitted.id());
         assertThat(replay.feedback()).isEqualTo(submitted.feedback());
+
+        // Reopening the Practice Attempt restores the same comparison.
+        TargetedBody linked = getTargetedPracticeForPractice(submitted.id());
+        assertThat(linked.id()).isEqualTo(task.id());
+        assertThat(linked.comparison()).isEqualTo(completed.comparison());
     }
 
     @Test
-    void refusesASecondSubmissionForTheSameTargetedPracticeTask() throws Exception {
+    void refusesASecondSubmissionForTheSameTargetedPractice() throws Exception {
         createPractice(250, 1);
         createPractice(350, 2);
         createPractice(450, 3);
@@ -131,6 +136,42 @@ class TargetedPracticeApiIntegrationTest {
         assertThat(second.statusCode()).isEqualTo(409);
         ErrorBody error = objectMapper.readValue(second.body(), ErrorBody.class);
         assertThat(error.code()).isEqualTo("TARGETED_PRACTICE_ALREADY_SUBMITTED");
+    }
+
+    @Test
+    void reportsAnUnchangedTargetedIssueWhenTheAfterAttemptStillHasIt() throws Exception {
+        createPractice(250, 1);
+        createPractice(350, 2);
+        createPractice(450, 3);
+        TargetedBody task = postTargetedPractice(IssueCategory.GRAMMAR, IssueSeverity.MINOR);
+
+        PracticeBody submitted = postPractice(250, task.id());
+        TargetedBody completed = getTargetedPractice(task.id());
+
+        assertThat(submitted.feedback().learningIssues())
+                .anySatisfy(issue -> assertThat(issue.category()).isEqualTo(IssueCategory.GRAMMAR));
+        assertThat(completed.comparison().beforeCount()).isEqualTo(1);
+        assertThat(completed.comparison().afterCount()).isEqualTo(1);
+        assertThat(completed.comparison().change()).isZero();
+        assertThat(completed.comparison().trend()).isEqualTo(TargetedPracticeTrend.UNCHANGED);
+    }
+
+    @Test
+    void refusesToGenerateATargetedPracticeWithoutAUsableStudyPlan() throws Exception {
+        createPractice(250, 1);
+
+        String body = objectMapper.writeValueAsString(
+                new CreateTargetedBody(IssueCategory.GRAMMAR, IssueSeverity.MINOR));
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/targeted-practices"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(409);
+        ErrorBody error = objectMapper.readValue(response.body(), ErrorBody.class);
+        assertThat(error.code()).isEqualTo("TARGETED_PRACTICE_UNAVAILABLE");
+        assertThat(error.message()).contains("Study Plan");
     }
 
     private ReviewBody getReview() throws Exception {
@@ -152,6 +193,12 @@ class TargetedPracticeApiIntegrationTest {
 
     private TargetedBody getTargetedPractice(UUID id) throws Exception {
         HttpResponse<String> response = get("/api/targeted-practices/" + id);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), TargetedBody.class);
+    }
+
+    private TargetedBody getTargetedPracticeForPractice(UUID practiceAttemptId) throws Exception {
+        HttpResponse<String> response = get("/api/targeted-practices/by-practice/" + practiceAttemptId);
         assertThat(response.statusCode()).isEqualTo(200);
         return objectMapper.readValue(response.body(), TargetedBody.class);
     }

@@ -25,6 +25,12 @@ import java.util.UUID;
 @Component
 public class TargetedPracticeStore {
 
+    private static final String COLUMNS = """
+            id, priority, target_category, target_severity, focus, prompt,
+            evidence, grounding_materials, occurrence_count, attempt_count,
+            before_practice_attempt_id, before_created_at, before_count,
+            practice_attempt_id, after_count, created_at, completed_at""";
+
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
 
@@ -72,6 +78,11 @@ public class TargetedPracticeStore {
                 .orElseThrow(() -> new TargetedPracticeNotFoundException(id));
     }
 
+    public Optional<TargetedPracticeResponse> findByPracticeAttemptId(UUID practiceAttemptId) {
+        return findRow("practice_attempt_id = :value", practiceAttemptId)
+                .map(this::toResponse);
+    }
+
     public void requirePending(UUID id) {
         TargetedPracticeRow row = findRow(id)
                 .orElseThrow(() -> new TargetedPracticeNotFoundException(id));
@@ -115,15 +126,12 @@ public class TargetedPracticeStore {
     }
 
     private Optional<TargetedPracticeRow> findRow(UUID id) {
-        return jdbcClient.sql("""
-                        SELECT id, priority, target_category, target_severity, focus, prompt,
-                               evidence, grounding_materials, occurrence_count, attempt_count,
-                               before_practice_attempt_id, before_created_at, before_count,
-                               practice_attempt_id, after_count, created_at, completed_at
-                        FROM targeted_practice
-                        WHERE id = :id
-                        """)
-                .param("id", id)
+        return findRow("id = :value", id);
+    }
+
+    private Optional<TargetedPracticeRow> findRow(String condition, UUID value) {
+        return jdbcClient.sql("SELECT " + COLUMNS + " FROM targeted_practice WHERE " + condition)
+                .param("value", value)
                 .query((resultSet, rowNumber) -> mapRow(resultSet))
                 .optional();
     }
@@ -158,12 +166,10 @@ public class TargetedPracticeStore {
         TargetedPracticeComparison comparison = row.practiceAttemptId() == null || row.afterCount() == null
                 ? null
                 : TargetedPracticeComparison.between(
-                        row.beforePracticeAttemptId(),
-                        row.beforeCreatedAt(),
-                        row.beforeCount(),
-                        row.practiceAttemptId(),
-                        row.completedAt(),
-                        row.afterCount());
+                        new TargetedIssueSnapshot(
+                                row.beforePracticeAttemptId(), row.beforeCreatedAt(), row.beforeCount()),
+                        new TargetedIssueSnapshot(
+                                row.practiceAttemptId(), row.completedAt(), row.afterCount()));
         return new TargetedPracticeResponse(
                 row.id(),
                 row.createdAt(),
@@ -173,8 +179,8 @@ public class TargetedPracticeStore {
                 row.severity(),
                 row.focus(),
                 row.prompt(),
-                readEvidence(row.evidence()),
-                readMaterials(row.groundingMaterials()),
+                readJsonArray(row.evidence(), LearningIssueEvidence[].class),
+                readJsonArray(row.groundingMaterials(), GroundingMaterial[].class),
                 row.occurrenceCount(),
                 row.attemptCount(),
                 row.beforePracticeAttemptId(),
@@ -187,12 +193,8 @@ public class TargetedPracticeStore {
         );
     }
 
-    private List<LearningIssueEvidence> readEvidence(String json) {
-        return List.of(objectMapper.readValue(json, LearningIssueEvidence[].class));
-    }
-
-    private List<GroundingMaterial> readMaterials(String json) {
-        return List.of(objectMapper.readValue(json, GroundingMaterial[].class));
+    private <T> List<T> readJsonArray(String json, Class<T[]> type) {
+        return List.of(objectMapper.readValue(json, type));
     }
 
     private record TargetedPracticeRow(

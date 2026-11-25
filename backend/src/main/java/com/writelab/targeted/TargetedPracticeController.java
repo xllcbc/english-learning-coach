@@ -2,6 +2,7 @@ package com.writelab.targeted;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,5 +36,16 @@ public class TargetedPracticeController {
     @GetMapping("/{id}")
     public TargetedPracticeResponse findById(@PathVariable UUID id) {
         return targetedPracticeService.find(id);
+    }
+
+    /**
+     * Lets the Practice Attempt detail restore its Targeted Practice comparison after a reload
+     * without changing the grading response format. 204 means the attempt was not targeted.
+     */
+    @GetMapping("/by-practice/{practiceAttemptId}")
+    public ResponseEntity<TargetedPracticeResponse> findByPracticeAttempt(@PathVariable UUID practiceAttemptId) {
+        return targetedPracticeService.findByPracticeAttemptId(practiceAttemptId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 }
