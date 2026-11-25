@@ -101,9 +101,9 @@ class MockTutorModelClientTest {
     }
 
     @Test
-    void recordsAWordChoiceIssueForASpeakingTurn() {
+    void recordsATenseIssueForASpeakingTurn() {
         TutorModelContext context = new TutorModelContext(
-                "I am very happy with my progress.",
+                "I go to the park yesterday.",
                 List.of(),
                 Set.of("lookup_word"),
                 new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));
@@ -112,17 +112,30 @@ class MockTutorModelClientTest {
 
         assertThat(answer.issues()).hasSize(1);
         LearningIssue issue = answer.issues().getFirst();
-        assertThat(issue.category()).isEqualTo(IssueCategory.VOCABULARY);
+        assertThat(issue.category()).isEqualTo(IssueCategory.GRAMMAR);
         assertThat(issue.severity()).isEqualTo(IssueSeverity.MINOR);
-        assertThat(issue.originalSentence()).isEqualTo("I am very happy with my progress.");
-        assertThat(issue.suggestion()).contains("particularly");
-        assertThat(issue.explanation()).contains("用词");
+        assertThat(issue.originalSentence()).isEqualTo("I go to the park yesterday.");
+        assertThat(issue.suggestion()).isEqualTo("I went to the park yesterday.");
+        assertThat(issue.explanation()).contains("过去式");
     }
 
     @Test
     void leavesAWellFormedSpeakingTurnWithoutIssues() {
         TutorModelContext context = new TutorModelContext(
                 "I went to the park yesterday.",
+                List.of(),
+                Set.of("lookup_word"),
+                new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));
+
+        TutorModelDecision.Answer answer = (TutorModelDecision.Answer) client.next(context);
+
+        assertThat(answer.issues()).isEmpty();
+    }
+
+    @Test
+    void doesNotFlagCorrectWordChoiceAsAnIssue() {
+        TutorModelContext context = new TutorModelContext(
+                "I am very happy with my progress.",
                 List.of(),
                 Set.of("lookup_word"),
                 new TutorBriefing("Speaking Practice", List.of(), TutorScenario.SPEAKING_PRACTICE));

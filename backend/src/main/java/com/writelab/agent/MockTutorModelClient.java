@@ -6,6 +6,7 @@ import com.writelab.feedback.LearningIssue;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -23,15 +24,29 @@ public class MockTutorModelClient implements TutorModelClient {
                     + "请先在「我的文档」补充材料，或重新生成教师讲解后再问。";
 
     /**
-     * Deterministic word-choice lessons for Mock mode. Speaking Practice has no written Practice
-     * Attempt to grade, so the offline coach reports one obvious, low-risk improvement instead of
-     * inventing a grammar rewrite.
+     * Deterministic tense check for Mock mode. It only fires when the utterance carries an explicit
+     * past-time marker and a present-tense verb, so correct English never receives a false issue.
      */
-    private static final List<Map.Entry<String, String>> SPEAKING_WORD_CHOICES = List.of(
-            Map.entry("a lot of", "many"),
-            Map.entry("very", "particularly"),
-            Map.entry("good", "effective")
-    );
+    private static final Pattern PAST_TIME_MARKER = Pattern.compile(
+            "\\b(?:yesterday|last (?:night|week|month|year)|ago)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern PRESENT_TENSE_VERB = Pattern.compile(
+            "\\b(go|see|eat|take|make|do|have|come|write|speak|run)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Map<String, String> SIMPLE_PAST = Map.ofEntries(
+            Map.entry("go", "went"),
+            Map.entry("see", "saw"),
+            Map.entry("eat", "ate"),
+            Map.entry("take", "took"),
+            Map.entry("make", "made"),
+            Map.entry("do", "did"),
+            Map.entry("have", "had"),
+            Map.entry("come", "came"),
+            Map.entry("write", "wrote"),
+            Map.entry("speak", "spoke"),
+            Map.entry("run", "ran"));
 
     private final ObjectMapper objectMapper;
 
@@ -119,29 +134,33 @@ public class MockTutorModelClient implements TutorModelClient {
 
     private static List<LearningIssue> speakingIssues(String learnerMessage) {
         String sentence = learnerMessage == null ? "" : learnerMessage.strip();
-        if (sentence.isEmpty()) {
+        if (sentence.isEmpty() || !PAST_TIME_MARKER.matcher(sentence).find()) {
             return List.of();
         }
-        for (Map.Entry<String, String> choice : SPEAKING_WORD_CHOICES) {
-            Matcher matcher = Pattern.compile(
-                            "\\b" + Pattern.quote(choice.getKey()) + "\\b",
-                            Pattern.CASE_INSENSITIVE)
-                    .matcher(sentence);
-            if (!matcher.find()) {
-                continue;
-            }
-            String matched = matcher.group();
-            String suggestion = sentence.substring(0, matcher.start())
-                    + choice.getValue()
-                    + sentence.substring(matcher.end());
-            return List.of(new LearningIssue(
-                    sentence,
-                    suggestion,
-                    IssueCategory.VOCABULARY,
-                    IssueSeverity.MINOR,
-                    "口语里用词可以更精确：把「" + matched + "」换成「"
-                            + choice.getValue() + "」会更自然。"));
+        Matcher verb = PRESENT_TENSE_VERB.matcher(sentence);
+        if (!verb.find()) {
+            return List.of();
         }
-        return List.of();
+        String matched = verb.group();
+        String past = SIMPLE_PAST.get(matched.toLowerCase(Locale.ROOT));
+        if (past == null) {
+            return List.of();
+        }
+        String suggestion = sentence.substring(0, verb.start())
+                + capitalizeLike(matched, past)
+                + sentence.substring(verb.end());
+        return List.of(new LearningIssue(
+                sentence,
+                suggestion,
+                IssueCategory.GRAMMAR,
+                IssueSeverity.MINOR,
+                "句子里有过去时间，动词「" + matched + "」要用过去式「" + past + "」。"));
+    }
+
+    private static String capitalizeLike(String original, String replacement) {
+        if (original.isEmpty() || !Character.isUpperCase(original.charAt(0))) {
+            return replacement;
+        }
+        return Character.toUpperCase(replacement.charAt(0)) + replacement.substring(1);
     }
 }

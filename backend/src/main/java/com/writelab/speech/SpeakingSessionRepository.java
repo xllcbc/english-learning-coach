@@ -74,21 +74,5 @@ public interface SpeakingSessionRepository {
             toolInvocations = toolInvocations == null ? List.of() : List.copyOf(toolInvocations);
             issues = issues == null ? List.of() : List.copyOf(issues);
         }
-
-        public SpeakingTurnDraft(
-                UUID sessionId,
-                SpeakingInputMode inputMode,
-                String transcript,
-                String reply,
-                SpeechFailureReason fallbackReason,
-                Integer latencyMs,
-                AgentStopReason stopReason,
-                ModelMode modelMode,
-                List<AgentStep> steps,
-                List<ToolInvocation> toolInvocations
-        ) {
-            this(sessionId, inputMode, transcript, reply, fallbackReason, latencyMs, stopReason,
-                    modelMode, steps, toolInvocations, List.of());
-        }
     }
 }

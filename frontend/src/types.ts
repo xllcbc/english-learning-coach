@@ -132,18 +132,6 @@ export type SpeakingInputMode = 'VOICE' | 'TEXT';
 
 export type SpeakingFallbackReason = 'failed' | 'timeout' | 'synthesis_failed';
 
-export interface SpokenLearningIssue {
-  id: string;
-  sessionId: string;
-  turnId: string;
-  position: number;
-  originalSentence: string;
-  suggestion: string;
-  category: IssueCategory;
-  severity: IssueSeverity;
-  explanation: string;
-}
-
 export interface SpeakingTurn {
   id: string;
   sessionId: string;
@@ -158,7 +146,7 @@ export interface SpeakingTurn {
   createdAt: string;
   steps: AgentStep[];
   toolInvocations: ToolInvocation[];
-  issues: SpokenLearningIssue[];
+  issues: LearningIssue[];
 }
 
 export interface SpeakingSession {
@@ -188,7 +176,7 @@ export interface SpeakingAudioReply {
   inputMode: SpeakingInputMode;
   mockMode: boolean;
   latencyMs: number | null;
-  issues: SpokenLearningIssue[];
+  issues: LearningIssue[];
 }
 
 export interface SpeakingTextReply {
@@ -201,7 +189,7 @@ export interface SpeakingTextReply {
   inputMode: SpeakingInputMode;
   mockMode: boolean;
   latencyMs: number | null;
-  issues: SpokenLearningIssue[];
+  issues: LearningIssue[];
 }
 
 export interface SpeakingLatencyStats {

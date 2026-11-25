@@ -78,7 +78,7 @@ public final class TutorAgentCore {
                 toolInvocations.add(toolInvocation(call, ToolInvocationStatus.BLOCKED, startedNanos));
                 return turn(
                         request, TOOL_BUDGET_ANSWER, steps, toolInvocations,
-                        AgentStopReason.TOOL_BUDGET_EXHAUSTED);
+                        AgentStopReason.TOOL_BUDGET_EXHAUSTED, List.of());
             }
 
             long toolStartedNanos = System.nanoTime();
@@ -105,7 +105,7 @@ public final class TutorAgentCore {
 
         return turn(
                 request, STEP_BUDGET_ANSWER, steps, toolInvocations,
-                AgentStopReason.STEP_BUDGET_EXHAUSTED);
+                AgentStopReason.STEP_BUDGET_EXHAUSTED, List.of());
     }
 
     private static ToolTurnContext turnToolContext(TutorBriefing briefing) {
@@ -154,16 +154,6 @@ public final class TutorAgentCore {
                 call.arguments(),
                 status,
                 elapsedMillis(startedNanos));
-    }
-
-    private static AgentTurn turn(
-            AgentTurnRequest request,
-            String answer,
-            List<AgentStep> steps,
-            List<ToolInvocation> toolInvocations,
-            AgentStopReason stopReason
-    ) {
-        return turn(request, answer, steps, toolInvocations, stopReason, List.of());
     }
 
     private static AgentTurn turn(

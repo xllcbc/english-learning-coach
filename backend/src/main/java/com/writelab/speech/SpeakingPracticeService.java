@@ -8,11 +8,13 @@ import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorScenario;
 import com.writelab.feedback.FeedbackModel;
+import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.ToolRegistry;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -30,9 +32,6 @@ public class SpeakingPracticeService {
     public static final String TRANSCRIPTION_TIMEOUT_TEXT = "语音识别超时，请改用文字输入。";
     public static final String SYNTHESIS_FAILED_TEXT = "语音回复暂不可用，已用文字回答。";
     public static final String EMPTY_ANSWER_TEXT = "我暂时没有想到合适的回复，请再说一次。";
-
-    /** Model-reported issues are valuable, but one spoken turn must not flood the session. */
-    private static final int MAX_ISSUES_PER_TURN = 3;
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             LookupWordTool.NAME,
@@ -166,6 +165,11 @@ public class SpeakingPracticeService {
         Integer latencyMs = inputMode == SpeakingInputMode.VOICE && audio != null
                 ? elapsedMillis(startedAtNanos)
                 : null;
+        // A Learning Issue must quote what the learner actually said; drop anything the model
+        // paraphrased or invented so replay never shows a sentence the learner never spoke.
+        List<LearningIssue> groundedIssues = turn.issues().stream()
+                .filter(issue -> quotesLearner(learnerText, issue.originalSentence()))
+                .toList();
 
         SpeakingTurn saved = repository.saveTurn(new SpeakingSessionRepository.SpeakingTurnDraft(
                 session.id(),
@@ -178,7 +182,7 @@ public class SpeakingPracticeService {
                 modelMode,
                 turn.steps(),
                 turn.toolInvocations(),
-                turn.issues().stream().limit(MAX_ISSUES_PER_TURN).toList()));
+                groundedIssues));
 
         if (audio == null) {
             return new TextReply(saved, reply, SpeechFailureReason.SYNTHESIS_FAILED);
@@ -205,6 +209,7 @@ public class SpeakingPracticeService {
                 null,
                 modelMode,
                 List.of(),
+                List.of(),
                 List.of()));
         return new TextReply(saved, text, reason);
     }
@@ -213,6 +218,17 @@ public class SpeakingPracticeService {
         if (cancelled != null && cancelled.getAsBoolean()) {
             throw new SpeakingTurnCancelledException();
         }
+    }
+
+    private static boolean quotesLearner(String learnerText, String originalSentence) {
+        String quote = normalized(originalSentence);
+        return !quote.isBlank() && normalized(learnerText).contains(quote);
+    }
+
+    private static String normalized(String value) {
+        return value == null
+                ? ""
+                : value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").strip();
     }
 
     private static int elapsedMillis(long startedAtNanos) {

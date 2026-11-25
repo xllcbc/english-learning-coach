@@ -12,6 +12,7 @@ import {
 } from '../api';
 import type { SpeakingChannelConnection, SpeakingChannelHandlers } from '../api';
 import type {
+  LearningIssue,
   SpeakingAudioReply,
   SpeakingFallbackReason,
   SpeakingInputMode,
@@ -19,7 +20,6 @@ import type {
   SpeakingSession,
   SpeakingSessionSummary,
   SpeakingTextReply,
-  SpokenLearningIssue,
 } from '../types';
 import { categoryLabels, severityLabels } from '../labels';
 
@@ -33,7 +33,7 @@ interface DisplayTurn {
   transcript: string;
   reply: string;
   fallbackReason: SpeakingFallbackReason | null;
-  issues: SpokenLearningIssue[];
+  issues: LearningIssue[];
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -57,7 +57,7 @@ function displayTurn(
   transcript: string,
   reply: string,
   fallbackReason: SpeakingFallbackReason | null,
-  issues: SpokenLearningIssue[],
+  issues: LearningIssue[],
 ): DisplayTurn {
   return { key, inputMode, transcript, reply, fallbackReason, issues };
 }
@@ -138,7 +138,7 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
     transcript: string,
     reply: string,
     reason: SpeakingFallbackReason | null,
-    issues: SpokenLearningIssue[],
+    issues: LearningIssue[],
   ) => {
     localTurnSequence.current += 1;
     const key = `local-${localTurnSequence.current}`;
@@ -442,8 +442,8 @@ export function SpeakingPracticePanel({ defaultMockMode }: SpeakingPracticePanel
               {turn.reply && <div className="speaking-reply">{turn.reply}</div>}
               {turn.issues.length > 0 && (
                 <ul className="speaking-issues" aria-label="口语学习问题">
-                  {turn.issues.map((issue) => (
-                    <li key={issue.id} className="speaking-issue">
+                  {turn.issues.map((issue, index) => (
+                    <li key={`${turn.key}-issue-${index}`} className="speaking-issue">
                       <div className="speaking-issue-heading">
                         <span className="category-tag">{categoryLabels[issue.category]}</span>
                         <span className="severity-tag">{severityLabels[issue.severity]}</span>

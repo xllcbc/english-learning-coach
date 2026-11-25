@@ -1,8 +1,8 @@
--- Spoken Learning Issues are owned by a Speaking Session turn, never by a Practice Attempt
--- (ADR-0012). They replay with their turn and are deliberately absent from learning_issue, whose
--- rows remain anchored to written Practice Attempts.
+-- Learning Issues found in a Speaking Session turn belong to that session, never to a Practice
+-- Attempt (ADR-0012). They replay with their turn and are deliberately absent from learning_issue,
+-- whose rows remain anchored to written Practice Attempts.
 
-CREATE TABLE spoken_learning_issue (
+CREATE TABLE speaking_session_learning_issue (
     id UUID PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES speaking_session (id) ON DELETE CASCADE,
     turn_id UUID NOT NULL REFERENCES speaking_session_turn (id) ON DELETE CASCADE,
@@ -15,8 +15,8 @@ CREATE TABLE spoken_learning_issue (
     UNIQUE (turn_id, position)
 );
 
-CREATE INDEX idx_spoken_learning_issue_session
-    ON spoken_learning_issue (session_id);
+CREATE INDEX idx_speaking_session_learning_issue_session
+    ON speaking_session_learning_issue (session_id);
 
-COMMENT ON TABLE spoken_learning_issue IS
+COMMENT ON TABLE speaking_session_learning_issue IS
     'A Learning Issue found in a Speaking Session turn; independent of Practice Attempt and written Learning Issues.';

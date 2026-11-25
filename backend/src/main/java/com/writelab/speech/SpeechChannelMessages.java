@@ -1,5 +1,7 @@
 package com.writelab.speech;
 
+import com.writelab.feedback.LearningIssue;
+
 import java.util.List;
 
 /**
@@ -61,7 +63,7 @@ public final class SpeechChannelMessages {
             String inputMode,
             boolean mockMode,
             Integer latencyMs,
-            List<SpokenLearningIssue> issues
+            List<LearningIssue> issues
     ) implements OutgoingMessage {
 
         public SpokenReplyMessage {
@@ -79,7 +81,7 @@ public final class SpeechChannelMessages {
             String inputMode,
             boolean mockMode,
             Integer latencyMs,
-            List<SpokenLearningIssue> issues
+            List<LearningIssue> issues
     ) implements OutgoingMessage {
 
         public TextReplyMessage {

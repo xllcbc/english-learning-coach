@@ -12,7 +12,6 @@ import com.writelab.speech.SpeakingSessionNotFoundException;
 import com.writelab.speech.SpeakingSessionRepository;
 import com.writelab.speech.SpeakingTurn;
 import com.writelab.speech.SpeechFailureReason;
-import com.writelab.speech.SpokenLearningIssue;
 import com.writelab.tools.ToolInvocation;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -167,7 +166,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
         UUID turnId = UUID.randomUUID();
         Instant createdAt = Instant.now();
         int[] committedPosition = new int[1];
-        List<SpokenLearningIssue> savedIssues = new ArrayList<>();
+        List<LearningIssue> savedIssues = new ArrayList<>();
 
         transactionTemplate.executeWithoutResult(status -> {
             lockSession(draft.sessionId());
@@ -270,20 +269,15 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
         }
     }
 
-    private List<SpokenLearningIssue> readIssues(UUID turnId) {
+    private List<LearningIssue> readIssues(UUID turnId) {
         return jdbcClient.sql("""
-                        SELECT id, session_id, turn_id, position, original_sentence, suggestion,
-                               category, severity, explanation
-                        FROM spoken_learning_issue
+                        SELECT original_sentence, suggestion, category, severity, explanation
+                        FROM speaking_session_learning_issue
                         WHERE turn_id = :turnId
                         ORDER BY position
                         """)
                 .param("turnId", turnId)
-                .query((resultSet, rowNum) -> new SpokenLearningIssue(
-                        resultSet.getObject("id", UUID.class),
-                        resultSet.getObject("session_id", UUID.class),
-                        resultSet.getObject("turn_id", UUID.class),
-                        resultSet.getInt("position"),
+                .query((resultSet, rowNum) -> new LearningIssue(
                         resultSet.getString("original_sentence"),
                         resultSet.getString("suggestion"),
                         IssueCategory.valueOf(resultSet.getString("category")),
@@ -292,17 +286,16 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                 .list();
     }
 
-    private List<SpokenLearningIssue> saveIssues(
+    private List<LearningIssue> saveIssues(
             UUID turnId,
             UUID sessionId,
             List<LearningIssue> issues
     ) {
-        List<SpokenLearningIssue> saved = new ArrayList<>(issues.size());
+        List<LearningIssue> saved = new ArrayList<>(issues.size());
         int position = 1;
         for (LearningIssue issue : issues) {
-            UUID id = UUID.randomUUID();
             jdbcClient.sql("""
-                            INSERT INTO spoken_learning_issue (
+                            INSERT INTO speaking_session_learning_issue (
                                 id, session_id, turn_id, position, original_sentence, suggestion,
                                 category, severity, explanation
                             ) VALUES (
@@ -310,7 +303,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                                 :category, :severity, :explanation
                             )
                             """)
-                    .param("id", id)
+                    .param("id", UUID.randomUUID())
                     .param("sessionId", sessionId)
                     .param("turnId", turnId)
                     .param("position", position)
@@ -320,16 +313,7 @@ public class JdbcSpeakingSessionRepository implements SpeakingSessionRepository 
                     .param("severity", issue.severity().name())
                     .param("explanation", issue.explanation())
                     .update();
-            saved.add(new SpokenLearningIssue(
-                    id,
-                    sessionId,
-                    turnId,
-                    position,
-                    issue.originalSentence(),
-                    issue.suggestion(),
-                    issue.category(),
-                    issue.severity(),
-                    issue.explanation()));
+            saved.add(issue);
             position++;
         }
         return saved;

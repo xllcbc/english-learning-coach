@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SpeakingPracticePanel } from '../components/SpeakingPracticePanel';
 import type { SpeakingChannelHandlers } from '../api';
 import type {
+  LearningIssue,
   SpeakingAudioReply,
   SpeakingLatencyStats,
   SpeakingSession,
   SpeakingSessionSummary,
-  SpokenLearningIssue,
   SpeakingTextReply,
 } from '../types';
 
@@ -73,12 +73,8 @@ function session(overrides: Partial<SpeakingSession> = {}): SpeakingSession {
   };
 }
 
-function spokenIssue(overrides: Partial<SpokenLearningIssue> = {}): SpokenLearningIssue {
+function learningIssue(overrides: Partial<LearningIssue> = {}): LearningIssue {
   return {
-    id: 'issue-1',
-    sessionId: 'session-1',
-    turnId: 'turn-1',
-    position: 1,
     originalSentence: 'I go to the park yesterday.',
     suggestion: 'I went to the park yesterday.',
     category: 'GRAMMAR',
@@ -204,7 +200,7 @@ describe('SpeakingPracticePanel', () => {
       turns: [
         {
           ...session().turns[0],
-          issues: [spokenIssue()],
+          issues: [learningIssue()],
         },
       ],
     }));
@@ -241,7 +237,7 @@ describe('SpeakingPracticePanel', () => {
       inputMode: 'VOICE',
       mockMode: true,
       latencyMs: 800,
-      issues: [spokenIssue()],
+      issues: [learningIssue()],
     });
 
     expect(await screen.findByText('语法')).toBeInTheDocument();

@@ -35,16 +35,6 @@ public record AgentTurn(
         issues = issues == null ? List.of() : List.copyOf(issues);
     }
 
-    public AgentTurn(
-            String learnerMessage,
-            String answer,
-            List<AgentStep> steps,
-            List<ToolInvocation> toolInvocations,
-            AgentStopReason stopReason
-    ) {
-        this(learnerMessage, answer, steps, toolInvocations, stopReason, List.of());
-    }
-
     public boolean completed() {
         return stopReason == AgentStopReason.COMPLETED;
     }

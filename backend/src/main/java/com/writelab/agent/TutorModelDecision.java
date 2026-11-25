@@ -45,9 +45,5 @@ public sealed interface TutorModelDecision {
             content = content == null ? "" : content;
             issues = issues == null ? List.of() : List.copyOf(issues);
         }
-
-        public Answer(String content) {
-            this(content, List.of());
-        }
     }
 }

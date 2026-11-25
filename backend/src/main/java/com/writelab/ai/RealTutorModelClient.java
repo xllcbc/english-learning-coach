@@ -169,7 +169,7 @@ public class RealTutorModelClient implements TutorModelClient {
         }
     }
 
-    private TutorModelDecision parse(String content, TutorScenario scenario) {
+    TutorModelDecision parse(String content, TutorScenario scenario) {
         String json = extractJson(content);
         @SuppressWarnings("unchecked")
         Map<String, Object> decision = objectMapper.readValue(json, Map.class);
