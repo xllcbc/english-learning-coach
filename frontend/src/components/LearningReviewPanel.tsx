@@ -91,7 +91,7 @@ export function LearningReviewPanel() {
 
           {!hasPlan && (
             <div className="review-empty">
-              <h3>还没有足够的反复问题可以诊断</h3>
+              <h3>还没有足够的反复问题可以复盘</h3>
               <p>
                 继续完成几篇 Practice Attempt，复盘会自动按类别和严重度聚类，并为每类问题检索依据材料。
               </p>
@@ -164,7 +164,10 @@ function StudyPlanItem({ item }: { item: StudyPlanRecommendation }) {
           <h4>依据材料</h4>
           <ul>
             {item.groundingMaterials.map((material) => (
-              <GroundingItem key={material.id} material={material} />
+              <GroundingItem
+                key={`${material.category}-${material.content}`}
+                material={material}
+              />
             ))}
           </ul>
         </div>

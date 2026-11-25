@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Exercises Learning Review through the HTTP boundary only: it creates real Practice Attempts, reads
- * the review back, and then checks every recommendation's evidence ids against the persisted
- * Learning Issues. The expected clustering comes from the deterministic Mock feedback model's
- * categories, not from internal workflow state.
+ * the review back, and then checks every recommendation's evidence against the Practice Attempt API.
+ * The expected clustering comes from the deterministic Mock feedback model's categories, not from
+ * internal workflow state.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -74,17 +74,17 @@ class LearningReviewApiIntegrationTest {
 
         assertThat(review.status()).isEqualTo(LearningReviewStatus.SUFFICIENT_DATA);
         assertThat(review.attemptCount()).isEqualTo(4);
-        assertThat(review.recentAttemptLimit()).isEqualTo(LearningReviewWorkflow.DEFAULT_RECENT_ATTEMPT_LIMIT);
         assertThat(review.message()).contains("4").contains("反复出现");
         assertThat(review.studyPlan()).isNotEmpty();
 
+        // The deterministic Mock model produces GRAMMAR in all four attempts and COHERENCE in the
+        // three long ones, so the API-level order is not merely a 1..N renumbering of any list.
         assertThat(review.studyPlan())
                 .extracting(PlanBody::priority)
-                .containsExactlyElementsOf(
-                        java.util.stream.IntStream.rangeClosed(1, review.studyPlan().size()).boxed().toList());
+                .containsExactly(1, 2);
         assertThat(review.studyPlan())
                 .extracting(PlanBody::category)
-                .contains(IssueCategory.GRAMMAR, IssueCategory.COHERENCE);
+                .containsExactly(IssueCategory.GRAMMAR, IssueCategory.COHERENCE);
         assertThat(review.studyPlan())
                 .allSatisfy(plan -> {
                     assertThat(plan.action()).isNotBlank();
@@ -98,23 +98,17 @@ class LearningReviewApiIntegrationTest {
 
         for (PlanBody plan : review.studyPlan()) {
             for (EvidenceBody evidence : plan.evidence()) {
-                Integer matching = jdbcClient.sql("""
-                                SELECT count(*)
-                                FROM learning_issue
-                                WHERE id = :issueId
-                                  AND practice_attempt_id = :practiceId
-                                  AND category = :category
-                                  AND severity = :severity
-                                """)
-                        .param("issueId", evidence.learningIssueId())
-                        .param("practiceId", evidence.practiceAttemptId())
-                        .param("category", plan.category().name())
-                        .param("severity", plan.severity().name())
-                        .query(Integer.class)
-                        .single();
-                assertThat(matching)
-                        .as("recommendation evidence must be a real Learning Issue")
-                        .isEqualTo(1);
+                assertThat(evidence.learningIssueId()).isNotNull();
+                PracticeBody practice = practiceDetail(evidence.practiceAttemptId());
+                assertThat(practice.feedback().learningIssues())
+                        .as("recommendation evidence must trace to a real Learning Issue")
+                        .anySatisfy(issue -> {
+                            assertThat(issue.category()).isEqualTo(plan.category());
+                            assertThat(issue.severity()).isEqualTo(plan.severity());
+                            assertThat(issue.originalSentence()).isEqualTo(evidence.originalSentence());
+                            assertThat(issue.suggestion()).isEqualTo(evidence.suggestion());
+                            assertThat(issue.explanation()).isEqualTo(evidence.explanation());
+                        });
                 assertThat(evidence.originalSentence()).isNotBlank();
                 assertThat(evidence.explanation()).isNotBlank();
             }
@@ -178,6 +172,13 @@ class LearningReviewApiIntegrationTest {
         return objectMapper.readValue(response.body(), ReviewBody.class);
     }
 
+    private PracticeBody practiceDetail(UUID practiceId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/practices/" + practiceId)).GET().build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return objectMapper.readValue(response.body(), PracticeBody.class);
+    }
+
     /**
      * Practice creation is fast enough that two attempts can share an instant. Pin the order so the
      * trend assertions describe the workflow, not clock resolution.
@@ -209,14 +210,25 @@ class LearningReviewApiIntegrationTest {
     private record CreateBody(String text) {
     }
 
-    private record PracticeBody(UUID id) {
+    private record PracticeBody(UUID id, FeedbackBody feedback) {
+    }
+
+    private record FeedbackBody(List<FeedbackIssueBody> learningIssues) {
+    }
+
+    private record FeedbackIssueBody(
+            String originalSentence,
+            String suggestion,
+            IssueCategory category,
+            IssueSeverity severity,
+            String explanation
+    ) {
     }
 
     private record ReviewBody(
             LearningReviewStatus status,
             String message,
             int attemptCount,
-            int recentAttemptLimit,
             LevelChangeBody estimatedLevelChange,
             List<PlanBody> studyPlan
     ) {
@@ -241,7 +253,6 @@ class LearningReviewApiIntegrationTest {
             IssueSeverity severity,
             int occurrenceCount,
             int attemptCount,
-            int priorityScore,
             String action,
             List<EvidenceBody> evidence,
             List<GroundingBody> groundingMaterials

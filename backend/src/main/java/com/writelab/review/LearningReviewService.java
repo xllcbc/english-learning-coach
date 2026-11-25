@@ -20,6 +20,6 @@ public class LearningReviewService {
 
     public LearningReviewResponse review() {
         int limit = LearningReviewWorkflow.DEFAULT_RECENT_ATTEMPT_LIMIT;
-        return workflow.review(store.recentAttempts(limit), limit);
+        return workflow.review(store.recentAttempts(limit));
     }
 }

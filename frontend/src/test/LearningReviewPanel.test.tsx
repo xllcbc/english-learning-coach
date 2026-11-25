@@ -20,7 +20,6 @@ function review(overrides: Partial<LearningReview> = {}): LearningReview {
     status: 'SUFFICIENT_DATA',
     message: '基于最近 4 次 Practice Attempt，发现 2 类反复出现的学习问题。',
     attemptCount: 4,
-    recentAttemptLimit: 10,
     estimatedLevelChange: {
       fromLevel: 'B1',
       toLevel: 'B2',
@@ -47,7 +46,6 @@ function review(overrides: Partial<LearningReview> = {}): LearningReview {
         severity: 'MINOR',
         occurrenceCount: 4,
         attemptCount: 4,
-        priorityScore: 48,
         action: '优先复习「语法」类学习问题，并用最近一次的原句做最小改写练习。',
         evidence: [
           {
@@ -61,7 +59,6 @@ function review(overrides: Partial<LearningReview> = {}): LearningReview {
         ],
         groundingMaterials: [
           {
-            id: 'material-1',
             category: 'GRAMMAR',
             content: '主谓一致：主语是第三人称单数时，现在时的谓语动词要加 -s。',
             source: 'WriteLab 自建依据材料',
@@ -76,7 +73,6 @@ function review(overrides: Partial<LearningReview> = {}): LearningReview {
         severity: 'MAJOR',
         occurrenceCount: 3,
         attemptCount: 3,
-        priorityScore: 41,
         action: '优先复习「连贯性」类学习问题。',
         evidence: [
           {
@@ -126,7 +122,7 @@ describe('LearningReviewPanel', () => {
   it('states that there is not enough data instead of showing a fabricated plan', async () => {
     api.getLearningReview.mockResolvedValue(review({
       status: 'INSUFFICIENT_DATA',
-      message: '最近只有 1 次 Practice Attempt，至少需要 3 次才能诊断反复出现的学习问题。',
+      message: '最近只有 1 次 Practice Attempt，至少需要 3 次才能汇总出可靠的 Study Plan。',
       attemptCount: 1,
       estimatedLevelChange: null,
       studyPlan: [],
@@ -137,8 +133,7 @@ describe('LearningReviewPanel', () => {
     expect(await screen.findByText(/至少需要 3 次/)).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Study Plan' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Estimated Level 变化')).not.toBeInTheDocument();
-    expect(screen.getByText(/还没有足够的反复问题/)).toBeInTheDocument();
-  });
+    expect(screen.getByText(/还没有足够的反复问题/)).toBeInTheDocument();  });
 
   it('shows a load error with a retry action', async () => {
     api.getLearningReview.mockRejectedValueOnce(new Error('复盘服务不可用'));

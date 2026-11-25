@@ -13,14 +13,14 @@ import java.util.UUID;
  * happened, and the Learning Issues it produced. The workflow owns clustering and prioritisation;
  * this record is only the input row.
  */
-public record ReviewAttempt(
+public record PracticeAttemptSnapshot(
         UUID practiceAttemptId,
         Instant createdAt,
         EstimatedLevel estimatedLevel,
-        List<ReviewIssue> issues
+        List<LearningIssueSnapshot> issues
 ) {
 
-    public ReviewAttempt {
+    public PracticeAttemptSnapshot {
         if (practiceAttemptId == null) {
             throw new IllegalArgumentException("Practice Attempt id is required");
         }

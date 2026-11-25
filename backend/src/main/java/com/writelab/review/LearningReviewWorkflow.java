@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * The Learning Review workflow. Control flow is fixed in application code: read the recent window,
  * group Learning Issues by category and severity, keep only patterns that recur across attempts,
  * retrieve Grounding Material for each pattern, then order the Study Plan. There is no model
- * decision here, which is what makes the diagnosis reproducible.
+ * decision here, which is what makes the review reproducible.
  *
  * <p>Recurrence is counted per Practice Attempt, not per issue row: two issues of the same category
  * in one essay are one occurrence of the pattern, so a single bad day cannot outrank a pattern the
@@ -36,7 +36,13 @@ public class LearningReviewWorkflow {
     public static final int DEFAULT_RECENT_ATTEMPT_LIMIT = 10;
     public static final int MIN_ATTEMPTS = 3;
     public static final int MIN_RECURRING_ATTEMPTS = 2;
+    public static final int MIN_LEVEL_TREND_ATTEMPTS = 2;
 
+    /**
+     * Ranking weights. One more Practice Attempt showing the pattern dominates raw issue count, so a
+     * MAJOR pattern seen in three essays outranks a MINOR pattern repeated many times in two. The
+     * numbers are scores, not learner-facing percentages.
+     */
     private static final int ATTEMPT_WEIGHT = 10;
     private static final int OCCURRENCE_WEIGHT = 2;
     private static final int MAJOR_BONUS = 5;
@@ -47,30 +53,25 @@ public class LearningReviewWorkflow {
         this.materialRetriever = materialRetriever;
     }
 
-    public LearningReviewResponse review(List<ReviewAttempt> attempts) {
-        return review(attempts, DEFAULT_RECENT_ATTEMPT_LIMIT);
-    }
-
-    public LearningReviewResponse review(List<ReviewAttempt> attempts, int recentAttemptLimit) {
-        List<ReviewAttempt> ordered = attempts == null ? List.of() : attempts.stream()
-                .sorted(Comparator.comparing(ReviewAttempt::createdAt)
-                        .thenComparing(ReviewAttempt::practiceAttemptId))
+    public LearningReviewResponse review(List<PracticeAttemptSnapshot> attempts) {
+        List<PracticeAttemptSnapshot> ordered = attempts == null ? List.of() : attempts.stream()
+                .sorted(Comparator.comparing(PracticeAttemptSnapshot::createdAt)
+                        .thenComparing(PracticeAttemptSnapshot::practiceAttemptId))
                 .toList();
+        EstimatedLevelChange levelChange = estimatedLevelChange(ordered);
 
         if (ordered.size() < MIN_ATTEMPTS) {
             return new LearningReviewResponse(
                     LearningReviewStatus.INSUFFICIENT_DATA,
                     "最近只有 " + ordered.size() + " 次 Practice Attempt，至少需要 " + MIN_ATTEMPTS
-                            + " 次才能诊断反复出现的学习问题。继续练习后再来复盘。",
+                            + " 次才能汇总出可靠的 Study Plan。继续练习后再来复盘。",
                     ordered.size(),
-                    recentAttemptLimit,
-                    null,
+                    levelChange,
                     List.of()
             );
         }
 
         List<Cluster> clusters = recurringClusters(ordered);
-        EstimatedLevelChange levelChange = estimatedLevelChange(ordered);
 
         if (clusters.isEmpty()) {
             return new LearningReviewResponse(
@@ -78,7 +79,6 @@ public class LearningReviewWorkflow {
                     "最近 " + ordered.size()
                             + " 次练习中没有发现反复出现的学习问题，暂时无法给出可靠的 Study Plan。",
                     ordered.size(),
-                    recentAttemptLimit,
                     levelChange,
                     List.of()
             );
@@ -94,7 +94,6 @@ public class LearningReviewWorkflow {
                     cluster.severity,
                     cluster.issues.size(),
                     cluster.attemptCount,
-                    cluster.priorityScore(),
                     actionFor(cluster),
                     cluster.evidence(),
                     groundingMaterialsFor(cluster)
@@ -106,17 +105,16 @@ public class LearningReviewWorkflow {
                 "基于最近 " + ordered.size() + " 次 Practice Attempt，发现 " + plan.size()
                         + " 类反复出现的学习问题。",
                 ordered.size(),
-                recentAttemptLimit,
                 levelChange,
                 plan
         );
     }
 
-    private static List<Cluster> recurringClusters(List<ReviewAttempt> attempts) {
+    private static List<Cluster> recurringClusters(List<PracticeAttemptSnapshot> attempts) {
         Map<ClusterKey, Cluster> clusters = new LinkedHashMap<>();
-        for (ReviewAttempt attempt : attempts) {
+        for (PracticeAttemptSnapshot attempt : attempts) {
             Set<ClusterKey> seenInAttempt = new LinkedHashSet<>();
-            for (ReviewIssue issue : attempt.issues()) {
+            for (LearningIssueSnapshot issue : attempt.issues()) {
                 ClusterKey key = new ClusterKey(issue.category(), issue.severity());
                 Cluster cluster = clusters.computeIfAbsent(key, ignored -> new Cluster(key));
                 cluster.issues.add(new IssueRef(attempt, issue));
@@ -140,8 +138,7 @@ public class LearningReviewWorkflow {
     private static String actionFor(Cluster cluster) {
         String severityLabel = cluster.severity == IssueSeverity.MAJOR ? "严重" : "轻微";
         return "优先复习「" + IssueCategoryLabels.label(cluster.category) + "」类学习问题（"
-                + severityLabel + "，最近 " + cluster.attemptCount + " 次练习中出现 "
-                + cluster.issues.size() + " 次）。先阅读下方依据材料，再用最近一次的原句做最小改写练习。";
+                + severityLabel + "）。先阅读下方依据材料，再用最近一次的原句做最小改写练习。";
     }
 
     private List<GroundingMaterial> groundingMaterialsFor(Cluster cluster) {
@@ -154,15 +151,18 @@ public class LearningReviewWorkflow {
                     .map(RankedGroundingMaterial::material)
                     .toList();
         } catch (RuntimeException exception) {
-            // Grounding Material is supporting evidence. A retrieval outage must not hide a
-            // diagnosis the workflow already found in the learner's own history.
+            // A retrieval outage must not hide a finding the workflow already made from the
+            // learner's own history.
             log.warn("学习复盘依据材料检索失败，本次建议不引用依据: category={}, cause={}",
                     cluster.category, exception.getClass().getSimpleName());
             return List.of();
         }
     }
 
-    private static EstimatedLevelChange estimatedLevelChange(List<ReviewAttempt> ordered) {
+    private static EstimatedLevelChange estimatedLevelChange(List<PracticeAttemptSnapshot> ordered) {
+        if (ordered.size() < MIN_LEVEL_TREND_ATTEMPTS) {
+            return null;
+        }
         List<EstimatedLevelPoint> points = ordered.stream()
                 .map(attempt -> new EstimatedLevelPoint(
                         attempt.practiceAttemptId(), attempt.estimatedLevel(), attempt.createdAt()))
@@ -179,7 +179,7 @@ public class LearningReviewWorkflow {
     private record ClusterKey(IssueCategory category, IssueSeverity severity) {
     }
 
-    private record IssueRef(ReviewAttempt attempt, ReviewIssue issue) {
+    private record IssueRef(PracticeAttemptSnapshot attempt, LearningIssueSnapshot issue) {
     }
 
     private static final class Cluster {

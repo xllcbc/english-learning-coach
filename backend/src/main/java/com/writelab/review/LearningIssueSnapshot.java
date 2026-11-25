@@ -8,7 +8,7 @@ import java.util.UUID;
 /**
  * One persisted Learning Issue and the text a recommendation can quote to prove where it came from.
  */
-public record ReviewIssue(
+public record LearningIssueSnapshot(
         UUID learningIssueId,
         IssueCategory category,
         IssueSeverity severity,
@@ -17,7 +17,7 @@ public record ReviewIssue(
         String explanation
 ) {
 
-    public ReviewIssue {
+    public LearningIssueSnapshot {
         if (learningIssueId == null) {
             throw new IllegalArgumentException("Learning Issue id is required");
         }

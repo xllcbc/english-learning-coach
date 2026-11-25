@@ -15,7 +15,9 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,7 +28,7 @@ class LearningReviewWorkflowTest {
     @Test
     void ordersTheStudyPlanByRecurrenceSeverityAndCategory() {
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
-        List<ReviewAttempt> attempts = List.of(
+        List<PracticeAttemptSnapshot> attempts = List.of(
                 attempt(1, EstimatedLevel.B1,
                         issue(IssueCategory.COHERENCE, IssueSeverity.MAJOR),
                         issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR)),
@@ -41,7 +43,7 @@ class LearningReviewWorkflowTest {
                         issue(IssueCategory.VOCABULARY, IssueSeverity.MAJOR))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         assertThat(review.status()).isEqualTo(LearningReviewStatus.SUFFICIENT_DATA);
         assertThat(review.studyPlan())
@@ -59,24 +61,65 @@ class LearningReviewWorkflowTest {
     }
 
     @Test
+    void matchesTheLabelledLearningIssueSetWithFullPrecisionAndRecall() {
+        // A small hand-labelled set: these three patterns are the weaknesses a reviewer would
+        // recognise, while the one-off PUNCTUATION issue is noise and must not be promoted.
+        Set<CategorySeverity> labels = Set.of(
+                new CategorySeverity(IssueCategory.GRAMMAR, IssueSeverity.MINOR),
+                new CategorySeverity(IssueCategory.COHERENCE, IssueSeverity.MAJOR),
+                new CategorySeverity(IssueCategory.VOCABULARY, IssueSeverity.MINOR)
+        );
+        LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
+        List<PracticeAttemptSnapshot> attempts = List.of(
+                attempt(1, EstimatedLevel.B1,
+                        issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR),
+                        issue(IssueCategory.COHERENCE, IssueSeverity.MAJOR)),
+                attempt(2, EstimatedLevel.B1,
+                        issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR),
+                        issue(IssueCategory.COHERENCE, IssueSeverity.MAJOR)),
+                attempt(3, EstimatedLevel.B2,
+                        issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR),
+                        issue(IssueCategory.VOCABULARY, IssueSeverity.MINOR),
+                        issue(IssueCategory.PUNCTUATION, IssueSeverity.MINOR)),
+                attempt(4, EstimatedLevel.B2,
+                        issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR),
+                        issue(IssueCategory.VOCABULARY, IssueSeverity.MINOR))
+        );
+
+        LearningReviewResponse review = workflow.review(attempts);
+
+        Set<CategorySeverity> predicted = review.studyPlan().stream()
+                .map(item -> new CategorySeverity(item.category(), item.severity()))
+                .collect(Collectors.toSet());
+        long correct = predicted.stream().filter(labels::contains).count();
+        double precision = (double) correct / predicted.size();
+        double recall = (double) correct / labels.size();
+
+        assertThat(precision).isEqualTo(1.0);
+        assertThat(recall).isEqualTo(1.0);
+        assertThat(predicted).doesNotContain(
+                new CategorySeverity(IssueCategory.PUNCTUATION, IssueSeverity.MINOR));
+    }
+
+    @Test
     void linksEveryRecommendationToTheConcreteLearningIssuesItCameFrom() {
         UUID firstAttemptId = UUID.randomUUID();
         UUID secondAttemptId = UUID.randomUUID();
         UUID firstIssueId = UUID.randomUUID();
         UUID secondIssueId = UUID.randomUUID();
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
-        List<ReviewAttempt> attempts = List.of(
-                new ReviewAttempt(firstAttemptId, DAY_ONE, EstimatedLevel.B1, List.of(new ReviewIssue(
+        List<PracticeAttemptSnapshot> attempts = List.of(
+                new PracticeAttemptSnapshot(firstAttemptId, DAY_ONE, EstimatedLevel.B1, List.of(new LearningIssueSnapshot(
                         firstIssueId, IssueCategory.GRAMMAR, IssueSeverity.MINOR,
                         "She go to school.", "She goes to school.", "第三人称单数需要加 -s。"))),
-                new ReviewAttempt(secondAttemptId, DAY_ONE.plusSeconds(3600), EstimatedLevel.B1, List.of(
-                        new ReviewIssue(
+                new PracticeAttemptSnapshot(secondAttemptId, DAY_ONE.plusSeconds(3600), EstimatedLevel.B1, List.of(
+                        new LearningIssueSnapshot(
                                 secondIssueId, IssueCategory.GRAMMAR, IssueSeverity.MINOR,
                                 "He go home.", "He goes home.", "第三人称单数需要加 -s。"))),
                 attempt(3, EstimatedLevel.B1, issue(IssueCategory.VOCABULARY, IssueSeverity.MINOR))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         StudyPlanRecommendation grammar = review.studyPlan().stream()
                 .filter(item -> item.category() == IssueCategory.GRAMMAR)
@@ -96,32 +139,46 @@ class LearningReviewWorkflowTest {
     }
 
     @Test
-    void statesExplicitlyWhenThereAreTooFewPracticeAttemptsToDiagnose() {
+    void statesExplicitlyWhenThereAreTooFewPracticeAttemptsToReview() {
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
-        List<ReviewAttempt> attempts = List.of(
+        List<PracticeAttemptSnapshot> attempts = List.of(
                 attempt(1, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR)),
                 attempt(2, EstimatedLevel.B2, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         assertThat(review.status()).isEqualTo(LearningReviewStatus.INSUFFICIENT_DATA);
         assertThat(review.message()).contains("至少需要", "3");
         assertThat(review.studyPlan()).isEmpty();
-        assertThat(review.estimatedLevelChange()).isNull();
+        assertThat(review.estimatedLevelChange()).isNotNull();
         assertThat(review.attemptCount()).isEqualTo(2);
+    }
+
+    @Test
+    void omitsTheLevelTrendWhenThereIsOnlyOnePracticeAttempt() {
+        LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
+        List<PracticeAttemptSnapshot> attempts = List.of(
+                attempt(1, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR))
+        );
+
+        LearningReviewResponse review = workflow.review(attempts);
+
+        assertThat(review.status()).isEqualTo(LearningReviewStatus.INSUFFICIENT_DATA);
+        assertThat(review.studyPlan()).isEmpty();
+        assertThat(review.estimatedLevelChange()).isNull();
     }
 
     @Test
     void statesExplicitlyWhenNoIssueRecursAcrossTheRecentAttempts() {
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
-        List<ReviewAttempt> attempts = List.of(
+        List<PracticeAttemptSnapshot> attempts = List.of(
                 attempt(1, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR)),
                 attempt(2, EstimatedLevel.B1, issue(IssueCategory.COHERENCE, IssueSeverity.MAJOR)),
                 attempt(3, EstimatedLevel.B1, issue(IssueCategory.VOCABULARY, IssueSeverity.MINOR))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         assertThat(review.status()).isEqualTo(LearningReviewStatus.INSUFFICIENT_DATA);
         assertThat(review.message()).contains("没有发现反复出现");
@@ -135,16 +192,16 @@ class LearningReviewWorkflowTest {
         UUID middleId = UUID.randomUUID();
         UUID lastId = UUID.randomUUID();
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new StubMaterials());
-        List<ReviewAttempt> attempts = List.of(
-                new ReviewAttempt(firstId, DAY_ONE, EstimatedLevel.B1, List.of(issue(
+        List<PracticeAttemptSnapshot> attempts = List.of(
+                new PracticeAttemptSnapshot(firstId, DAY_ONE, EstimatedLevel.B1, List.of(issue(
                         IssueCategory.GRAMMAR, IssueSeverity.MINOR))),
-                new ReviewAttempt(middleId, DAY_ONE.plusSeconds(3600), EstimatedLevel.B1, List.of(issue(
+                new PracticeAttemptSnapshot(middleId, DAY_ONE.plusSeconds(3600), EstimatedLevel.B1, List.of(issue(
                         IssueCategory.GRAMMAR, IssueSeverity.MINOR))),
-                new ReviewAttempt(lastId, DAY_ONE.plusSeconds(7200), EstimatedLevel.B2, List.of(issue(
+                new PracticeAttemptSnapshot(lastId, DAY_ONE.plusSeconds(7200), EstimatedLevel.B2, List.of(issue(
                         IssueCategory.GRAMMAR, IssueSeverity.MINOR)))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         EstimatedLevelChange change = review.estimatedLevelChange();
         assertThat(change).isNotNull();
@@ -163,13 +220,13 @@ class LearningReviewWorkflowTest {
     @Test
     void keepsRecommendationsWhenGroundingMaterialRetrievalFails() {
         LearningReviewWorkflow workflow = new LearningReviewWorkflow(new FailingMaterials());
-        List<ReviewAttempt> attempts = List.of(
+        List<PracticeAttemptSnapshot> attempts = List.of(
                 attempt(1, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR)),
                 attempt(2, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR)),
                 attempt(3, EstimatedLevel.B1, issue(IssueCategory.GRAMMAR, IssueSeverity.MINOR))
         );
 
-        LearningReviewResponse review = workflow.review(attempts, 10);
+        LearningReviewResponse review = workflow.review(attempts);
 
         assertThat(review.status()).isEqualTo(LearningReviewStatus.SUFFICIENT_DATA);
         assertThat(review.studyPlan()).singleElement().satisfies(item -> {
@@ -178,21 +235,21 @@ class LearningReviewWorkflowTest {
         });
     }
 
-    private static ReviewAttempt attempt(
-            int dayOffset,
+    private static PracticeAttemptSnapshot attempt(
+            int hourOffset,
             EstimatedLevel level,
-            ReviewIssue... issues
+            LearningIssueSnapshot... issues
     ) {
-        return new ReviewAttempt(
+        return new PracticeAttemptSnapshot(
                 UUID.randomUUID(),
-                DAY_ONE.plusSeconds(dayOffset * 3600L),
+                DAY_ONE.plusSeconds(hourOffset * 3600L),
                 level,
                 List.of(issues)
         );
     }
 
-    private static ReviewIssue issue(IssueCategory category, IssueSeverity severity) {
-        return new ReviewIssue(
+    private static LearningIssueSnapshot issue(IssueCategory category, IssueSeverity severity) {
+        return new LearningIssueSnapshot(
                 UUID.randomUUID(),
                 category,
                 severity,
@@ -200,6 +257,9 @@ class LearningReviewWorkflowTest {
                 "I have a problem with this sentence.",
                 "示例讲解：" + category + "。"
         );
+    }
+
+    private record CategorySeverity(IssueCategory category, IssueSeverity severity) {
     }
 
     private static final class StubMaterials implements LearningMaterialRetriever {

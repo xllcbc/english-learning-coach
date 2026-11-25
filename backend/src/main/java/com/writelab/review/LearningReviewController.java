@@ -5,7 +5,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Learning Review workflow channel. Reading is enough because the review is derived from the
+ * Learning Review HTTP entry point. Reading is enough because the review is derived from the
  * Practice Attempt history and does not create a new conversation or mutable session.
  */
 @RestController

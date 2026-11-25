@@ -156,13 +156,7 @@ export interface LearningIssueEvidence {
   explanation: string;
 }
 
-export interface GroundingMaterial {
-  id: string;
-  category: IssueCategory;
-  content: string;
-  source: string;
-  license: string;
-}
+export interface GroundingMaterial extends Omit<GroundingCitation, 'reference'> {}
 
 export interface StudyPlanRecommendation {
   priority: number;
@@ -171,7 +165,6 @@ export interface StudyPlanRecommendation {
   severity: IssueSeverity;
   occurrenceCount: number;
   attemptCount: number;
-  priorityScore: number;
   action: string;
   evidence: LearningIssueEvidence[];
   groundingMaterials: GroundingMaterial[];
@@ -181,7 +174,6 @@ export interface LearningReview {
   status: LearningReviewStatus;
   message: string;
   attemptCount: number;
-  recentAttemptLimit: number;
   estimatedLevelChange: EstimatedLevelChange | null;
   studyPlan: StudyPlanRecommendation[];
 }

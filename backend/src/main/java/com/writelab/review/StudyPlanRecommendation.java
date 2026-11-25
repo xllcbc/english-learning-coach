@@ -17,7 +17,6 @@ public record StudyPlanRecommendation(
         IssueSeverity severity,
         int occurrenceCount,
         int attemptCount,
-        int priorityScore,
         String action,
         List<LearningIssueEvidence> evidence,
         List<GroundingMaterial> groundingMaterials

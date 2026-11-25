@@ -27,7 +27,7 @@ public class LearningReviewStore {
     }
 
     @Transactional(readOnly = true)
-    public List<ReviewAttempt> recentAttempts(int limit) {
+    public List<PracticeAttemptSnapshot> recentAttempts(int limit) {
         List<IssueRow> rows = jdbcClient.sql("""
                         SELECT p.id AS practice_id,
                                p.created_at,
@@ -66,7 +66,7 @@ public class LearningReviewStore {
             AttemptBuilder attempt = attempts.computeIfAbsent(row.practiceId(), ignored -> new AttemptBuilder(
                     row.practiceId(), row.createdAt(), row.estimatedLevel()));
             if (row.issueId() != null) {
-                attempt.issues.add(new ReviewIssue(
+                attempt.issues.add(new LearningIssueSnapshot(
                         row.issueId(),
                         IssueCategory.valueOf(row.category()),
                         IssueSeverity.valueOf(row.severity()),
@@ -77,13 +77,13 @@ public class LearningReviewStore {
             }
         }
 
-        List<ReviewAttempt> ordered = new ArrayList<>(attempts.size());
+        List<PracticeAttemptSnapshot> ordered = new ArrayList<>(attempts.size());
         for (AttemptBuilder attempt : attempts.values()) {
             ordered.add(attempt.build());
         }
-        // The SQL reads newest first so LIMIT keeps the recent window; the workflow evaluates the
-        // same window oldest first, which is the direction an Estimated Level trend reads.
-        return ordered.reversed();
+        // Newest-first only exists so LIMIT keeps the recent window. The workflow is the single
+        // owner of evaluation order and sorts the window oldest first.
+        return ordered;
     }
 
     private record IssueRow(
@@ -104,7 +104,7 @@ public class LearningReviewStore {
         private final UUID practiceAttemptId;
         private final java.time.Instant createdAt;
         private final EstimatedLevel estimatedLevel;
-        private final List<ReviewIssue> issues = new ArrayList<>();
+        private final List<LearningIssueSnapshot> issues = new ArrayList<>();
 
         private AttemptBuilder(UUID practiceAttemptId, java.time.Instant createdAt, EstimatedLevel estimatedLevel) {
             this.practiceAttemptId = practiceAttemptId;
@@ -112,8 +112,8 @@ public class LearningReviewStore {
             this.estimatedLevel = estimatedLevel;
         }
 
-        private ReviewAttempt build() {
-            return new ReviewAttempt(practiceAttemptId, createdAt, estimatedLevel, issues);
+        private PracticeAttemptSnapshot build() {
+            return new PracticeAttemptSnapshot(practiceAttemptId, createdAt, estimatedLevel, issues);
         }
     }
 }
