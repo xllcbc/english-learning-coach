@@ -3,19 +3,15 @@ package com.writelab.conversation;
 import com.writelab.agent.AgentLoopBudget;
 import com.writelab.agent.AgentTurn;
 import com.writelab.agent.AgentTurnRequest;
+import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorAgentCore;
 import com.writelab.agent.TutorBriefing;
-import com.writelab.agent.TutorCitableSource;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.feedback.FeedbackModel;
-import com.writelab.feedback.IssueCategoryLabels;
-import com.writelab.feedback.LearningIssue;
 import com.writelab.feedback.ModelMode;
 import com.writelab.feedback.StructuredFeedback;
 import com.writelab.practice.ApiError;
-import com.writelab.retrieval.DocumentCitation;
 import com.writelab.retrieval.ExplanationMaterialResolver;
-import com.writelab.retrieval.GroundingMaterial;
 import com.writelab.streaming.TextChunker;
 import com.writelab.tools.LookupWordTool;
 import com.writelab.tools.ToolRegistry;
@@ -28,7 +24,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -107,7 +102,8 @@ public class TeacherConversationService {
             String message,
             SseEmitter emitter
     ) {
-        boolean mockMode = feedbackModel.mode() == ModelMode.MOCK;
+        ModelMode modelMode = feedbackModel.mode();
+        boolean mockMode = modelMode == ModelMode.MOCK;
         try {
             send(emitter, "start", new StartEvent(
                     practiceId, conversation.id(), store.nextTurnPosition(conversation.id()), mockMode));
@@ -115,7 +111,7 @@ public class TeacherConversationService {
             StructuredFeedback feedback = objectMapper.readValue(
                     practice.structuredResponse(), StructuredFeedback.class);
             ExplanationMaterialResolver.ResolvedMaterials materials = materialResolver.resolve(feedback);
-            TutorBriefing briefing = briefing(practice, feedback, materials);
+            TutorBriefing briefing = TeacherConversationBriefing.create(practice, feedback, materials);
             AgentTurn turn = tutorAgentCore.run(new AgentTurnRequest(
                     message, ALLOWED_TOOLS, AgentLoopBudget.defaults(), briefing));
 
@@ -132,9 +128,14 @@ public class TeacherConversationService {
             if (ConversationCitations.hasUnsupportedReferences(turn.answer(), citations)) {
                 throw new IllegalStateException("教师回答引用了不存在的依据");
             }
+            boolean hasCitableSource = !briefing.sources().isEmpty()
+                    || !LookupWordSteps.successful(turn.steps()).isEmpty();
+            if (turn.completed() && hasCitableSource && citations.isEmpty()) {
+                throw new IllegalStateException("教师回答没有引用任何依据");
+            }
 
-            TeacherConversationTurnResponse saved =
-                    store.persist(practiceId, conversation.id(), message, turn, citations);
+            TeacherConversationTurnResponse saved = store.persist(
+                    practiceId, conversation.id(), message, turn, citations, modelMode);
 
             for (String chunk : TextChunker.chunks(saved.answer())) {
                 send(emitter, "delta", new DeltaEvent(chunk));
@@ -151,59 +152,6 @@ public class TeacherConversationService {
             }
             emitter.complete();
         }
-    }
-
-    private static TutorBriefing briefing(
-            TeacherConversationStore.PracticeSource practice,
-            StructuredFeedback feedback,
-            ExplanationMaterialResolver.ResolvedMaterials materials
-    ) {
-        StringBuilder text = new StringBuilder("这是一份已完成的 Practice Attempt。\n");
-        text.append("写作原文：\n").append(practice.writingText()).append("\n\n");
-        text.append("已记录的学习问题：\n");
-        for (LearningIssue issue : feedback.focusedIssues()) {
-            text.append("- [").append(issue.category()).append('/').append(issue.severity()).append("] ")
-                    .append(issue.originalSentence()).append(" → ").append(issue.suggestion())
-                    .append("；").append(issue.explanation()).append('\n');
-        }
-
-        List<TutorCitableSource> sources = new ArrayList<>();
-        for (GroundingMaterial material : materials.groundingMaterials()) {
-            sources.add(new TutorCitableSource(
-                    sources.size() + 1,
-                    ConversationCitationKind.GROUNDING_MATERIAL.name(),
-                    IssueCategoryLabels.label(material.category()),
-                    material.content(),
-                    material.source(),
-                    material.license()));
-        }
-        for (DocumentCitation document : materials.documentCitations()) {
-            sources.add(new TutorCitableSource(
-                    document.reference(),
-                    ConversationCitationKind.USER_DOCUMENT.name(),
-                    document.title(),
-                    document.content(),
-                    "我的文档",
-                    null));
-        }
-
-        if (sources.isEmpty()) {
-            text.append("\n（没有检索到可引用的依据材料。）\n");
-        } else {
-            text.append("\n可引用依据：\n");
-            for (TutorCitableSource source : sources) {
-                text.append("[依据").append(source.reference()).append("] ")
-                        .append(kindLabel(source.kind())).append('：')
-                        .append(source.title()).append(" · ").append(source.content()).append('\n');
-            }
-        }
-        text.append("\n引用规则：回答中的每条规则或事实都要用 [依据N] 标注，"
-                + "N 只能来自上面的编号或成功查词的结果；没有依据时明确说明，不要编造。");
-        return new TutorBriefing(text.toString(), sources);
-    }
-
-    private static String kindLabel(String kind) {
-        return ConversationCitationKind.USER_DOCUMENT.name().equals(kind) ? "我的文档" : "依据材料";
     }
 
     private void send(SseEmitter emitter, String eventName, Object payload) {

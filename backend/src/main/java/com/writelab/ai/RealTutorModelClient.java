@@ -2,6 +2,7 @@ package com.writelab.ai;
 
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.LookupWordSteps;
+import com.writelab.agent.TutorCitationPlan;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
@@ -91,14 +92,15 @@ public class RealTutorModelClient implements TutorModelClient {
             return;
         }
         prompt.append("\n成功查词的词典条目（可引用）：\n");
-        int reference = context.briefing().sources().size();
-        for (AgentStep step : lookups) {
-            reference++;
+        for (int index = 0; index < lookups.size(); index++) {
+            AgentStep step = lookups.get(index);
             Map<String, Object> observation = LookupWordSteps.observation(step, objectMapper);
             String word = LookupWordSteps.text(observation, "word", step.arguments().get("word"));
             String partOfSpeech = LookupWordSteps.text(observation, "partOfSpeech", "");
             String meaning = LookupWordSteps.text(observation, "meaningZh", "");
-            prompt.append("- [依据").append(reference).append("] ").append(word).append("：")
+            prompt.append("- [依据")
+                    .append(TutorCitationPlan.dictionaryReference(context.briefing().sources(), index))
+                    .append("] ").append(word).append("：")
                     .append(partOfSpeech).append(' ').append(meaning).append('\n');
         }
     }

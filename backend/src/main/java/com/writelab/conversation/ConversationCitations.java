@@ -2,7 +2,9 @@ package com.writelab.conversation;
 
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.LookupWordSteps;
+import com.writelab.agent.TutorCitationPlan;
 import com.writelab.agent.TutorCitableSource;
+import com.writelab.agent.TutorSourceKind;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -27,12 +29,12 @@ final class ConversationCitations {
     }
 
     static List<ConversationCitation> available(
-            List<TutorCitableSource> groundingSources,
+            List<TutorCitableSource> briefingSources,
             List<AgentStep> steps,
             ObjectMapper objectMapper
     ) {
         List<ConversationCitation> citations = new ArrayList<>();
-        for (TutorCitableSource source : groundingSources) {
+        for (TutorCitableSource source : briefingSources) {
             citations.add(new ConversationCitation(
                     source.reference(),
                     kindOf(source.kind()),
@@ -41,9 +43,12 @@ final class ConversationCitations {
                     source.source(),
                     source.license()));
         }
-        int reference = groundingSources.size();
-        for (AgentStep step : LookupWordSteps.successful(steps)) {
-            citations.add(dictionaryCitation(++reference, step, objectMapper));
+        List<AgentStep> lookups = LookupWordSteps.successful(steps);
+        for (int index = 0; index < lookups.size(); index++) {
+            citations.add(dictionaryCitation(
+                    TutorCitationPlan.dictionaryReference(briefingSources, index),
+                    lookups.get(index),
+                    objectMapper));
         }
         return List.copyOf(citations);
     }
@@ -79,12 +84,11 @@ final class ConversationCitations {
         return references;
     }
 
-    private static ConversationCitationKind kindOf(String kind) {
-        try {
-            return ConversationCitationKind.valueOf(kind);
-        } catch (IllegalArgumentException unknown) {
-            return ConversationCitationKind.GROUNDING_MATERIAL;
-        }
+    private static ConversationCitationKind kindOf(TutorSourceKind kind) {
+        return switch (kind) {
+            case GROUNDING_MATERIAL -> ConversationCitationKind.GROUNDING_MATERIAL;
+            case USER_DOCUMENT -> ConversationCitationKind.USER_DOCUMENT;
+        };
     }
 
     private static ConversationCitation dictionaryCitation(

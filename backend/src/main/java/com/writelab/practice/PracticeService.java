@@ -18,8 +18,8 @@ import com.writelab.persistence.VocabularySuggestionEntity;
 import com.writelab.retrieval.CorpusSentenceResolver;
 import com.writelab.retrieval.CorpusSentenceSource;
 import com.writelab.retrieval.RetrievalHit;
+import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.tools.ToolInvocation;
-import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.writing.WordCounter;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -178,18 +178,8 @@ public class PracticeService {
                         ORDER BY position
                         """)
                 .param("id", practiceId)
-                .query((resultSet, rowNumber) -> new ToolInvocation(
-                        resultSet.getString("tool_name"),
-                        readArguments(resultSet.getString("arguments")),
-                        ToolInvocationStatus.valueOf(resultSet.getString("result_status")),
-                        resultSet.getLong("duration_millis")))
+                .query((resultSet, rowNumber) -> ToolInvocationRows.map(resultSet, objectMapper))
                 .list();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> readArguments(String json) {
-        Map<String, Object> arguments = objectMapper.readValue(json, Map.class);
-        return arguments == null ? Map.of() : arguments;
     }
 
     private static StructuredFeedback withResolvedSuggestions(

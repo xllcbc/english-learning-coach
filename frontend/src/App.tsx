@@ -465,6 +465,7 @@ export default function App() {
               onSaveVocabulary={handleSaveVocabulary}
             >
               <ExplanationView
+                key={`${result.id}-explanation`}
                 status={explanationStatus}
                 text={explanation}
                 groundingMaterials={explanationGrounding}

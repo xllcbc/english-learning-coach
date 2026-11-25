@@ -2,6 +2,7 @@ package com.writelab.conversation;
 
 import com.writelab.agent.AgentStep;
 import com.writelab.agent.AgentStopReason;
+import com.writelab.feedback.ModelMode;
 import com.writelab.tools.ToolInvocation;
 
 import java.time.Instant;
@@ -18,6 +19,7 @@ public record TeacherConversationTurnResponse(
         String learnerMessage,
         String answer,
         AgentStopReason stopReason,
+        ModelMode modelMode,
         Instant createdAt,
         List<AgentStep> steps,
         List<ConversationCitation> citations,

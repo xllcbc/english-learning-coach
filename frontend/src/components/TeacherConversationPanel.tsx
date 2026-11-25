@@ -253,9 +253,18 @@ export function TeacherConversationPanel({
 }
 
 function ConversationTurn({ turn }: { turn: TeacherConversationTurn }) {
+  const mockTurn = turn.modelMode === 'MOCK';
   return (
     <li className="conversation-turn">
-      <p className="conversation-question">{turn.learnerMessage}</p>
+      <div className="conversation-question-row">
+        <p className="conversation-question">{turn.learnerMessage}</p>
+        <span
+          className={`turn-mode ${mockTurn ? 'turn-mode-mock' : 'turn-mode-real'}`}
+          title={mockTurn ? '这一回合由确定性示例适配器生成' : '这一回合由真实模型生成'}
+        >
+          {mockTurn ? 'Mock 生成' : '真实生成'}
+        </span>
+      </div>
       <div className="conversation-answer">{turn.answer}</div>
       {turn.citations.length > 0 && (
         <div className="grounding-list conversation-citations" aria-label="本次回答的依据">

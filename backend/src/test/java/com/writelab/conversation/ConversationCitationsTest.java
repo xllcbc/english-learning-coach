@@ -4,6 +4,7 @@ import com.writelab.agent.AgentStep;
 import com.writelab.agent.AgentStepKind;
 import com.writelab.agent.AgentStepStatus;
 import com.writelab.agent.TutorCitableSource;
+import com.writelab.agent.TutorSourceKind;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -20,10 +21,10 @@ class ConversationCitationsTest {
     void numbersBriefingSourcesThenSuccessfulDictionaryLookups() {
         List<TutorCitableSource> sources = List.of(
                 new TutorCitableSource(
-                        1, "GROUNDING_MATERIAL", "连贯性",
+                        1, TutorSourceKind.GROUNDING_MATERIAL, "连贯性",
                         "用连接词显式标明逻辑关系。", "WriteLab 自建依据材料", "CC BY 4.0"),
                 new TutorCitableSource(
-                        2, "USER_DOCUMENT", "grammar.md · Grammar > Connectors",
+                        2, TutorSourceKind.USER_DOCUMENT, "grammar.md · Grammar > Connectors",
                         "However 用于转折。", "我的文档", null));
         List<AgentStep> steps = List.of(
                 toolStep("lookup_word", AgentStepStatus.SUCCESS, """

@@ -1847,11 +1847,37 @@ textarea {
   background: #fff;
 }
 
+.conversation-question-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .conversation-question {
   margin: 0;
   color: var(--ink-soft);
   font-size: 14px;
   font-weight: 700;
+}
+
+.turn-mode {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.turn-mode-mock {
+  background: #f3efe2;
+  color: #8a6d24;
+}
+
+.turn-mode-real {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .conversation-question::before {

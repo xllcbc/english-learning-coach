@@ -1,5 +1,8 @@
 package com.writelab.agent;
 
+import com.writelab.practice.ApiError;
+import com.writelab.practice.PracticeNotFoundException;
+import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.tools.LookupWordTool;
 import tools.jackson.databind.ObjectMapper;
 
@@ -31,9 +34,7 @@ public final class LookupWordSteps {
 
     public static Map<String, Object> observation(AgentStep step, ObjectMapper objectMapper) {
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> observation = objectMapper.readValue(step.output(), Map.class);
-            return observation == null ? Map.of() : observation;
+            return ToolInvocationRows.readArguments(step.output(), objectMapper);
         } catch (RuntimeException malformed) {
             return Map.of();
         }

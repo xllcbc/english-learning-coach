@@ -6,6 +6,7 @@ import com.writelab.agent.AgentStopReason;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
+import com.writelab.agent.TutorSourceKind;
 import com.writelab.feedback.ModelMode;
 import com.writelab.tools.ToolInvocation;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,15 +19,19 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
@@ -41,6 +46,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -61,6 +67,9 @@ class TeacherConversationApiIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
+    private JdbcClient jdbcClient;
+
+    @Autowired
     private ScriptedTutorModelClient model;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -68,6 +77,7 @@ class TeacherConversationApiIntegrationTest {
     @BeforeEach
     void resetModel() {
         model.reset();
+        jdbcClient.sql("DELETE FROM user_document").update();
     }
 
     @Test
@@ -102,6 +112,7 @@ class TeacherConversationApiIntegrationTest {
         assertThat(turn.learnerMessage()).isEqualTo("为什么这里用 moreover？");
         assertThat(turn.answer()).isEqualTo(String.join("", deltaTexts(streamed)));
         assertThat(turn.stopReason()).isEqualTo(AgentStopReason.COMPLETED);
+        assertThat(turn.modelMode()).isEqualTo(ModelMode.MOCK);
 
         assertThat(turn.steps()).hasSize(2);
         AgentStepBody lookup = turn.steps().getFirst();
@@ -198,6 +209,48 @@ class TeacherConversationApiIntegrationTest {
         assertThat(citation.title()).contains("moreover");
         assertThat(citation.content()).contains("此外");
         assertThat(citation.source()).isEqualTo("内置词典");
+    }
+
+    @Test
+    void citesAUserDocumentWithAnHttpSseReplayableTurn() throws Exception {
+        UUID practiceId = createPractice();
+        uploadAndWaitReady("grammar.md", relevantDocument());
+        model.script(context -> {
+            int documentReference = context.briefing().sources().stream()
+                    .filter(source -> source.kind() == TutorSourceKind.USER_DOCUMENT)
+                    .mapToInt(source -> source.reference())
+                    .findFirst()
+                    .orElseThrow();
+            return TutorModelDecision.answer(
+                    "我的文档里也提到了这一点 [依据" + documentReference + "]。");
+        });
+
+        CompleteBody complete = readEvent(
+                ask(practiceId, "我的文档里怎么说？").events().getLast(),
+                CompleteBody.class);
+
+        assertThat(complete.turn().citations()).singleElement().satisfies(citation -> {
+            assertThat(citation.kind()).isEqualTo(ConversationCitationKind.USER_DOCUMENT);
+            assertThat(citation.reference()).isPositive();
+            assertThat(citation.title()).startsWith("grammar.md · ");
+            assertThat(citation.content()).contains("I have a problem with this sentence.");
+        });
+
+        ConversationTurnBody replayed = getConversation(practiceId).turns().getFirst();
+        assertThat(replayed.citations()).isEqualTo(complete.turn().citations());
+    }
+
+    @Test
+    void rejectsAnAnswerThatIgnoresTheAvailableSources() throws Exception {
+        UUID practiceId = createPractice();
+        model.script(context -> TutorModelDecision.answer("这是一段没有任何依据的断言。"));
+
+        StreamResult result = ask(practiceId, "请解释这句话。");
+
+        assertThat(eventNames(result).getFirst()).isEqualTo("start");
+        assertThat(eventNames(result).getLast()).isEqualTo("error");
+        assertThat(eventNames(result)).doesNotContain("complete");
+        assertThat(getConversation(practiceId).turns()).isEmpty();
     }
 
     @Test
@@ -329,6 +382,46 @@ class TeacherConversationApiIntegrationTest {
         return objectMapper.readValue(response.body(), PracticeBody.class).id();
     }
 
+    private UUID uploadAndWaitReady(String filename, byte[] content) throws Exception {
+        HttpResponse<String> response = upload(filename, content);
+        assertThat(response.statusCode()).isEqualTo(202);
+        UUID documentId = objectMapper.readValue(response.body(), UploadBody.class).id();
+        awaitDocument(documentId);
+        return documentId;
+    }
+
+    private void awaitDocument(UUID documentId) throws Exception {
+        Instant deadline = Instant.now().plusSeconds(10);
+        while (Instant.now().isBefore(deadline)) {
+            HttpResponse<String> response = get("/api/documents/" + documentId);
+            if (response.statusCode() == 200) {
+                DocumentBody document = objectMapper.readValue(response.body(), DocumentBody.class);
+                if ("READY".equals(document.status())) {
+                    return;
+                }
+            }
+            Thread.sleep(25);
+        }
+        fail("用户文档没有在 10 秒内进入 READY: " + documentId);
+    }
+
+    private HttpResponse<String> upload(String filename, byte[] content) throws Exception {
+        String boundary = "----WriteLabBoundary" + UUID.randomUUID();
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + filename + "\"\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        body.write("Content-Type: application/octet-stream\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        body.write(content);
+        body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/documents"))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private StreamResult ask(UUID practiceId, String message) throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("message", message));
         HttpRequest request = HttpRequest.newBuilder(
@@ -417,6 +510,11 @@ class TeacherConversationApiIntegrationTest {
         return String.join(" ", Collections.nCopies(count, "practice"));
     }
 
+    private static byte[] relevantDocument() {
+        return ("# Grammar\n\n## Subject-verb agreement\n\n"
+                + "I have a problem with this sentence.\n").getBytes(StandardCharsets.UTF_8);
+    }
+
     private record StreamResult(int status, String contentType, List<SseEvent> events, String rawBody) {
     }
 
@@ -452,6 +550,7 @@ class TeacherConversationApiIntegrationTest {
             String learnerMessage,
             String answer,
             AgentStopReason stopReason,
+            ModelMode modelMode,
             List<AgentStepBody> steps,
             List<CitationBody> citations,
             List<ToolInvocation> toolInvocations
@@ -486,5 +585,11 @@ class TeacherConversationApiIntegrationTest {
     }
 
     private record PracticeBody(UUID id, List<ToolInvocation> toolInvocations) {
+    }
+
+    private record UploadBody(UUID id) {
+    }
+
+    private record DocumentBody(UUID id, String status) {
     }
 }

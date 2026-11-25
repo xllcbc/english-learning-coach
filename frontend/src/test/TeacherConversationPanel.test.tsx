@@ -37,6 +37,7 @@ function turn(overrides: Partial<TeacherConversationTurn> = {}): TeacherConversa
     learnerMessage: '为什么这里用 moreover？',
     answer: '用连接词会更连贯。',
     stopReason: 'COMPLETED',
+    modelMode: 'MOCK',
     createdAt: '2026-11-25T08:00:00Z',
     steps: [],
     citations: [],
@@ -76,6 +77,7 @@ describe('TeacherConversationPanel', () => {
     expect(screen.getByText('本次回答的依据')).toBeInTheDocument();
     expect(screen.getByText('依据材料')).toBeInTheDocument();
     expect(screen.getByText('Mock 模式')).toBeInTheDocument();
+    expect(screen.getByText('Mock 生成')).toBeInTheDocument();
     expect(api.streamConversationTurn).not.toHaveBeenCalled();
   });
 
@@ -106,6 +108,7 @@ describe('TeacherConversationPanel', () => {
         handlers.onDelta('会更连贯。');
         handlers.onComplete(turn({
           answer: '用连接词会更连贯。',
+          modelMode: 'REAL',
           citations: [
             {
               reference: 1,
@@ -134,6 +137,7 @@ describe('TeacherConversationPanel', () => {
     expect(screen.getByText('词典条目')).toBeInTheDocument();
     expect(screen.getByText('Dictionary Entry · moreover')).toBeInTheDocument();
     expect(screen.getByText('真实模型')).toBeInTheDocument();
+    expect(screen.getByText('真实生成')).toBeInTheDocument();
     expect(api.streamConversationTurn).toHaveBeenCalledWith(
       'practice-1',
       '为什么用 moreover？',

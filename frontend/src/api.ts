@@ -193,9 +193,6 @@ export async function streamExplanation(
     );
   }
 
-  let completed = false;
-  let errored = false;
-
   await readSse(response, (name, data) => {
     if (name === 'start') {
       const payload = JSON.parse(data) as { replay?: boolean };
@@ -209,7 +206,6 @@ export async function streamExplanation(
         groundingMaterials?: GroundingCitation[];
         documentCitations?: DocumentCitation[];
       };
-      completed = true;
       handlers.onComplete(
         payload.explanation,
         payload.groundingMaterials ?? [],
@@ -217,14 +213,9 @@ export async function streamExplanation(
       );
     } else if (name === 'error') {
       const payload = JSON.parse(data) as ApiError;
-      errored = true;
       handlers.onError(payload.message || '教师讲解生成失败，请重试。');
     }
-  });
-
-  if (!completed && !errored) {
-    handlers.onError('教师讲解流意外中断，请重试。');
-  }
+  }, () => handlers.onError('教师讲解流意外中断，请重试。'));
 }
 
 export function getConversation(practiceId: string): Promise<TeacherConversation> {
@@ -274,9 +265,6 @@ export async function streamConversationTurn(
     );
   }
 
-  let completed = false;
-  let errored = false;
-
   await readSse(response, (name, data) => {
     if (name === 'start') {
       handlers.onStart?.(JSON.parse(data) as ConversationStart);
@@ -285,18 +273,12 @@ export async function streamConversationTurn(
       handlers.onDelta(payload.text);
     } else if (name === 'complete') {
       const payload = JSON.parse(data) as { turn: TeacherConversationTurn };
-      completed = true;
       handlers.onComplete(payload.turn);
     } else if (name === 'error') {
       const payload = JSON.parse(data) as ApiError;
-      errored = true;
       handlers.onError(payload.message || '教师回答生成失败，请重试。');
     }
-  });
-
-  if (!completed && !errored) {
-    handlers.onError('教师对话流意外中断，请重试。');
-  }
+  }, () => handlers.onError('教师对话流意外中断，请重试。'));
 }
 
 /**
@@ -306,6 +288,7 @@ export async function streamConversationTurn(
 async function readSse(
   response: Response,
   onEvent: (name: string, data: string) => void,
+  onInterrupted?: () => void,
 ): Promise<void> {
   if (!response.body) {
     throw new ApiRequestError('STREAM_UNAVAILABLE', '无法读取流式回答，请重试。');
@@ -316,6 +299,7 @@ async function readSse(
   let buffer = '';
   let eventName = 'message';
   let dataLines: string[] = [];
+  let terminal = false;
 
   const dispatch = () => {
     if (dataLines.length === 0) {
@@ -327,6 +311,9 @@ async function readSse(
     const name = eventName;
     dataLines = [];
     eventName = 'message';
+    if (name === 'complete' || name === 'error') {
+      terminal = true;
+    }
     onEvent(name, data);
   };
 
@@ -358,6 +345,10 @@ async function readSse(
   buffer += decoder.decode();
   for (const line of buffer.split('\n')) {
     processLine(line.replace(/\r$/, ''));
+  }
+
+  if (!terminal) {
+    onInterrupted?.();
   }
 }
 

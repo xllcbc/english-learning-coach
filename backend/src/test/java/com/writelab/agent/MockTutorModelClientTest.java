@@ -22,11 +22,11 @@ class MockTutorModelClientTest {
                         "Practice Attempt 原文与学习问题。",
                         List.of(
                                 new TutorCitableSource(
-                                        1, "GROUNDING_MATERIAL", "连贯性",
+                                        1, TutorSourceKind.GROUNDING_MATERIAL, "连贯性",
                                         "用连接词显式标明逻辑关系。",
                                         "WriteLab 自建依据材料", "CC BY 4.0"),
                                 new TutorCitableSource(
-                                        2, "GROUNDING_MATERIAL", "词汇",
+                                        2, TutorSourceKind.GROUNDING_MATERIAL, "词汇",
                                         "选近义词要核对语域。",
                                         "WriteLab 自建依据材料", "CC BY 4.0"))));
 

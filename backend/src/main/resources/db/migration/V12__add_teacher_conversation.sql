@@ -14,6 +14,7 @@ CREATE TABLE teacher_conversation_turn (
     answer TEXT NOT NULL,
     stop_reason VARCHAR(32) NOT NULL
         CHECK (stop_reason IN ('COMPLETED', 'STEP_BUDGET_EXHAUSTED', 'TOOL_BUDGET_EXHAUSTED')),
+    model_mode VARCHAR(16) NOT NULL CHECK (model_mode IN ('MOCK', 'REAL')),
     created_at TIMESTAMPTZ NOT NULL,
     UNIQUE (conversation_id, position)
 );

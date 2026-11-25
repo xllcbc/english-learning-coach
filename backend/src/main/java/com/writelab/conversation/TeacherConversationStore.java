@@ -6,9 +6,9 @@ import com.writelab.agent.AgentStepStatus;
 import com.writelab.agent.AgentStopReason;
 import com.writelab.agent.AgentTurn;
 import com.writelab.feedback.ModelMode;
+import com.writelab.persistence.ToolInvocationRows;
 import com.writelab.practice.PracticeNotFoundException;
 import com.writelab.tools.ToolInvocation;
-import com.writelab.tools.ToolInvocationStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,7 +18,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -108,7 +107,7 @@ class TeacherConversationStore {
 
     List<TeacherConversationTurnResponse> readTurns(UUID conversationId) {
         List<TurnRow> rows = jdbcClient.sql("""
-                        SELECT id, position, learner_message, answer, stop_reason, created_at
+                        SELECT id, position, learner_message, answer, stop_reason, model_mode, created_at
                         FROM teacher_conversation_turn
                         WHERE conversation_id = :conversationId
                         ORDER BY position
@@ -120,6 +119,7 @@ class TeacherConversationStore {
                         resultSet.getString("learner_message"),
                         resultSet.getString("answer"),
                         AgentStopReason.valueOf(resultSet.getString("stop_reason")),
+                        ModelMode.valueOf(resultSet.getString("model_mode")),
                         resultSet.getTimestamp("created_at").toInstant()))
                 .list();
 
@@ -131,6 +131,7 @@ class TeacherConversationStore {
                     row.learnerMessage(),
                     row.answer(),
                     row.stopReason(),
+                    row.modelMode(),
                     row.createdAt(),
                     readSteps(row.id()),
                     readCitations(row.id()),
@@ -149,7 +150,8 @@ class TeacherConversationStore {
             UUID conversationId,
             String message,
             AgentTurn turn,
-            List<ConversationCitation> citations
+            List<ConversationCitation> citations,
+            ModelMode modelMode
     ) {
         UUID turnId = UUID.randomUUID();
         Instant createdAt = Instant.now();
@@ -162,10 +164,10 @@ class TeacherConversationStore {
             jdbcClient.sql("""
                             INSERT INTO teacher_conversation_turn (
                                 id, conversation_id, position, learner_message, answer,
-                                stop_reason, created_at
+                                stop_reason, model_mode, created_at
                             ) VALUES (
                                 :id, :conversationId, :position, :learnerMessage, :answer,
-                                :stopReason, :createdAt
+                                :stopReason, :modelMode, :createdAt
                             )
                             """)
                     .param("id", turnId)
@@ -174,6 +176,7 @@ class TeacherConversationStore {
                     .param("learnerMessage", message)
                     .param("answer", turn.answer())
                     .param("stopReason", turn.stopReason().name())
+                    .param("modelMode", modelMode.name())
                     .param("createdAt", Timestamp.from(createdAt))
                     .update();
 
@@ -181,15 +184,20 @@ class TeacherConversationStore {
             saveCitations(turnId, citations);
             saveToolInvocations(practiceId, turnId, turn.toolInvocations());
 
-            jdbcClient.sql("UPDATE teacher_conversation SET updated_at = :updatedAt WHERE id = :id")
+            jdbcClient.sql("""
+                            UPDATE teacher_conversation
+                            SET updated_at = :updatedAt, model_mode = :modelMode
+                            WHERE id = :id
+                            """)
                     .param("updatedAt", Timestamp.from(createdAt))
+                    .param("modelMode", modelMode.name())
                     .param("id", conversationId)
                     .update();
         });
 
         return new TeacherConversationTurnResponse(
-                turnId, committedPosition[0], message, turn.answer(), turn.stopReason(), createdAt,
-                turn.steps(), citations, turn.toolInvocations());
+                turnId, committedPosition[0], message, turn.answer(), turn.stopReason(),
+                modelMode, createdAt, turn.steps(), citations, turn.toolInvocations());
     }
 
     private void lockConversation(UUID conversationId) {
@@ -211,7 +219,7 @@ class TeacherConversationStore {
                         resultSet.getInt("position"),
                         AgentStepKind.valueOf(resultSet.getString("kind")),
                         resultSet.getString("tool_name"),
-                        readArguments(resultSet.getString("arguments")),
+                        ToolInvocationRows.readArguments(resultSet.getString("arguments"), objectMapper),
                         AgentStepStatus.valueOf(resultSet.getString("result_status")),
                         resultSet.getString("output"),
                         resultSet.getLong("duration_millis")))
@@ -244,11 +252,7 @@ class TeacherConversationStore {
                         ORDER BY position
                         """)
                 .param("turnId", turnId)
-                .query((resultSet, rowNum) -> new ToolInvocation(
-                        resultSet.getString("tool_name"),
-                        readArguments(resultSet.getString("arguments")),
-                        ToolInvocationStatus.valueOf(resultSet.getString("result_status")),
-                        resultSet.getLong("duration_millis")))
+                .query((resultSet, rowNum) -> ToolInvocationRows.map(resultSet, objectMapper))
                 .list();
     }
 
@@ -334,12 +338,6 @@ class TeacherConversationStore {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> readArguments(String json) {
-        Map<String, Object> arguments = objectMapper.readValue(json, Map.class);
-        return arguments == null ? Map.of() : arguments;
-    }
-
     record PracticeSource(String writingText, String structuredResponse, ModelMode modelMode) {
     }
 
@@ -352,6 +350,7 @@ class TeacherConversationStore {
             String learnerMessage,
             String answer,
             AgentStopReason stopReason,
+            ModelMode modelMode,
             Instant createdAt
     ) {
     }

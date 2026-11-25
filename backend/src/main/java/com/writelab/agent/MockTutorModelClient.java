@@ -43,9 +43,8 @@ public class MockTutorModelClient implements TutorModelClient {
                     .append(" [依据").append(source.reference()).append("]\n");
         }
 
-        int reference = sources.size();
-        for (AgentStep lookup : lookups) {
-            reference++;
+        for (int index = 0; index < lookups.size(); index++) {
+            AgentStep lookup = lookups.get(index);
             Map<String, Object> observation = LookupWordSteps.observation(lookup, objectMapper);
             String word = LookupWordSteps.text(observation, "word", lookup.arguments().get("word"));
             String meaning = LookupWordSteps.text(observation, "meaningZh", "");
@@ -54,7 +53,8 @@ public class MockTutorModelClient implements TutorModelClient {
             if (!partOfSpeech.isBlank()) {
                 answer.append(partOfSpeech).append(' ');
             }
-            answer.append(meaning).append(" [依据").append(reference).append("]\n");
+            answer.append(meaning)
+                    .append(" [依据").append(TutorCitationPlan.dictionaryReference(sources, index)).append("]\n");
         }
 
         answer.append("以上依据已随回答保存，重开这份 Practice Attempt 可以原样回看。");

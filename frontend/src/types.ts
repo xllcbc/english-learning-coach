@@ -113,6 +113,7 @@ export interface TeacherConversationTurn {
   learnerMessage: string;
   answer: string;
   stopReason: AgentStopReason;
+  modelMode: 'MOCK' | 'REAL';
   createdAt: string;
   steps: AgentStep[];
   citations: ConversationCitation[];
