@@ -32,7 +32,7 @@ public final class QueryLearningProgressToolDefinition implements ToolDefinition
             not enough history instead of guessing a pattern.""";
 
     public static final int RECENT_ATTEMPT_LIMIT = 20;
-    public static final String SOURCE = "学习历史";
+    public static final String SOURCE = "历史练习记录";
 
     private static final Logger log = LoggerFactory.getLogger(QueryLearningProgressToolDefinition.class);
     private static final String KIND = "LEARNING_ISSUE";
@@ -75,18 +75,22 @@ public final class QueryLearningProgressToolDefinition implements ToolDefinition
                 return CitableSourcesObservation.notFound(
                         "请说明要查询的问题或语法点，才能核对历史中的反复模式。", objectMapper);
             }
+            List<HistoricalLearningIssue> recent;
             List<RecurringLearningIssue> patterns;
             try {
-                patterns = detector.find(
-                        history.recentIssues(RECENT_ATTEMPT_LIMIT), query);
+                recent = history.recentIssues(RECENT_ATTEMPT_LIMIT);
+                patterns = detector.find(recent, query);
             } catch (RuntimeException exception) {
-                log.warn("学习历史读取失败: cause={}", exception.getClass().getSimpleName());
-                return CitableSourcesObservation.failed("学习历史读取失败，请稍后再试。", objectMapper);
+                log.warn("练习历史读取失败: cause={}", exception.getClass().getSimpleName());
+                return CitableSourcesObservation.failed("练习历史读取失败，请稍后再试。", objectMapper);
             }
             if (patterns.isEmpty()) {
+                boolean anyRecurringPattern = !detector.find(recent, "").isEmpty();
                 return CitableSourcesObservation.notFound(
-                        "历史不足以判断这个问题是否反复出现：至少需要两次不同 Practice Attempt 的记录。"
-                                + "不要据此编造模式。",
+                        anyRecurringPattern
+                                ? "历史中没有与当前问题相关的反复模式。不要据此编造模式。"
+                                : "历史不足以判断这个问题是否反复出现：至少需要两次不同 Practice Attempt 的记录。"
+                                        + "不要据此编造模式。",
                         objectMapper);
             }
 
@@ -107,8 +111,8 @@ public final class QueryLearningProgressToolDefinition implements ToolDefinition
         HistoricalLearningIssue latest = pattern.evidence().getFirst();
         StringBuilder content = new StringBuilder()
                 .append("在 ").append(pattern.attemptCount())
-                .append(" 次 Practice Attempt 中重复出现（共 ")
-                .append(pattern.occurrenceCount()).append(" 次）。");
+                .append(" 次 Practice Attempt 中重复出现；共 ")
+                .append(pattern.occurrenceCount()).append(" 条相关学习问题记录。");
         int shown = Math.min(3, pattern.evidence().size());
         for (int index = 0; index < shown; index++) {
             HistoricalLearningIssue evidence = pattern.evidence().get(index);

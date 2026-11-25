@@ -13,6 +13,9 @@ import java.util.UUID;
  * Reads a bounded window of recent Practice Attempts and all of their Learning Issues, newest
  * first. The window is applied to attempts, not issues, so one long essay cannot push real history
  * out of the query.
+ *
+ * <p>The current attempt is deliberately included: when a learner asks "is this the third time?",
+ * today's occurrence is one of the three. Excluding it would make the teacher undercount by one.</p>
  */
 @Component
 public class JdbcLearningProgressHistory implements LearningProgressHistory {

@@ -40,7 +40,7 @@ class QueryLearningProgressToolDefinitionTest {
                     .contains("3 次 Practice Attempt")
                     .contains("Although")
                     .contains("although 与 but 不能同时使用");
-            assertThat(source.get("source")).isEqualTo("学习历史");
+            assertThat(source.get("source")).isEqualTo("历史练习记录");
             assertThat(source.get("attemptCount")).isEqualTo(3);
             assertThat(source.get("occurrenceCount")).isEqualTo(3);
             assertThat((List<?>) source.get("learningIssueIds")).hasSize(3);
@@ -71,6 +71,7 @@ class QueryLearningProgressToolDefinitionTest {
         ToolResult result = tool.openSession().invoke(Map.of("query", "标点应该怎么用？"));
 
         assertThat(result.status()).isEqualTo(ToolInvocationStatus.NOT_FOUND);
+        assertThat(result.observation()).contains("没有与当前问题相关");
     }
 
     @Test
@@ -95,7 +96,7 @@ class QueryLearningProgressToolDefinitionTest {
         ToolResult result = tool.openSession().invoke(Map.of("query", "although/but"));
 
         assertThat(result.status()).isEqualTo(ToolInvocationStatus.FAILED);
-        assertThat(result.observation()).contains("学习历史读取失败");
+        assertThat(result.observation()).contains("练习历史读取失败");
     }
 
     private QueryLearningProgressToolDefinition toolWith(HistoricalLearningIssue... issues) {

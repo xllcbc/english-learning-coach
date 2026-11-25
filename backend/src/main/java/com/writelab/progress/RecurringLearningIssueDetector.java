@@ -37,11 +37,14 @@ public final class RecurringLearningIssueDetector {
      * stays deliberately short: conjunctions such as {@code but} are often the issue itself.
      */
     private static final Set<String> QUESTION_STOPWORDS = Set.of(
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "to", "of", "in",
-            "on", "at", "for", "and", "or", "it", "this", "that", "these", "those", "i", "you",
-            "he", "she", "we", "they", "my", "your", "his", "her", "our", "their", "me", "us",
-            "them", "do", "does", "did", "why", "what", "how", "can", "could", "should", "would",
-            "will", "not", "no", "again", "always");
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "am", "to", "of",
+            "in", "on", "at", "for", "and", "or", "it", "this", "that", "these", "those", "i",
+            "you", "he", "she", "we", "they", "my", "your", "his", "her", "our", "their", "me",
+            "us", "them", "do", "does", "did", "done", "doing", "have", "has", "had", "why",
+            "what", "how", "can", "could", "should", "would", "will", "not", "no", "again",
+            "always", "same", "make", "makes", "making", "made", "keep", "keeping", "get",
+            "getting", "wrong", "mistake", "mistakes", "problem", "problems", "issue", "issues",
+            "sentence", "sentences", "word", "words", "thing", "things");
 
     /**
      * Chinese category words steer a question even when it names no English token. A question about
@@ -68,8 +71,11 @@ public final class RecurringLearningIssueDetector {
         Map<String, PatternAccumulator> patterns = new LinkedHashMap<>();
 
         for (HistoricalLearningIssue issue : issues) {
-            String signature = signature(issue);
-            patterns.computeIfAbsent(signature, ignored -> new PatternAccumulator(issue)).add(issue);
+            Correction correction = Correction.between(issue.originalSentence(), issue.suggestion());
+            String signature = signature(issue.category(), correction, issue.explanation());
+            patterns.computeIfAbsent(
+                            signature, ignored -> new PatternAccumulator(issue, correction))
+                    .add(issue);
         }
 
         List<PatternResult> recurring = new ArrayList<>();
@@ -104,14 +110,17 @@ public final class RecurringLearningIssueDetector {
                 .toList();
     }
 
-    private static String signature(HistoricalLearningIssue issue) {
-        Correction correction = correction(issue.originalSentence(), issue.suggestion());
-        String base = issue.category().name() + '|';
-        if (!correction.removed().isEmpty() || !correction.added().isEmpty()) {
+    private static String signature(
+            IssueCategory category,
+            Correction correction,
+            String explanation
+    ) {
+        String base = category.name() + '|';
+        if (!correction.isEmpty()) {
             return base + String.join(",", correction.removed())
                     + "->" + String.join(",", correction.added());
         }
-        return base + "explanation:" + normalize(issue.explanation());
+        return base + "explanation:" + normalize(explanation);
     }
 
     /**
@@ -119,25 +128,45 @@ public final class RecurringLearningIssueDetector {
      * call two issues "the same problem", and it is deliberately conservative: a rewrite with a
      * large diff simply does not match anything.
      */
-    private static Correction correction(String original, String suggestion) {
-        Map<String, Integer> originalCounts = counts(tokens(original));
-        Map<String, Integer> suggestionCounts = counts(tokens(suggestion));
+    private record Correction(List<String> removed, List<String> added) {
 
-        Set<String> removed = new TreeSet<>();
-        originalCounts.forEach((token, count) -> {
-            int remaining = count - suggestionCounts.getOrDefault(token, 0);
-            if (remaining > 0) {
-                removed.add(token);
+        private static Correction between(String original, String suggestion) {
+            Map<String, Integer> originalCounts = counts(tokens(original));
+            Map<String, Integer> suggestionCounts = counts(tokens(suggestion));
+
+            Set<String> removed = new TreeSet<>();
+            originalCounts.forEach((token, count) -> {
+                int remaining = count - suggestionCounts.getOrDefault(token, 0);
+                if (remaining > 0) {
+                    removed.add(token);
+                }
+            });
+            Set<String> added = new TreeSet<>();
+            suggestionCounts.forEach((token, count) -> {
+                int remaining = count - originalCounts.getOrDefault(token, 0);
+                if (remaining > 0) {
+                    added.add(token);
+                }
+            });
+            return new Correction(List.copyOf(removed), List.copyOf(added));
+        }
+
+        private boolean isEmpty() {
+            return removed.isEmpty() && added.isEmpty();
+        }
+
+        private String label() {
+            if (!removed.isEmpty() && !added.isEmpty()) {
+                return String.join(", ", removed) + " → " + String.join(", ", added);
             }
-        });
-        Set<String> added = new TreeSet<>();
-        suggestionCounts.forEach((token, count) -> {
-            int remaining = count - originalCounts.getOrDefault(token, 0);
-            if (remaining > 0) {
-                added.add(token);
+            if (!removed.isEmpty()) {
+                return "多用了 " + String.join(", ", removed);
             }
-        });
-        return new Correction(List.copyOf(removed), List.copyOf(added));
+            if (!added.isEmpty()) {
+                return "缺少 " + String.join(", ", added);
+            }
+            return "同类讲解";
+        }
     }
 
     private static List<String> tokens(String text) {
@@ -189,33 +218,17 @@ public final class RecurringLearningIssueDetector {
             return score;
         }
         String haystack = text.toLowerCase(Locale.ROOT);
+        Set<String> haystackTokens = new LinkedHashSet<>(tokens(haystack));
         for (String token : queryTokens) {
-            if (haystack.contains(token)) {
+            if (haystackTokens.contains(token)) {
                 score++;
             }
         }
         return score;
     }
 
-    private static String patternLabel(Correction correction) {
-        if (!correction.removed().isEmpty() && !correction.added().isEmpty()) {
-            return String.join(", ", correction.removed()) + " → "
-                    + String.join(", ", correction.added());
-        }
-        if (!correction.removed().isEmpty()) {
-            return "多用了 " + String.join(", ", correction.removed());
-        }
-        if (!correction.added().isEmpty()) {
-            return "缺少 " + String.join(", ", correction.added());
-        }
-        return "同类讲解";
-    }
-
     private static String normalize(String text) {
         return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").strip();
-    }
-
-    private record Correction(List<String> removed, List<String> added) {
     }
 
     private record PatternResult(RecurringLearningIssue pattern, int relevance) {
@@ -229,10 +242,10 @@ public final class RecurringLearningIssueDetector {
         private final List<HistoricalLearningIssue> evidence = new ArrayList<>();
         private IssueSeverity severity;
 
-        private PatternAccumulator(HistoricalLearningIssue first) {
+        private PatternAccumulator(HistoricalLearningIssue first, Correction correction) {
             this.category = first.category();
             this.severity = first.severity();
-            this.correction = correction(first.originalSentence(), first.suggestion());
+            this.correction = correction;
         }
 
         private void add(HistoricalLearningIssue issue) {
@@ -262,7 +275,7 @@ public final class RecurringLearningIssueDetector {
             return new RecurringLearningIssue(
                     category,
                     severity,
-                    patternLabel(correction),
+                    correction.label(),
                     attemptIds.size(),
                     evidence.size(),
                     latestFirst);

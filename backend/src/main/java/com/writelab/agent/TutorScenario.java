@@ -20,8 +20,10 @@ public enum TutorScenario {
             QueryLearningProgressToolDefinition.NAME),
     SPEAKING_PRACTICE(
             LookupWordToolDefinition.NAME,
-            // The parent spec gives Speaking Practice these tools too. Neither is wired into this
-            // scenario yet, so keep them out of the model context until that slice lands.
+            // The parent spec gives Speaking Practice these tools too. They stay on the allowlist
+            // although no speaking turn uses them yet, so the shared registry and the scenario
+            // subset stay in sync. save_vocabulary has no ToolDefinition class yet, hence the
+            // literal until that tool lands.
             SearchUserDocumentsToolDefinition.NAME,
             "save_vocabulary");
 

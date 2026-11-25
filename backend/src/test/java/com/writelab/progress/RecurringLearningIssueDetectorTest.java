@@ -59,6 +59,25 @@ class RecurringLearningIssueDetectorTest {
     }
 
     @Test
+    void stillRecognisesThePatternWhenTheQuestionOnlySaysSameMistakeAgain() {
+        List<HistoricalLearningIssue> history = List.of(
+                issue(1, IssueCategory.GRAMMAR, IssueSeverity.MINOR,
+                        "Although it was raining, but we went out.",
+                        "Although it was raining, we went out.",
+                        "although 与 but 不能同时使用，保留其中一个即可。"),
+                issue(2, IssueCategory.GRAMMAR, IssueSeverity.MINOR,
+                        "Although he is young, but he is brave.",
+                        "Although he is young, he is brave.",
+                        "although 与 but 不能同时使用，保留其中一个即可。"));
+
+        List<RecurringLearningIssue> found =
+                detector.find(history, "Am I making the same mistake again?");
+
+        assertThat(found).singleElement()
+                .satisfies(pattern -> assertThat(pattern.attemptCount()).isEqualTo(2));
+    }
+
+    @Test
     void ignoresRecurringPatternsThatAreUnrelatedToTheQuestion() {
         List<HistoricalLearningIssue> history = List.of(
                 issue(1, IssueCategory.PUNCTUATION, IssueSeverity.MINOR,

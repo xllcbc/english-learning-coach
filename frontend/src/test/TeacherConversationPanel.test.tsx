@@ -92,7 +92,7 @@ describe('TeacherConversationPanel', () => {
             kind: 'LEARNING_ISSUE',
             title: '反复学习问题 · 语法 · 多用了 but',
             content: '在 3 次 Practice Attempt 中重复出现（共 3 次）。',
-            source: '学习历史',
+            source: '历史练习记录',
             license: null,
           },
         ],
@@ -102,7 +102,7 @@ describe('TeacherConversationPanel', () => {
     render(<TeacherConversationPanel practiceId="practice-1" defaultMockMode />);
 
     expect(await screen.findByText('学习问题')).toBeInTheDocument();
-    expect(screen.getByText('学习历史')).toBeInTheDocument();
+    expect(screen.getByText('历史练习记录')).toBeInTheDocument();
     expect(screen.getByText('反复学习问题 · 语法 · 多用了 but')).toBeInTheDocument();
     expect(screen.getByText('在 3 次 Practice Attempt 中重复出现（共 3 次）。')).toBeInTheDocument();
   });

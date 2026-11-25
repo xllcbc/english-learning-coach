@@ -83,7 +83,7 @@ class ConversationCitationsTest {
         List<AgentStep> steps = List.of(
                 toolStep("query_learning_progress", AgentStepStatus.SUCCESS, """
                         {"status":"SUCCESS","sources":[
-                          {"reference":3,"kind":"LEARNING_ISSUE","title":"反复学习问题 · 语法 · 多用了 but","content":"在 3 次 Practice Attempt 中重复出现。","source":"学习历史","license":null}
+                          {"reference":3,"kind":"LEARNING_ISSUE","title":"反复学习问题 · 语法 · 多用了 but","content":"在 3 次 Practice Attempt 中重复出现。","source":"历史练习记录","license":null}
                         ]}
                         """));
 
@@ -94,7 +94,7 @@ class ConversationCitationsTest {
             assertThat(citation.reference()).isEqualTo(3);
             assertThat(citation.kind()).isEqualTo(ConversationCitationKind.LEARNING_ISSUE);
             assertThat(citation.title()).contains("反复学习问题");
-            assertThat(citation.source()).isEqualTo("学习历史");
+            assertThat(citation.source()).isEqualTo("历史练习记录");
             assertThat(citation.license()).isNull();
         });
     }

@@ -138,7 +138,8 @@ public class MockTutorModelClient implements TutorModelClient {
      * Speaking Practice has no written Practice Attempt to cite, so the offline coach replies to
      * what the learner actually said and stays encouraging. Lookups, when the learner asked for
      * one explicitly in a scripted turn, are still surfaced without citation markers.
-     */    private TutorModelDecision speakingAnswer(TutorModelContext context) {
+     */
+    private TutorModelDecision speakingAnswer(TutorModelContext context) {
         StringBuilder answer = new StringBuilder("我听到你说：「")
                 .append(context.learnerMessage())
                 .append("」。\n");

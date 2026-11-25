@@ -43,6 +43,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -287,6 +289,27 @@ class TeacherConversationApiIntegrationTest {
     }
 
     @Test
+    void blocksARegisteredToolThatIsNotOnTheTeacherConversationAllowlist() throws Exception {
+        UUID practiceId = createPractice();
+        model.script(
+                context -> TutorModelDecision.toolCall(
+                        "generate_practice_prompt", Map.of("category", "GRAMMAR")),
+                context -> TutorModelDecision.answer("没有使用未授权的工具 [依据1]。"));
+
+        CompleteBody complete = readEvent(
+                ask(practiceId, "换一个练习主题。").events().getLast(),
+                CompleteBody.class);
+        ConversationTurnBody turn = complete.turn();
+
+        assertThat(turn.stopReason()).isEqualTo(AgentStopReason.COMPLETED);
+        assertThat(turn.steps().getFirst().toolName()).isEqualTo("generate_practice_prompt");
+        assertThat(turn.steps().getFirst().status()).isEqualTo(AgentStepStatus.UNKNOWN_TOOL);
+        assertThat(turn.toolInvocations().getFirst().status().name()).isEqualTo("BLOCKED");
+        assertThat(model.contexts()).allSatisfy(context -> assertThat(context.availableTools())
+                .doesNotContain("generate_practice_prompt"));
+    }
+
+    @Test
     void stopsAtTheStepBudgetWhenTheModelKeepsChoosingTools() throws Exception {
         UUID practiceId = createPractice();
         for (int index = 0; index < 6; index++) {
@@ -376,9 +399,10 @@ class TeacherConversationApiIntegrationTest {
                 context -> TutorModelDecision.toolCall(
                         "query_learning_progress", Map.of("query", "although/but")),
                 context -> {
+                    int count = attemptCount(context.steps().getFirst().output());
                     int reference = context.briefing().sources().size() + 1;
                     return TutorModelDecision.answer(
-                            "这已经是你第三次混淆 although/but [依据" + reference + "]，"
+                            "这已经是你第" + count + "次混淆 although/but [依据" + reference + "]，"
                                     + "前两次也出现在更早的 Practice Attempt 里。");
                 });
 
@@ -387,7 +411,7 @@ class TeacherConversationApiIntegrationTest {
                 CompleteBody.class);
         ConversationTurnBody turn = complete.turn();
 
-        assertThat(turn.answer()).contains("第三次");
+        assertThat(turn.answer()).contains("第3次");
         assertThat(turn.steps().getFirst().toolName()).isEqualTo("query_learning_progress");
         assertThat(turn.steps().getFirst().status()).isEqualTo(AgentStepStatus.SUCCESS);
         assertThat(turn.steps().getFirst().output())
@@ -398,7 +422,7 @@ class TeacherConversationApiIntegrationTest {
             assertThat(citation.kind()).isEqualTo(ConversationCitationKind.LEARNING_ISSUE);
             assertThat(citation.title()).contains("反复学习问题").contains("but");
             assertThat(citation.content()).contains("3 次 Practice Attempt");
-            assertThat(citation.source()).isEqualTo("学习历史");
+            assertThat(citation.source()).isEqualTo("历史练习记录");
         });
 
         ConversationTurnBody replayed = getConversation(current).turns().getFirst();
@@ -569,8 +593,13 @@ class TeacherConversationApiIntegrationTest {
         }
     }
 
-    private void fixAlthoughButIssue(UUID practiceId, String originalSentence, String suggestion) {
-        jdbcClient.sql("DELETE FROM learning_issue WHERE practice_attempt_id = :practiceId")
+    private static int attemptCount(String observation) {
+        Matcher matcher = Pattern.compile("\"attemptCount\":(\\d+)").matcher(observation);
+        assertThat(matcher.find()).as("工具观察结果应包含 attemptCount").isTrue();
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    private void fixAlthoughButIssue(UUID practiceId, String originalSentence, String suggestion) {        jdbcClient.sql("DELETE FROM learning_issue WHERE practice_attempt_id = :practiceId")
                 .param("practiceId", practiceId)
                 .update();
         jdbcClient.sql("""

@@ -7,7 +7,7 @@ package com.writelab.agent;
 public enum TutorSourceKind {
     GROUNDING_MATERIAL("依据材料"),
     USER_DOCUMENT("我的文档"),
-    LEARNING_ISSUE("学习历史");
+    LEARNING_ISSUE("学习问题");
 
     private final String label;
 
