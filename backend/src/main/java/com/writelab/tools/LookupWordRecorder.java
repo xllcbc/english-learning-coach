@@ -10,7 +10,7 @@ import java.util.Optional;
 
 public final class LookupWordRecorder {
 
-    private static final String TOOL_NAME = "lookup_word";
+    private static final String TOOL_NAME = LookupWordToolDefinition.NAME;
 
     private final DictionaryService dictionaryService;
     private final int maxExecutions;
