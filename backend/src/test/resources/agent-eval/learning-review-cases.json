@@ -1,0 +1,154 @@
+[
+  {
+    "id": "recurring-patterns-with-one-off-noise",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "COHERENCE", "severity": "MAJOR" }
+        ]
+      },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "COHERENCE", "severity": "MAJOR" }
+        ]
+      },
+      {
+        "hour": 3,
+        "level": "B2",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "VOCABULARY", "severity": "MINOR" },
+          { "category": "PUNCTUATION", "severity": "MINOR" }
+        ]
+      },
+      {
+        "hour": 4,
+        "level": "B2",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "VOCABULARY", "severity": "MINOR" }
+        ]
+      }
+    ],
+    "expectedPatterns": ["GRAMMAR/MINOR", "COHERENCE/MAJOR", "VOCABULARY/MINOR"],
+    "expectedStatus": "SUFFICIENT_DATA",
+    "expectedTrend": "IMPROVING"
+  },
+  {
+    "id": "same-category-different-severity",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MAJOR" }
+        ]
+      },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      },
+      {
+        "hour": 3,
+        "level": "B2",
+        "issues": [{ "category": "GRAMMAR", "severity": "MAJOR" }]
+      },
+      {
+        "hour": 4,
+        "level": "B2",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MAJOR" }
+        ]
+      }
+    ],
+    "expectedPatterns": ["GRAMMAR/MINOR", "GRAMMAR/MAJOR"],
+    "expectedStatus": "SUFFICIENT_DATA"
+  },
+  {
+    "id": "too-few-attempts",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      }
+    ],
+    "expectedPatterns": [],
+    "expectedStatus": "INSUFFICIENT_DATA"
+  },
+  {
+    "id": "one-attempt-with-repeated-issues-is-not-a-pattern",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MINOR" }
+        ]
+      }
+    ],
+    "expectedPatterns": [],
+    "expectedStatus": "INSUFFICIENT_DATA"
+  },
+  {
+    "id": "one-off-issues-only",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }]
+      },
+      {
+        "hour": 3,
+        "level": "B1",
+        "issues": [{ "category": "VOCABULARY", "severity": "MINOR" }]
+      }
+    ],
+    "expectedPatterns": [],
+    "expectedStatus": "INSUFFICIENT_DATA"
+  },
+  {
+    "id": "level-trend-across-the-window",
+    "attempts": [
+      {
+        "hour": 1,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      },
+      {
+        "hour": 3,
+        "level": "C1",
+        "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }]
+      }
+    ],
+    "expectedPatterns": ["GRAMMAR/MINOR"],
+    "expectedStatus": "SUFFICIENT_DATA",
+    "expectedTrend": "IMPROVING"
+  }
+]

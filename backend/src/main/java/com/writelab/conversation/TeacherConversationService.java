@@ -3,12 +3,10 @@ package com.writelab.conversation;
 import com.writelab.agent.AgentLoopBudget;
 import com.writelab.agent.AgentTurn;
 import com.writelab.agent.AgentTurnRequest;
-import com.writelab.agent.LookupWordSteps;
 import com.writelab.agent.TutorAgentCore;
 import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorModelClient;
 import com.writelab.agent.TutorScenario;
-import com.writelab.agent.TutorToolSources;
 import com.writelab.agent.TutorTurnMemory;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.ModelMode;
@@ -126,24 +124,20 @@ public class TeacherConversationService {
                 throw new IllegalStateException("教师回答为空");
             }
 
-            List<ConversationCitation> citations = ConversationCitations.cited(
-                    turn.answer(),
-                    ConversationCitations.available(briefing.sources(), turn.steps(), objectMapper));
+            ConversationAnswerAudit audit = ConversationAnswerAudit.inspect(
+                    turn.answer(), briefing.sources(), turn.steps(), objectMapper);
             // A no-marker answer is allowed: that is how the teacher refuses to answer without a
             // grounded source. A marker with no matching source is invented provenance, so reject
             // the turn rather than persisting an unsupported assertion.
-            if (ConversationCitations.hasUnsupportedReferences(turn.answer(), citations)) {
+            if (audit.unsupportedReferences()) {
                 throw new IllegalStateException("教师回答引用了不存在的依据");
             }
-            boolean hasCitableSource = !briefing.sources().isEmpty()
-                    || !LookupWordSteps.successful(turn.steps()).isEmpty()
-                    || !TutorToolSources.successful(turn.steps(), objectMapper).isEmpty();
-            if (turn.completed() && hasCitableSource && citations.isEmpty()) {
+            if (turn.completed() && audit.hasCitableSource() && audit.citations().isEmpty()) {
                 throw new IllegalStateException("教师回答没有引用任何依据");
             }
 
             TeacherConversationTurnResponse saved = store.persist(
-                    practiceId, conversation.id(), message, turn, citations, modelMode);
+                    practiceId, conversation.id(), message, turn, audit.citations(), modelMode);
 
             for (String chunk : TextChunker.chunks(saved.answer())) {
                 send(emitter, "delta", new DeltaEvent(chunk));

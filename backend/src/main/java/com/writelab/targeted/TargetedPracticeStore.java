@@ -106,9 +106,7 @@ public class TargetedPracticeStore {
     ) {
         TargetedPracticeRow row = findRow(id)
                 .orElseThrow(() -> new TargetedPracticeNotFoundException(id));
-        int afterCount = (int) feedbackIssues.stream()
-                .filter(issue -> issue.category() == row.category() && issue.severity() == row.severity())
-                .count();
+        int afterCount = TargetedIssueCounter.count(feedbackIssues, row.category(), row.severity());
 
         int updated = jdbcClient.sql("""
                         UPDATE targeted_practice
