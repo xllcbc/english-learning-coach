@@ -77,7 +77,9 @@ Track 2（并行，从第 1–2 周开始）
 
 ### 收口（第 7–8 周）
 
-- 四场景评测集回归、文档、面试讲解稿。
+- 四场景评测集回归、文档、面试讲解稿：评测入口见 `tools/agent-platform-eval.sh`，方法与结果见
+  [`docs/agent-platform-evaluation.md`](agent-platform-evaluation.md)，面试讲解见
+  [`docs/interview-agent-platform.md`](interview-agent-platform.md)。
 - 补监控/延迟指标；把「工作流 vs agent」的边界写成可讲的取舍。
 
 ## 风险与降级

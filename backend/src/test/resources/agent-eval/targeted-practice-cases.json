@@ -1,0 +1,78 @@
+[
+  {
+    "id": "fully-corrected-target",
+    "attempts": [
+      { "hour": 1, "level": "B1", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] },
+      { "hour": 2, "level": "B1", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] },
+      { "hour": 3, "level": "B2", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] }
+    ],
+    "target": { "category": "COHERENCE", "severity": "MAJOR" },
+    "after": [{ "category": "GRAMMAR", "severity": "MINOR" }],
+    "expected": { "beforeCount": 1, "afterCount": 0, "change": 1, "trend": "IMPROVED" }
+  },
+  {
+    "id": "partially-corrected-target",
+    "attempts": [
+      { "hour": 1, "level": "B1", "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }] },
+      {
+        "hour": 2,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MINOR" }
+        ]
+      },
+      {
+        "hour": 3,
+        "level": "B1",
+        "issues": [
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MINOR" },
+          { "category": "GRAMMAR", "severity": "MINOR" }
+        ]
+      }
+    ],
+    "target": { "category": "GRAMMAR", "severity": "MINOR" },
+    "after": [{ "category": "GRAMMAR", "severity": "MINOR" }],
+    "expected": { "beforeCount": 3, "afterCount": 1, "change": 2, "trend": "IMPROVED" }
+  },
+  {
+    "id": "out-of-scope-severity-is-not-counted",
+    "attempts": [
+      { "hour": 1, "level": "B1", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] },
+      { "hour": 2, "level": "B1", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] },
+      { "hour": 3, "level": "B2", "issues": [{ "category": "COHERENCE", "severity": "MAJOR" }] }
+    ],
+    "target": { "category": "COHERENCE", "severity": "MAJOR" },
+    "after": [
+      { "category": "COHERENCE", "severity": "MINOR" },
+      { "category": "GRAMMAR", "severity": "MAJOR" }
+    ],
+    "expected": { "beforeCount": 1, "afterCount": 0, "change": 1, "trend": "IMPROVED" }
+  },
+  {
+    "id": "unchanged-control",
+    "attempts": [
+      { "hour": 1, "level": "B1", "issues": [{ "category": "VOCABULARY", "severity": "MINOR" }] },
+      { "hour": 2, "level": "B1", "issues": [{ "category": "VOCABULARY", "severity": "MINOR" }] },
+      { "hour": 3, "level": "B1", "issues": [{ "category": "VOCABULARY", "severity": "MINOR" }] }
+    ],
+    "target": { "category": "VOCABULARY", "severity": "MINOR" },
+    "after": [{ "category": "VOCABULARY", "severity": "MINOR" }],
+    "expected": { "beforeCount": 1, "afterCount": 1, "change": 0, "trend": "UNCHANGED" }
+  },
+  {
+    "id": "regressed-control",
+    "attempts": [
+      { "hour": 1, "level": "B1", "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }] },
+      { "hour": 2, "level": "B1", "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }] },
+      { "hour": 3, "level": "B1", "issues": [{ "category": "GRAMMAR", "severity": "MINOR" }] }
+    ],
+    "target": { "category": "GRAMMAR", "severity": "MINOR" },
+    "after": [
+      { "category": "GRAMMAR", "severity": "MINOR" },
+      { "category": "GRAMMAR", "severity": "MINOR" }
+    ],
+    "expected": { "beforeCount": 1, "afterCount": 2, "change": -1, "trend": "WORSENED" }
+  }
+]

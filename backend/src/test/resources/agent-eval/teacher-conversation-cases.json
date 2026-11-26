@@ -1,0 +1,244 @@
+[
+  {
+    "id": "cites-briefing-grounding-material",
+    "question": "为什么把 although 改成 but？",
+    "sources": [
+      {
+        "reference": 1,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "让步连接词",
+        "content": "although 引导让步状语从句，but 连接两个并列分句，两者不能同时出现在同一个句子里。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      }
+    ],
+    "tools": [],
+    "answer": "这里需要表达转折：although 已经承担了让步关系，再用 but 会重复连接，所以保留 but 并去掉 although [依据1]。",
+    "expectedTools": [],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "although 已经承担了让步关系",
+        "reference": 1
+      },
+      {
+        "text": "再用 but 会重复连接",
+        "reference": 1
+      }
+    ]
+  },
+  {
+    "id": "cites-dictionary-lookup",
+    "question": "despite 是什么意思？",
+    "sources": [],
+    "tools": [
+      {
+        "name": "lookup_word",
+        "arguments": {
+          "word": "despite"
+        },
+        "observation": {
+          "word": "despite",
+          "meaningZh": "尽管；不管",
+          "partOfSpeech": "prep."
+        }
+      }
+    ],
+    "answer": "despite 是介词，表示「尽管、不管」，后面通常接名词或动名词 [依据1]。",
+    "expectedTools": [
+      "lookup_word"
+    ],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "despite 是介词",
+        "reference": 1
+      },
+      {
+        "text": "后面通常接名词或动名词",
+        "reference": 1
+      }
+    ]
+  },
+  {
+    "id": "cites-retrieved-grounding-material",
+    "question": "主谓一致这里怎么改？",
+    "sources": [],
+    "tools": [
+      {
+        "name": "retrieve_grounding_material",
+        "arguments": {
+          "categories": [
+            "GRAMMAR"
+          ]
+        },
+        "sources": [
+          {
+            "kind": "GROUNDING_MATERIAL",
+            "title": "主谓一致",
+            "content": "一般现在时里，第三人称单数主语后的谓语动词要加 -s 或 -es。",
+            "source": "WriteLab 自建依据材料",
+            "license": "CC BY 4.0"
+          }
+        ]
+      }
+    ],
+    "answer": "主语是第三人称单数，谓语动词需要加 -s [依据1]。",
+    "expectedTools": [
+      "retrieve_grounding_material"
+    ],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "谓语动词需要加 -s",
+        "reference": 1
+      }
+    ]
+  },
+  {
+    "id": "refuses-without-a-citable-source",
+    "question": "你说这里应该用被动语态，为什么？",
+    "sources": [],
+    "tools": [],
+    "answer": "我目前没有可引用的依据材料，不能可靠回答这个问题。请先在「我的文档」补充材料，或重新生成教师讲解后再问。",
+    "expectedTools": [],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": []
+  },
+  {
+    "id": "rejects-a-fabricated-answer-without-a-source",
+    "question": "你觉得我应该多用什么句式？",
+    "sources": [],
+    "tools": [],
+    "answer": "你应该多用被动语态和分词短语。",
+    "expectedTools": [],
+    "expectedGrounded": false,
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "你应该多用被动语态和分词短语",
+        "reference": null
+      }
+    ]
+  },
+  {
+    "id": "rejects-an-uncited-assertion",
+    "question": "这里的冠词为什么不对？",
+    "sources": [
+      {
+        "reference": 1,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "冠词",
+        "content": "可数名词单数首次出现时通常用不定冠词 a 或 an。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      }
+    ],
+    "tools": [],
+    "answer": "这里应该加不定冠词。",
+    "expectedTools": [],
+    "expectedGrounded": false,
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "这里应该加不定冠词",
+        "reference": null
+      }
+    ]
+  },
+  {
+    "id": "rejects-an-invented-citation",
+    "question": "这里为什么要注意时态？",
+    "sources": [
+      {
+        "reference": 1,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "时态",
+        "content": "句子中出现 yesterday 这类过去时间标记时，谓语动词要用过去式。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      }
+    ],
+    "tools": [],
+    "answer": "yesterday 表示过去，所以动词要用过去式 [依据9]。",
+    "expectedTools": [],
+    "expectedGrounded": false,
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "动词要用过去式",
+        "reference": 9
+      }
+    ]
+  },
+  {
+    "id": "cites-two-available-sources",
+    "question": "这段还有哪些问题？",
+    "sources": [
+      {
+        "reference": 1,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "冠词",
+        "content": "可数名词单数首次出现时通常用不定冠词 a 或 an。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      },
+      {
+        "reference": 2,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "时态",
+        "content": "句子中出现 yesterday 这类过去时间标记时，谓语动词要用过去式。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      }
+    ],
+    "tools": [],
+    "answer": "先补上不定冠词 [依据1]，再把动词改成过去式 [依据2]。",
+    "expectedTools": [],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "先补上不定冠词",
+        "reference": 1
+      },
+      {
+        "text": "再把动词改成过去式",
+        "reference": 2
+      }
+    ]
+  },
+  {
+    "id": "does-not-call-a-tool-when-none-is-needed",
+    "question": "为什么这里要加冠词？",
+    "sources": [
+      {
+        "reference": 1,
+        "kind": "GROUNDING_MATERIAL",
+        "title": "冠词",
+        "content": "可数名词单数首次出现时通常用不定冠词 a 或 an。",
+        "source": "WriteLab 自建依据材料",
+        "license": "CC BY 4.0"
+      }
+    ],
+    "tools": [],
+    "answer": "这是可数名词单数首次出现，所以要用不定冠词 [依据1]。",
+    "expectedTools": [],
+    "expectedGrounded": true,
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "这是可数名词单数首次出现",
+        "reference": 1
+      },
+      {
+        "text": "所以要用不定冠词",
+        "reference": 1
+      }
+    ]
+  }
+]
