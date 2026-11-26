@@ -79,7 +79,7 @@ WriteLab 是一个面向英语学习者的写作教练。它把控制流固定�
 - 文本走 SSE：`start` / `delta` / `complete` / `error`，复用既有讲解的流式与回放；
 - 语音走 WebSocket：STT → 回合核心 → TTS；
 - barge-in、取消播放、音频缓冲都在通道层，核心不感知通道类型（ADR-0009）；
-- 语音失败降级到文本：STT 失败/超时提示改用文字，TTS 失败显示文字回答，同一会话可以继续（ADR-0011）；
+- 语音失败降级到文本：STT 失败/超时提示改用文字，TTS 失败显示文字回答，同一个 Speaking Session 可以继续（ADR-0011）；
 - Speaking Session 是独立聚合根，不与 Practice Attempt 混用（ADR-0012）。
 
 ## 7. 四道 gate 与评测
@@ -92,7 +92,7 @@ WriteLab 是一个面向英语学习者的写作教练。它把控制流固定�
 - 零无依据断言：没有来源时明确说「不能可靠回答」，不能编造引用；
 - 工具使用恰当：该查词才查词，不需要工具时不乱调用。
 
-评测用 8 个标注回答跑真实的 Agent Core 与引用规则，grounded-rate 100%，无依据断言 0。
+评测用 9 个标注回答跑真实的 Agent Core 与引用规则：grounded-rate 100%，断言支持率 100%，无依据断言 0。没有可引用依据时，系统只接受明确的拒绝回答，不接受「看起来像回答、但没有引用」的编造内容。
 
 ### B Learning Review
 
@@ -116,7 +116,7 @@ WriteLab 是一个面向英语学习者的写作教练。它把控制流固定�
 - barge-in 可取消正在播放的回复；
 - 降级路径有覆盖：转写失败、转写超时、合成失败、失败后改用文字。
 
-评测用 20 个语音回合测 p95 = 1040 ms，超预算可识别，barge-in 可取消，降级覆盖 4/4。
+评测用 20 个语音回合测 p95 ≈ 1040 ms，超预算可识别，barge-in 可取消，降级覆盖 4/4。
 
 评测入口是 `tools/agent-platform-eval.sh`，按需运行，不进入默认 CI；方法与结果见 [`docs/agent-platform-evaluation.md`](agent-platform-evaluation.md)。
 
@@ -139,11 +139,11 @@ A：三道防线：场景 allowlist、工具预算、Agent Step 记录。选到�
 
 **Q：Teacher Conversation 为什么锚定单份 Practice Attempt？**
 
-A：它回答的是「这篇练习为什么这样改」。跨练习的模式识别是 Learning Review 的职责；把两者混在一起会让会话边界和数据归属都不清楚。
+A：它回答的是「这份 Practice Attempt 为什么这样改」。跨多份 Practice Attempt 的模式识别是 Learning Review 的职责；把两者混在一起会让 Teacher Conversation 边界和数据归属都不清楚。
 
 **Q：口语数据为什么不进 Learning Review？**
 
-A：第一版刻意不接。Speaking Session 是独立聚合根，口语 Learning Issue 先随会话回放；接入 Learning Review 是后续增量，避免一次把范围铺得过大。
+A：第一版刻意不接。Speaking Session 是独立聚合根，口语 Learning Issue 先随 Speaking Session 回放；接入 Learning Review 是后续增量，避免一次把范围铺得过大。
 
 **Q：如果模型回答没有引用怎么办？**
 

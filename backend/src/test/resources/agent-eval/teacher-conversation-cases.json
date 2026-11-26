@@ -16,7 +16,17 @@
     "answer": "这里需要表达转折：although 已经承担了让步关系，再用 but 会重复连接，所以保留 but 并去掉 although [依据1]。",
     "expectedTools": [],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "although 已经承担了让步关系",
+        "reference": 1
+      },
+      {
+        "text": "再用 but 会重复连接",
+        "reference": 1
+      }
+    ]
   },
   {
     "id": "cites-dictionary-lookup",
@@ -25,7 +35,9 @@
     "tools": [
       {
         "name": "lookup_word",
-        "arguments": { "word": "despite" },
+        "arguments": {
+          "word": "despite"
+        },
         "observation": {
           "word": "despite",
           "meaningZh": "尽管；不管",
@@ -34,9 +46,21 @@
       }
     ],
     "answer": "despite 是介词，表示「尽管、不管」，后面通常接名词或动名词 [依据1]。",
-    "expectedTools": ["lookup_word"],
+    "expectedTools": [
+      "lookup_word"
+    ],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "despite 是介词",
+        "reference": 1
+      },
+      {
+        "text": "后面通常接名词或动名词",
+        "reference": 1
+      }
+    ]
   },
   {
     "id": "cites-retrieved-grounding-material",
@@ -45,7 +69,11 @@
     "tools": [
       {
         "name": "retrieve_grounding_material",
-        "arguments": { "categories": ["GRAMMAR"] },
+        "arguments": {
+          "categories": [
+            "GRAMMAR"
+          ]
+        },
         "sources": [
           {
             "kind": "GROUNDING_MATERIAL",
@@ -58,9 +86,17 @@
       }
     ],
     "answer": "主语是第三人称单数，谓语动词需要加 -s [依据1]。",
-    "expectedTools": ["retrieve_grounding_material"],
+    "expectedTools": [
+      "retrieve_grounding_material"
+    ],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "谓语动词需要加 -s",
+        "reference": 1
+      }
+    ]
   },
   {
     "id": "refuses-without-a-citable-source",
@@ -70,7 +106,24 @@
     "answer": "我目前没有可引用的依据材料，不能可靠回答这个问题。请先在「我的文档」补充材料，或重新生成教师讲解后再问。",
     "expectedTools": [],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": []
+  },
+  {
+    "id": "rejects-a-fabricated-answer-without-a-source",
+    "question": "你觉得我应该多用什么句式？",
+    "sources": [],
+    "tools": [],
+    "answer": "你应该多用被动语态和分词短语。",
+    "expectedTools": [],
+    "expectedGrounded": false,
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "你应该多用被动语态和分词短语",
+        "reference": null
+      }
+    ]
   },
   {
     "id": "rejects-an-uncited-assertion",
@@ -89,7 +142,13 @@
     "answer": "这里应该加不定冠词。",
     "expectedTools": [],
     "expectedGrounded": false,
-    "expectedAccepted": false
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "这里应该加不定冠词",
+        "reference": null
+      }
+    ]
   },
   {
     "id": "rejects-an-invented-citation",
@@ -108,7 +167,13 @@
     "answer": "yesterday 表示过去，所以动词要用过去式 [依据9]。",
     "expectedTools": [],
     "expectedGrounded": false,
-    "expectedAccepted": false
+    "expectedAccepted": false,
+    "claims": [
+      {
+        "text": "动词要用过去式",
+        "reference": 9
+      }
+    ]
   },
   {
     "id": "cites-two-available-sources",
@@ -135,7 +200,17 @@
     "answer": "先补上不定冠词 [依据1]，再把动词改成过去式 [依据2]。",
     "expectedTools": [],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "先补上不定冠词",
+        "reference": 1
+      },
+      {
+        "text": "再把动词改成过去式",
+        "reference": 2
+      }
+    ]
   },
   {
     "id": "does-not-call-a-tool-when-none-is-needed",
@@ -154,6 +229,16 @@
     "answer": "这是可数名词单数首次出现，所以要用不定冠词 [依据1]。",
     "expectedTools": [],
     "expectedGrounded": true,
-    "expectedAccepted": true
+    "expectedAccepted": true,
+    "claims": [
+      {
+        "text": "这是可数名词单数首次出现",
+        "reference": 1
+      },
+      {
+        "text": "所以要用不定冠词",
+        "reference": 1
+      }
+    ]
   }
 ]

@@ -1,6 +1,6 @@
 # Agent 平台四道 gate 的评测与回归
 
-本文件记录 Teacher Conversation、Learning Review、Targeted Practice、Speaking Practice 四个场景的「过硬」gate 如何重复运行、如何对照阈值判断通过/失败，以及最近一次结果。方法论沿用 [`docs/retrieval-evaluation.md`](retrieval-evaluation.md)：小规模人工标注集、离线/按需执行、不把评测结果写进常规 CI 断言。
+本文件记录 Teacher Conversation、Learning Review、Targeted Practice、Speaking Practice 四个场景的「过硬」gate 如何重复运行、如何对照阈值判断通过/失败，以及最近一次结果。方法论沿用 [`docs/retrieval-evaluation.md`](retrieval-evaluation.md) 的小规模人工标注集、按需执行、不把评测结果写进常规 CI 断言。与检索评测不同的是，本评测把阈值判断放在 Maven `agent-eval` profile 的断言里；它仍然只在手动触发时运行。
 
 ## 为什么单独做评测
 
@@ -35,7 +35,7 @@ tools/agent-platform-eval.sh speaking-practice
 
 | Gate | 入口 | 标注集 | 通过条件 |
 | --- | --- | --- | --- |
-| A Teacher Conversation | `TeacherConversationGateEvaluation` | `teacher-conversation-cases.json`，8 个回答用例 | grounded-rate 100%；无依据断言 0；工具选择 100%；接受/拒绝判断 100% |
+| A Teacher Conversation | `TeacherConversationGateEvaluation` | `teacher-conversation-cases.json`，9 个回答用例 | grounded-rate 100%；assertion-support-rate 100%；无依据断言 0；工具选择 100%；接受/拒绝判断 100% |
 | B Learning Review | `LearningReviewGateEvaluation` | `learning-review-cases.json`，6 段练习历史 | precision 100%；recall 100%；建议可追溯 100%；状态判断 100%；Level 趋势 100%；依据材料覆盖 100% |
 | C Targeted Practice | `TargetedPracticeGateEvaluation` | `targeted-practice-cases.json`，5 个练前/练后案例 | 趋势判断 100%；改善案例下降率 100%；改善案例平均下降 > 0 |
 | D Speaking Practice | `SpeakingPracticeGateEvaluation` | 确定性 fake + 20 个语音回合延迟分布 | p95 ≤ 2500 ms；超预算可识别；barge-in 可取消；降级覆盖 4/4 |
@@ -60,7 +60,13 @@ tools/agent-platform-eval.sh speaking-practice
 - 有可用依据却完全不引用时是否被拒绝；
 - 没有依据时是否明确拒绝而不是编造。
 
-`grounded-rate` 的分母是人工标为「应当有依据」的用例，分子是实际被判为 grounded 的用例；`unsupported-assertions` 统计「标注为无依据但实际被接受」的回答，必须为 0。
+评测同时看三层：
+
+- `grounded-rate`：人工标为「应当有依据」的用例中，实际被判为 grounded 的比例；
+- `assertion-support-rate`：被接受的回答里，人工标注的每条断言是否落在带有效 `[依据N]` 的句子里；
+- `unsupported-assertions`：被接受的回答里还有多少条断言没有有效引用，必须为 0。
+
+没有可引用依据时，服务只接受固定的拒绝回答 `TutorRefusal.NO_GROUNDED_SOURCE`；任何其他无引用回答都会被拒绝，避免「拒绝」和「编造」无法区分。
 
 **局限：** 自动规则检查引用编号与引用存在性，不做断言级语义判断；句子级「每条事实都有引用」由人工标注集保证。真实模型的回答质量需要另做人工抽检。
 
@@ -81,7 +87,7 @@ tools/agent-platform-eval.sh speaking-practice
 
 每个案例给出练习历史、目标类别/严重度、练后反馈中的 Learning Issue，以及人工期望的 `beforeCount`、`afterCount`、`change`、`trend`。评测运行真实链路：
 
-`LearningReviewWorkflow` → `TargetedPracticeWorkflow.generate` → `TargetedIssueCounter.count` → `TargetedPracticeComparison.between`。
+`LearningReviewWorkflow` → `TargetedPracticeWorkflow.generate` → `TargetedIssuePattern.count` → `TargetedPracticeComparison.between`。
 
 改善案例必须 `IMPROVED` 且 `change > 0`；同时保留 `UNCHANGED` 与 `WORSENED` 控制案例，防止评测把「任何变化」都误报成进步。`out-of-scope-severity-is-not-counted` 验证 MAJOR→MINOR 不计入同一目标簇。
 
@@ -91,8 +97,8 @@ tools/agent-platform-eval.sh speaking-practice
 
 - 20 个语音回合，给合成器注入 120–1100 ms 的延迟分布，读取 `SpeakingLatencyStats`；
 - 单个 2600 ms 回合必须让 `withinBudget` 变为 false；
-- barge-in 在合成后、落库前取消：回合不落库、不进入延迟样本；
-- 降级覆盖 4 条路径：转写失败、转写超时、合成失败、失败后在同一会话改用文字。
+- barge-in 在合成后、落库前由语音边界发出取消信号：回合不落库、不进入延迟样本；
+- 降级覆盖 4 条路径：转写失败、转写超时、合成失败、失败后在同一 Speaking Session 改用文字。
 
 WebSocket 传输、`interrupted` 消息和真实服务器行为由常规测试 `SpeechChannelContractTest` 覆盖；本 gate 关注服务层的延迟、取消和降级契约。
 
@@ -105,6 +111,7 @@ WebSocket 传输、`interrupted` 消息和真实服务器行为由常规测试 `
 | Gate | 关键指标 | 观测值 | 阈值 |
 | --- | --- | --- | --- |
 | A | grounded-rate | 100.0% | 100% |
+| A | assertion-support-rate | 100.0% | 100% |
 | A | unsupported-assertions | 0 | 0 |
 | A | tool-use-accuracy | 100.0% | 100% |
 | B | precision | 100.0% | 100% |
@@ -112,7 +119,7 @@ WebSocket 传输、`interrupted` 消息和真实服务器行为由常规测试 `
 | B | recommendation-traceability | 100.0% | 100% |
 | C | targeted-issue-decrease | 100.0% | 100% |
 | C | average-change-on-improvement-cases | 1.33 | > 0 |
-| D | p95-latency | 1040 ms | ≤ 2500 ms |
+| D | p95-latency | 约 1040 ms | ≤ 2500 ms |
 | D | barge-in | 通过 | 必检 |
 | D | degradation-coverage | 4/4 | 4/4 |
 

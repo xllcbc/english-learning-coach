@@ -4,6 +4,7 @@ import com.writelab.agent.AgentStep;
 import com.writelab.agent.AgentStepKind;
 import com.writelab.agent.AgentStepStatus;
 import com.writelab.agent.TutorCitableSource;
+import com.writelab.agent.TutorRefusal;
 import com.writelab.agent.TutorSourceKind;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -61,10 +62,21 @@ class ConversationAnswerAuditTest {
     @Test
     void acceptsAnExplicitRefusalWhenThereIsNothingToCite() {
         ConversationAnswerAudit audit = ConversationAnswerAudit.inspect(
-                "我目前没有可引用的依据材料，不能可靠回答这个问题。", List.of(), List.of(), OBJECT_MAPPER);
+                TutorRefusal.NO_GROUNDED_SOURCE, List.of(), List.of(), OBJECT_MAPPER);
 
         assertThat(audit.accepted(true)).isTrue();
         assertThat(audit.hasCitableSource()).isFalse();
+        assertThat(audit.refusal()).isTrue();
+    }
+
+    @Test
+    void rejectsAFabricatedAnswerWithoutACitableSource() {
+        ConversationAnswerAudit audit = ConversationAnswerAudit.inspect(
+                "你应该多用被动语态和分词短语。", List.of(), List.of(), OBJECT_MAPPER);
+
+        assertThat(audit.rejectionReason(true))
+                .isEqualTo(ConversationAnswerAudit.RejectionReason.UNGROUNDED_ANSWER);
+        assertThat(audit.accepted(true)).isFalse();
     }
 
     @Test

@@ -10,7 +10,7 @@
 #
 # Each run prints a Markdown report, writes it to backend/target/agent-eval/<gate>.md, and exits
 # non-zero when any threshold fails.
-set -uo pipefail
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
@@ -38,7 +38,8 @@ for candidate in \
   /home/*/.cache/sandcastle/m2 \
   /root/.m2/repository; do
   [ -n "$candidate" ] || continue
-  if [ -f "$candidate/org/springframework/boot/spring-boot-starter-parent/4.1.2/spring-boot-starter-parent-4.1.2.pom" ]; then
+  if find "$candidate/org/springframework/boot/spring-boot-starter-parent" \
+      -name 'spring-boot-starter-parent-*.pom' -print -quit 2>/dev/null | grep -q .; then
     repo_args=("-Dmaven.repo.local=$candidate")
     break
   fi

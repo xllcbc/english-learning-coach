@@ -20,9 +20,7 @@ import java.util.regex.Pattern;
 public class MockTutorModelClient implements TutorModelClient {
 
     private static final int MAX_GROUNDING_CITATIONS = 2;
-    private static final String NO_GROUNDING_ANSWER =
-            "我目前没有可引用的依据材料，不能可靠回答这个问题。"
-                    + "请先在「我的文档」补充材料，或重新生成教师讲解后再问。";
+    private static final String NO_GROUNDING_ANSWER = TutorRefusal.NO_GROUNDED_SOURCE;
 
     /**
      * Deterministic tense check for Mock mode. It only fires when the utterance carries an explicit

@@ -2,6 +2,7 @@ package com.writelab.conversation;
 
 import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorCitableSource;
+import com.writelab.agent.TutorRefusal;
 import com.writelab.agent.TutorSourceKind;
 import com.writelab.feedback.IssueCategoryLabels;
 import com.writelab.feedback.LearningIssue;
@@ -58,6 +59,9 @@ final class TeacherConversationBriefing {
 
         if (sources.isEmpty()) {
             text.append("\n（没有检索到可引用的依据材料。）\n");
+            text.append("这种情况下必须完整回答：「").append(TutorRefusal.NO_GROUNDED_SOURCE)
+                    .append("」\n");
+            text.append("不得给出任何没有依据的规则、事实或建议。\n");
         } else {
             text.append("\n可引用依据：\n");
             for (TutorCitableSource source : sources) {

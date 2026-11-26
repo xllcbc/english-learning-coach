@@ -2,10 +2,9 @@ package com.writelab.speech;
 
 import com.writelab.agent.AgentStepKind;
 import com.writelab.agent.AgentStopReason;
-import com.writelab.agent.TutorModelClient;
-import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
 import com.writelab.agent.TutorScenario;
+import com.writelab.evaluation.ScriptedTutorModelClient;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackResult;
 import com.writelab.feedback.IssueCategory;

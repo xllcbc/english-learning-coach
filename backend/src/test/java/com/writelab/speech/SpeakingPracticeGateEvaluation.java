@@ -2,6 +2,7 @@ package com.writelab.speech;
 
 import com.writelab.agent.TutorModelDecision;
 import com.writelab.evaluation.GateReport;
+import com.writelab.evaluation.ScriptedTutorModelClient;
 import com.writelab.feedback.FeedbackModel;
 import com.writelab.feedback.FeedbackResult;
 import com.writelab.feedback.ModelMode;
@@ -13,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
 import static com.writelab.speech.SpeechFailureReason.FAILED;
@@ -88,11 +89,6 @@ class SpeakingPracticeGateEvaluation {
         degraded += typedTextContinuesTheSameSession() ? 1 : 0;
         report.metric("degradation-coverage", degraded + "/4", "4/4", degraded == 4);
         report.assertPassed();
-
-        assertThat(latency.p95Ms()).isLessThanOrEqualTo(SpeakingLatencyStats.BUDGET_MS);
-        assertThat(overBudgetFlagged).isTrue();
-        assertThat(bargeIn).isTrue();
-        assertThat(degraded).isEqualTo(4);
     }
 
     private SpeakingLatencyStats measurePlaybackLatency() {
@@ -134,15 +130,18 @@ class SpeakingPracticeGateEvaluation {
         speechModel.delaySynthesis(100);
         tutorModel.script(context -> TutorModelDecision.answer(AGENT_REPLY));
         UUID sessionId = sessions.ensureSession(null, ModelMode.MOCK).id();
-        AtomicInteger checks = new AtomicInteger();
-        // The fifth check happens after synthesis and before persistence: that is the barge-in
-        // window the channel closes when the learner starts speaking again.
-        BooleanSupplier cancelled = () -> checks.incrementAndGet() >= 5;
+        // The learner barges in as soon as the spoken reply is ready to play. The external signal
+        // is set by the speech boundary, not by counting internal cancellation checks.
+        AtomicBoolean learnerBargedIn = new AtomicBoolean(false);
+        speechModel.onSynthesis(() -> learnerBargedIn.set(true));
 
-        assertThatThrownBy(() -> service.respond(AUDIO, sessionId, cancelled))
+        assertThatThrownBy(() -> service.respond(AUDIO, sessionId, learnerBargedIn::get))
                 .isInstanceOf(SpeakingTurnCancelledException.class);
 
-        return sessions.readTurns(sessionId).isEmpty() && service.latency().turnCount() == 0;
+        return learnerBargedIn.get()
+                && speechModel.synthesisCount() == 1
+                && sessions.readTurns(sessionId).isEmpty()
+                && service.latency().turnCount() == 0;
     }
 
     private boolean transcriptionFailureDegrades(SpeechFailureReason reason) {

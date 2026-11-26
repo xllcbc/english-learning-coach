@@ -6,12 +6,12 @@ import com.writelab.agent.AgentTurnRequest;
 import com.writelab.agent.TutorAgentCore;
 import com.writelab.agent.TutorBriefing;
 import com.writelab.agent.TutorCitableSource;
-import com.writelab.agent.TutorModelClient;
-import com.writelab.agent.TutorModelContext;
 import com.writelab.agent.TutorModelDecision;
 import com.writelab.agent.TutorScenario;
 import com.writelab.agent.TutorSourceKind;
+import com.writelab.evaluation.EvaluationSupport;
 import com.writelab.evaluation.GateReport;
+import com.writelab.evaluation.ScriptedTutorModelClient;
 import com.writelab.tools.ToolDefinition;
 import com.writelab.tools.ToolInvocationStatus;
 import com.writelab.tools.ToolRegistry;
@@ -22,17 +22,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.InputStream;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * On-demand gate evaluation for Teacher Conversation (A). A small hand-labelled set of recorded
@@ -50,10 +47,12 @@ class TeacherConversationGateEvaluation {
 
     private static final String CASES = "/agent-eval/teacher-conversation-cases.json";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Pattern CITATION_MARKER = Pattern.compile("\\[依据(\\d+)]");
 
     @Test
     void keepsTeacherAnswersGroundedAndRejectsUnsupportedAssertions() throws Exception {
-        List<ConversationCase> cases = readCases();
+        List<ConversationCase> cases = EvaluationSupport.readCases(
+                OBJECT_MAPPER, CASES, ConversationCase[].class);
         GateReport report = new GateReport(
                 "teacher-conversation",
                 "Teacher Conversation gate evaluation（A）");
@@ -63,7 +62,8 @@ class TeacherConversationGateEvaluation {
 
         int expectedGrounded = 0;
         int observedGrounded = 0;
-        int unsupportedAssertions = 0;
+        int acceptedClaims = 0;
+        int supportedAcceptedClaims = 0;
         int acceptedMismatches = 0;
         int toolMismatches = 0;
 
@@ -79,8 +79,9 @@ class TeacherConversationGateEvaluation {
                     observedGrounded++;
                 }
             }
-            if (result.accepted() && !testCase.expectedGrounded()) {
-                unsupportedAssertions++;
+            if (result.accepted()) {
+                acceptedClaims += result.totalClaims();
+                supportedAcceptedClaims += result.supportedClaims();
             }
             if (!acceptedMatches) {
                 acceptedMismatches++;
@@ -94,21 +95,28 @@ class TeacherConversationGateEvaluation {
                     toolsMatch && groundedMatches && acceptedMatches,
                     "accepted=" + result.accepted()
                             + "，grounded=" + result.grounded()
-                            + "，tools=" + result.actualTools());
+                            + "，tools=" + result.actualTools()
+                            + "，claims=" + result.supportedClaims() + "/" + result.totalClaims());
         }
 
+        int unsupportedAssertions = acceptedClaims - supportedAcceptedClaims;
+        double assertionSupportRate = acceptedClaims == 0
+                ? 1.0
+                : (double) supportedAcceptedClaims / acceptedClaims;
         double groundedRate = expectedGrounded == 0 ? 1.0 : (double) observedGrounded / expectedGrounded;
         double toolAccuracy = (cases.size() - toolMismatches) / (double) cases.size();
         double acceptedAccuracy = (cases.size() - acceptedMismatches) / (double) cases.size();
 
-        report.metric("grounded-rate", percent(groundedRate), "100.0%", groundedRate == 1.0);
+        report.metric("grounded-rate", EvaluationSupport.percent(groundedRate), "100.0%",
+                groundedRate == 1.0);
+        report.metric("assertion-support-rate", EvaluationSupport.percent(assertionSupportRate),
+                "100.0%", assertionSupportRate == 1.0);
         report.metric("unsupported-assertions", unsupportedAssertions, "0", unsupportedAssertions == 0);
-        report.metric("tool-use-accuracy", percent(toolAccuracy), "100.0%", toolAccuracy == 1.0);
-        report.metric("accept/reject-accuracy", percent(acceptedAccuracy), "100.0%", acceptedAccuracy == 1.0);
+        report.metric("tool-use-accuracy", EvaluationSupport.percent(toolAccuracy), "100.0%",
+                toolAccuracy == 1.0);
+        report.metric("accept/reject-accuracy", EvaluationSupport.percent(acceptedAccuracy), "100.0%",
+                acceptedAccuracy == 1.0);
         report.assertPassed();
-
-        assertThat(groundedRate).isEqualTo(1.0);
-        assertThat(unsupportedAssertions).isZero();
     }
 
     private ConversationCaseResult evaluate(ConversationCase testCase) throws Exception {
@@ -121,9 +129,13 @@ class TeacherConversationGateEvaluation {
                         source.source(),
                         source.license()))
                 .toList();
-        List<ToolFixture> tools = testCase.tools() == null ? List.of() : testCase.tools();
+        List<ToolFixture> tools = testCase.tools();
         ToolRegistry registry = new ToolRegistry(tools.stream().map(this::stubTool).toList());
-        ScriptedTutorModelClient model = new ScriptedTutorModelClient(tools, testCase.answer());
+        ScriptedTutorModelClient model = new ScriptedTutorModelClient();
+        for (ToolFixture tool : tools) {
+            model.script(context -> TutorModelDecision.toolCall(tool.name(), tool.arguments()));
+        }
+        model.script(context -> TutorModelDecision.answer(testCase.answer()));
 
         AgentTurn turn = new TutorAgentCore(model, registry).run(new AgentTurnRequest(
                 testCase.question(),
@@ -134,12 +146,61 @@ class TeacherConversationGateEvaluation {
         ConversationAnswerAudit audit = ConversationAnswerAudit.inspect(
                 turn.answer(), briefingSources, turn.steps(), OBJECT_MAPPER);
         boolean accepted = audit.accepted(turn.completed());
-        boolean grounded = accepted && (!audit.hasCitableSource() || !audit.citations().isEmpty());
+        Set<Integer> availableReferences = new LinkedHashSet<>();
+        for (ConversationCitation citation : ConversationCitations.available(
+                briefingSources, turn.steps(), OBJECT_MAPPER)) {
+            availableReferences.add(citation.reference());
+        }
+        int supportedClaims = 0;
+        for (ClaimFixture claim : testCase.claims()) {
+            if (claimIsSupported(turn.answer(), claim, availableReferences)) {
+                supportedClaims++;
+            }
+        }
+        boolean grounded = accepted && supportedClaims == testCase.claims().size();
         List<String> actualTools = turn.steps().stream()
                 .filter(step -> step.isToolCall())
                 .map(step -> step.toolName())
                 .toList();
-        return new ConversationCaseResult(accepted, grounded, actualTools);
+        return new ConversationCaseResult(
+                accepted, grounded, actualTools, supportedClaims, testCase.claims().size());
+    }
+
+    private static boolean claimIsSupported(
+            String answer,
+            ClaimFixture claim,
+            Set<Integer> availableReferences
+    ) {
+        String sentence = sentenceContaining(answer, claim.text());
+        if (sentence == null) {
+            return false;
+        }
+        Set<Integer> markers = markers(sentence);
+        if (claim.reference() == null) {
+            return markers.isEmpty();
+        }
+        return markers.contains(claim.reference()) && availableReferences.contains(claim.reference());
+    }
+
+    private static String sentenceContaining(String answer, String text) {
+        if (answer == null || text == null) {
+            return null;
+        }
+        for (String sentence : answer.split("[。！？\\n]")) {
+            if (sentence.contains(text)) {
+                return sentence;
+            }
+        }
+        return null;
+    }
+
+    private static Set<Integer> markers(String sentence) {
+        Set<Integer> references = new LinkedHashSet<>();
+        Matcher matcher = CITATION_MARKER.matcher(sentence);
+        while (matcher.find()) {
+            references.add(Integer.parseInt(matcher.group(1)));
+        }
+        return references;
     }
 
     private ToolDefinition stubTool(ToolFixture fixture) {
@@ -164,7 +225,7 @@ class TeacherConversationGateEvaluation {
                 return arguments -> new ToolResult(
                         ToolInvocationStatus.SUCCESS,
                         observationFor(fixture, context.references().reserve(
-                                Math.max(1, fixture.sources() == null ? 0 : fixture.sources().size()))));
+                                Math.max(1, fixture.sources().size()))));
             }
         };
     }
@@ -175,7 +236,7 @@ class TeacherConversationGateEvaluation {
             observation.putAll(fixture.observation());
         }
         observation.put("reference", reference);
-        if (fixture.sources() != null && !fixture.sources().isEmpty()) {
+        if (!fixture.sources().isEmpty()) {
             List<Map<String, Object>> sources = new ArrayList<>();
             for (int index = 0; index < fixture.sources().size(); index++) {
                 SourceFixture source = fixture.sources().get(index);
@@ -197,18 +258,13 @@ class TeacherConversationGateEvaluation {
         }
     }
 
-    private List<ConversationCase> readCases() throws Exception {
-        try (InputStream stream = getClass().getResourceAsStream(CASES)) {
-            assertThat(stream).as("evaluation cases resource").isNotNull();
-            return List.of(OBJECT_MAPPER.readValue(stream, ConversationCase[].class));
-        }
-    }
-
-    private static String percent(double value) {
-        return String.format(Locale.ROOT, "%.1f%%", value * 100);
-    }
-
-    private record ConversationCaseResult(boolean accepted, boolean grounded, List<String> actualTools) {
+    private record ConversationCaseResult(
+            boolean accepted,
+            boolean grounded,
+            List<String> actualTools,
+            int supportedClaims,
+            int totalClaims
+    ) {
     }
 
     private record ConversationCase(
@@ -218,6 +274,7 @@ class TeacherConversationGateEvaluation {
             List<ToolFixture> tools,
             String answer,
             List<String> expectedTools,
+            List<ClaimFixture> claims,
             boolean expectedGrounded,
             boolean expectedAccepted
     ) {
@@ -226,7 +283,11 @@ class TeacherConversationGateEvaluation {
             sources = sources == null ? List.of() : List.copyOf(sources);
             tools = tools == null ? List.of() : List.copyOf(tools);
             expectedTools = expectedTools == null ? List.of() : List.copyOf(expectedTools);
+            claims = claims == null ? List.of() : List.copyOf(claims);
         }
+    }
+
+    private record ClaimFixture(String text, Integer reference) {
     }
 
     private record SourceFixture(
@@ -252,29 +313,4 @@ class TeacherConversationGateEvaluation {
         }
     }
 
-    /**
-     * Replays one recorded turn: the listed tool calls first, then the recorded answer. It is the
-     * same model seam production uses, so the core's allowlist, budgets and step recording are the
-     * real ones.
-     */
-    private static final class ScriptedTutorModelClient implements TutorModelClient {
-
-        private final Deque<Function<TutorModelContext, TutorModelDecision>> script = new ArrayDeque<>();
-
-        private ScriptedTutorModelClient(List<ToolFixture> tools, String answer) {
-            for (ToolFixture tool : tools) {
-                script.add(context -> TutorModelDecision.toolCall(tool.name(), tool.arguments()));
-            }
-            script.add(context -> TutorModelDecision.answer(answer));
-        }
-
-        @Override
-        public TutorModelDecision next(TutorModelContext context) {
-            Function<TutorModelContext, TutorModelDecision> decision = script.poll();
-            if (decision == null) {
-                throw new AssertionError("Model was called beyond the recorded evaluation turn");
-            }
-            return decision.apply(context);
-        }
-    }
 }

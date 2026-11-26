@@ -30,6 +30,7 @@ tools/agent-platform-eval.sh speaking-practice
 | Gate | 指标 | 观测值 | 阈值 |
 | --- | --- | --- | --- |
 | A Teacher Conversation | grounded-rate | 100.0% | 100% |
+| A | assertion-support-rate | 100.0% | 100% |
 | A | unsupported-assertions | 0 | 0 |
 | A | tool-use-accuracy | 100.0% | 100% |
 | A | accept/reject-accuracy | 100.0% | 100% |
@@ -42,16 +43,16 @@ tools/agent-platform-eval.sh speaking-practice
 | C Targeted Practice | trend-accuracy | 100.0% | 100% |
 | C | targeted-issue-decrease | 100.0% | 100% |
 | C | average-change-on-improvement-cases | 1.33 | > 0 |
-| D Speaking Practice | p95-latency | 1040 ms | ≤ 2500 ms |
+| D Speaking Practice | p95-latency | 约 1040 ms | ≤ 2500 ms |
 | D | over-budget-detection | 通过 | 必检 |
 | D | barge-in | 通过 | 必检 |
 | D | degradation-coverage | 4/4 | 4/4 |
 
 ## 实现说明
 
-- A：8 个标注回答；脚本化模型输出经真实 `TutorAgentCore` 与 `ConversationCitations` 规则判断 groundedness、引用合法性与工具选择。
+- A：9 个标注回答；脚本化模型输出经真实 `TutorAgentCore` 与 `ConversationAnswerAudit` 规则判断 groundedness、引用合法性、无依据拒绝与工具选择。
 - B：6 段标注练习历史；真实 `LearningReviewWorkflow` 计算 precision/recall，并逐条核对 recommendation evidence 是否可追溯。
-- C：5 个练前/练后案例；真实 `LearningReviewWorkflow` → `TargetedPracticeWorkflow` → `TargetedIssueCounter` → `TargetedPracticeComparison`。新增 `TargetedIssueCounter` 让 store 与评测共用同一条「类别 + 严重度」计数规则。
+- C：5 个练前/练后案例；真实 `LearningReviewWorkflow` → `TargetedPracticeWorkflow` → `TargetedIssuePattern` → `TargetedPracticeComparison`。新增 `TargetedIssuePattern` 让 store 与评测共用同一条「类别 + 严重度」计数规则。
 - D：20 个语音回合测 p95；2600 ms 回合验证超预算识别；服务层 barge-in 取消；4 条降级路径。WebSocket 传输由既有 `SpeechChannelContractTest` 覆盖。
 
 ## 最终自动化测试

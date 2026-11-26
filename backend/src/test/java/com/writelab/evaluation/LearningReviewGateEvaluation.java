@@ -3,10 +3,6 @@ package com.writelab.evaluation;
 import com.writelab.feedback.EstimatedLevel;
 import com.writelab.feedback.IssueCategory;
 import com.writelab.feedback.IssueSeverity;
-import com.writelab.retrieval.GroundingMaterial;
-import com.writelab.retrieval.LearningMaterialRetriever;
-import com.writelab.retrieval.RankedCorpusSentence;
-import com.writelab.retrieval.RankedGroundingMaterial;
 import com.writelab.review.LearningIssueEvidence;
 import com.writelab.review.LearningIssueSnapshot;
 import com.writelab.review.LearningReviewResponse;
@@ -19,20 +15,15 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * On-demand gate evaluation for Learning Review (B). A small hand-labelled set of Practice Attempt
@@ -51,7 +42,8 @@ class LearningReviewGateEvaluation {
 
     @Test
     void matchesTheLabelledDiagnosisAndTracesEveryRecommendation() throws Exception {
-        List<ReviewCase> cases = readCases();
+        List<ReviewCase> cases = EvaluationSupport.readCases(
+                OBJECT_MAPPER, CASES, ReviewCase[].class);
         GateReport report = new GateReport("learning-review", "Learning Review gate evaluation（B）");
         report.note("评测集", "`backend/src/test/resources/agent-eval/learning-review-cases.json`，"
                 + cases.size() + " 个标注历史");
@@ -70,7 +62,7 @@ class LearningReviewGateEvaluation {
 
         for (ReviewCase testCase : cases) {
             Fixture fixture = fixture(testCase);
-            LearningReviewResponse review = new LearningReviewWorkflow(new StubMaterials())
+            LearningReviewResponse review = new LearningReviewWorkflow(EvaluationSupport.stubMaterials())
                     .review(fixture.attempts());
 
             Set<String> predicted = new LinkedHashSet<>();
@@ -134,18 +126,14 @@ class LearningReviewGateEvaluation {
                 ? 1.0
                 : (double) (recommendations - recommendationsWithoutMaterial) / recommendations;
 
-        report.metric("precision", percent(precision), "100.0%", precision == 1.0);
-        report.metric("recall", percent(recall), "100.0%", recall == 1.0);
-        report.metric("recommendation-traceability", percent(traceability), "100.0%", traceability == 1.0);
-        report.metric("status-accuracy", percent(statusAccuracy), "100.0%", statusAccuracy == 1.0);
-        report.metric("level-trend-accuracy", percent(trendAccuracy), "100.0%", trendAccuracy == 1.0);
-        report.metric("grounding-material-coverage", percent(materialCoverage), "100.0%",
+        report.metric("precision", EvaluationSupport.percent(precision), "100.0%", precision == 1.0);
+        report.metric("recall", EvaluationSupport.percent(recall), "100.0%", recall == 1.0);
+        report.metric("recommendation-traceability", EvaluationSupport.percent(traceability), "100.0%", traceability == 1.0);
+        report.metric("status-accuracy", EvaluationSupport.percent(statusAccuracy), "100.0%", statusAccuracy == 1.0);
+        report.metric("level-trend-accuracy", EvaluationSupport.percent(trendAccuracy), "100.0%", trendAccuracy == 1.0);
+        report.metric("grounding-material-coverage", EvaluationSupport.percent(materialCoverage), "100.0%",
                 materialCoverage == 1.0);
         report.assertPassed();
-
-        assertThat(precision).isEqualTo(1.0);
-        assertThat(recall).isEqualTo(1.0);
-        assertThat(traceability).isEqualTo(1.0);
     }
 
     private static boolean recommendationEvidenceIsComplete(
@@ -173,13 +161,13 @@ class LearningReviewGateEvaluation {
         List<PracticeAttemptSnapshot> attempts = new ArrayList<>();
         Map<UUID, IssueRef> issuesById = new LinkedHashMap<>();
         for (int attemptIndex = 0; attemptIndex < testCase.attempts().size(); attemptIndex++) {
-            AttemptFixture attempt = testCase.attempts().get(attemptIndex);
+            EvaluationSupport.AttemptFixture attempt = testCase.attempts().get(attemptIndex);
             UUID attemptId = UUID.nameUUIDFromBytes(
                     (testCase.id() + ":attempt:" + attemptIndex).getBytes(StandardCharsets.UTF_8));
             Instant createdAt = DAY_ONE.plusSeconds(attempt.hour() * 3600L);
             List<LearningIssueSnapshot> issues = new ArrayList<>();
             for (int issueIndex = 0; issueIndex < attempt.issues().size(); issueIndex++) {
-                IssueFixture issue = attempt.issues().get(issueIndex);
+                EvaluationSupport.IssueFixture issue = attempt.issues().get(issueIndex);
                 IssueCategory category = IssueCategory.valueOf(issue.category());
                 IssueSeverity severity = IssueSeverity.valueOf(issue.severity());
                 UUID issueId = UUID.nameUUIDFromBytes(
@@ -201,19 +189,8 @@ class LearningReviewGateEvaluation {
         return new Fixture(attempts, issuesById);
     }
 
-    private List<ReviewCase> readCases() throws Exception {
-        try (InputStream stream = getClass().getResourceAsStream(CASES)) {
-            assertThat(stream).as("evaluation cases resource").isNotNull();
-            return List.of(OBJECT_MAPPER.readValue(stream, ReviewCase[].class));
-        }
-    }
-
     private static String pattern(IssueCategory category, IssueSeverity severity) {
         return category.name() + "/" + severity.name();
-    }
-
-    private static String percent(double value) {
-        return String.format(Locale.ROOT, "%.1f%%", value * 100);
     }
 
     private record Fixture(
@@ -238,7 +215,7 @@ class LearningReviewGateEvaluation {
 
     private record ReviewCase(
             String id,
-            List<AttemptFixture> attempts,
+            List<EvaluationSupport.AttemptFixture> attempts,
             List<String> expectedPatterns,
             String expectedStatus,
             String expectedTrend
@@ -250,40 +227,4 @@ class LearningReviewGateEvaluation {
         }
     }
 
-    private record AttemptFixture(int hour, String level, List<IssueFixture> issues) {
-
-        private AttemptFixture {
-            issues = issues == null ? List.of() : List.copyOf(issues);
-        }
-    }
-
-    private record IssueFixture(String category, String severity) {
-    }
-
-    private static final class StubMaterials implements LearningMaterialRetriever {
-
-        @Override
-        public Map<String, List<RankedCorpusSentence>> contextualExamples(
-                Map<String, String> learnerSentences
-        ) {
-            return Map.of();
-        }
-
-        @Override
-        public List<RankedGroundingMaterial> groundingMaterials(
-                Collection<IssueCategory> categories,
-                String queryText
-        ) {
-            List<RankedGroundingMaterial> materials = new ArrayList<>();
-            for (IssueCategory category : categories) {
-                materials.add(RankedGroundingMaterial.fixed(new GroundingMaterial(
-                        UUID.nameUUIDFromBytes(category.name().getBytes(StandardCharsets.UTF_8)),
-                        category,
-                        category + " 依据材料",
-                        "WriteLab 自建依据材料",
-                        "CC BY 4.0")));
-            }
-            return materials;
-        }
-    }
 }

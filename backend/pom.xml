@@ -118,7 +118,9 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <groups>evaluation</groups>
-                            <excludedGroups>__no_evaluation_filter__</excludedGroups>
+                            <!-- Override the default evaluation exclusion; an empty value means
+                                 "do not exclude any group" for this on-demand profile. -->
+                            <excludedGroups combine.self="override"></excludedGroups>
                         </configuration>
                     </plugin>
                 </plugins>
